@@ -17,15 +17,15 @@ the original logo was designed by Bingies24 and darealmrcatz.
 > this project is not, and will never be affiliated with or endorsed by ZeptoLab. all rights to the original game and its assets belong to ZeptoLab.
 
 <table>
-  <tr valign="top">
+  <tr valign="center">
     <td align="center">
-      real device
+      <b>real device</b>
       <ul>
         <img src=".github/real.webp">
       </ul>
     </td>
     <td align="center">
-      emulator
+      <b>emulator</b>
       <ul>
         <img src=".github/emulator.webp">
       </ul>
@@ -39,10 +39,10 @@ download the latest release from the [releases page](https://github.com/sogful/c
 
 ## features
 
-- a "custom box" for importing levels! Use the "Add Level" button to pick files with your preferred file explorer, or copy them into `/storage/emulated/0/Android/media/page.yell0wsuit.cv.ctrdx/`. 
+- a "custom box" for importing levels! use the "Add Level" button to pick files with your preferred file explorer, or copy them into `/storage/emulated/0/Android/media/page.yell0wsuit.cv.ctrdx/`. 
 <sup>(`.xml` and somewhat `.json` supported)</sup>
 - cheats unlocking all boxes and noclipping in the settings. turning any cheat on switches the game to a separate save profile to not ruin your real progress for the main game.
-- fullscreen + widescreen letterboxing, should hopefully work well on MIUI
+- fullscreen + widescreen letterboxing, should hopefully work well on MIUI.
 
 ## building
 
