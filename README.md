@@ -1,7 +1,7 @@
-<p align="center">it's pride month!</p>
-<p align="center">is there perhaps anything QUEER i could work on..</p>
+<p align="center">it's pride month!
+<br> is there perhaps anything QUEER i could work on..</p>
 <p align="center"><img src=".github/hmm.svg" width="100"></p>
-<p align="center">hmm, of course, that's a <a href="https://www.youtube.com/watch?v=y_X7X-L3n0E">wonderful idea!</a></p>
+<p align="center">hmm, of course, <a href="https://www.youtube.com/watch?v=y_X7X-L3n0E">that's a wonderful idea!</a></p>
 
 <p align="center">
   <img src=".github/logo.svg"/>
@@ -67,4 +67,5 @@ download the latest release from the [releases page](https://github.com/sogful/c
     - on **macos / linux**: the `.sh` files<br>
       <sup>(make them runnable first with `chmod +x tools/*.sh`)</sup>
 
-    all build outputs will go to `/bin/`.
+    all build outputs will go to `/bin/`. you'll also hear a beep when it's done. <br>
+    do note that compiling for android is *VERY* slow, so if you want to test features quickly you'll need to rewrite some logic like custom level reading for an executable version to open without crashes.
