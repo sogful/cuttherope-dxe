@@ -242,11 +242,6 @@ namespace CutTheRopeDX.GameMain
             }
         }
 
-        /// <summary>
-        /// Parses a Flash XML animation file without consulting the parse cache.
-        /// </summary>
-        /// <param name="xmlPath">Absolute or relative path to the Flash XML file.</param>
-        /// <returns>The parsed Flash XML animation definition.</returns>
         /*//////////////////////////// android /////////////////////////////////*/
 #if ANDROID
         /// <summary>
@@ -265,6 +260,11 @@ namespace CutTheRopeDX.GameMain
 #endif
         /*//////////////////////////// android /////////////////////////////////*/
 
+        /// <summary>
+        /// Parses a Flash XML animation file without consulting the parse cache.
+        /// </summary>
+        /// <param name="xmlPath">Absolute or relative path to the Flash XML file.</param>
+        /// <returns>The parsed Flash XML animation definition.</returns>
         private static FlashXmlAnimationDefinition ParseFileCore(string xmlPath)
         {
 #if ANDROID

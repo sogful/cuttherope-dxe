@@ -92,12 +92,13 @@ namespace CutTheRopeDX.GameMain
         }
 
         /// <summary>
-        /// Returns whether automatic update checking is enabled.
+        /// Returns whether automatic update checking is enabled. Disabled in this fork: the checker
+        /// targets the upstream repo's releases, which don't correspond to this subproject's builds.
         /// </summary>
-        /// <returns><see langword="true"/> if update checking is enabled; otherwise, <see langword="false"/>.</returns>
+        /// <returns>Always <see langword="false"/>.</returns>
         public static bool IsUpdateCheckEnabled()
         {
-            return GetBooleanForKey("PREFS_UPDATE_CHECK");
+            return false;
         }
 
         /// <summary>

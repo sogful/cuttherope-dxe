@@ -1421,7 +1421,6 @@ namespace CutTheRopeDX.GameMain
             // Custom Box first (leftmost, scroll point 0): an always-available extra for imported levels,
             // not default-selected. Real packs follow at scroll points 1..N, so pack p lives at scroll p+1
             // (the +1 offset is applied in the scroll handlers and navigation below).
-            customBoxScrollIndex = 0;
             TouchBaseElement customBoxElement = (TouchBaseElement)CreateCustomBoxElement(packContainer);
             boxes[0] = customBoxElement;
             _ = hBox2.AddChild(customBoxElement);
@@ -2729,9 +2728,6 @@ namespace CutTheRopeDX.GameMain
         /// <summary>Pack box elements shown in the pack selection container (+ coming-soon + custom box slots).</summary>
         private readonly BaseElement[] boxes = new BaseElement[CTRPreferences.GetPacksCount() + 2];
 
-        /// <summary>Scroll-point index of the appended Custom Box in the pack carousel.</summary>
-        private int customBoxScrollIndex = -1;
-
         /// <summary>Whether to show the next-pack unlock status after scrolling.</summary>
         private bool showNextPackStatus;
 
@@ -2812,10 +2808,6 @@ namespace CutTheRopeDX.GameMain
             public IButtonDelegation delegateValue;
         }
 
-        /// <summary>
-        /// Draws a colored rectangle background for Om Nom in the pack selection menu.
-        /// Uses scissor clipping to reveal Om Nom as the box scrolls into view.
-        /// </summary>
         /*//////////////////////////// android /////////////////////////////////*/
         /// <summary>
         /// Timeline delegate for the custom-box empty-state Om Nom: once the greeting animation
@@ -2847,6 +2839,10 @@ namespace CutTheRopeDX.GameMain
         }
         /*//////////////////////////// android /////////////////////////////////*/
 
+        /// <summary>
+        /// Draws a colored rectangle background for Om Nom in the pack selection menu.
+        /// Uses scissor clipping to reveal Om Nom as the box scrolls into view.
+        /// </summary>
         public sealed class MonsterSlot : ColorRect
         {
             /// <summary>

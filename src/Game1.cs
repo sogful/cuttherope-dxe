@@ -310,11 +310,11 @@ namespace CutTheRopeDX
             base.Update(gameTime);
         }
 
+#if !ANDROID
         /// <summary>
         /// Toggles fullscreen mode when <i>Alt</i> + <i>Enter</i> or <i>F11</i> is pressed.
         /// </summary>
         /// <param name="keyboardState">Current keyboard state.</param>
-#if !ANDROID
         private void HandleFullscreenToggle(KeyboardState keyboardState)
         {
             bool altDown = keyboardState.IsKeyDown(Keys.LeftAlt) || keyboardState.IsKeyDown(Keys.RightAlt);

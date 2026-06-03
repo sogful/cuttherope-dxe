@@ -8,10 +8,14 @@
     <!-- all build output goes to a single repo-root bin/ (gitignored), not src/bin/ -->
     <BaseOutputPath>$(MSBuildProjectDirectory)\..\bin\</BaseOutputPath>
 
-    <!-- android-first project: a native MonoGame.Android app, plus a DesktopGL (windows) head. -->
-    <TargetFrameworks>net9.0;net9.0-android</TargetFrameworks>
-    <!-- local android dev: collapse to a single android target so the Install/Run + fast
-         deployment targets exist. opt in with -p:CtrAndroidOnly=true. -->
+    <!-- android-only for now. a DesktopGL (windows) head still lives in the source (Program.cs,
+         the #if !ANDROID seams, the desktop content/packageref groups below) and COMPILES, but
+         the game logic isn't fully fenced for non-android yet so the exe crashes on launch.
+         it's disabled until that's fixed - to re-enable the desktop head, restore:
+         <TargetFrameworks>net9.0;net9.0-android</TargetFrameworks> -->
+    <TargetFrameworks>net9.0-android</TargetFrameworks>
+    <!-- local android dev: collapse to a single (non-crosstargeting) android target so the
+         Install/Run + fast deployment targets exist. opt in with -p:CtrAndroidOnly=true. -->
     <TargetFrameworks Condition="'$(CtrAndroidOnly)' == 'true'"></TargetFrameworks>
     <TargetFramework Condition="'$(CtrAndroidOnly)' == 'true'">net9.0-android</TargetFramework>
     <!-- default android abis: arm64-v8a + armeabi-v7a (modern + older 32-bit phones).
@@ -71,6 +75,13 @@
     <!-- content is packaged separately for android (prebuilt etc2/xnb + AndroidAsset), not via mgcb -->
     <RunMGCB>false</RunMGCB>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- the net9.0-android TFM makes the Android workload default UseMonoRuntime=true for the whole
+       project, which leaks into the desktop target and makes its publish look for a nonexistent
+       Mono runtime pack. Force CoreCLR back on for the desktop (net9.0) TFM at restore time. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <UseMonoRuntime>false</UseMonoRuntime>
   </PropertyGroup>
 
   <!-- DesktopGL publish defaults (single-file self-contained exe) -->
