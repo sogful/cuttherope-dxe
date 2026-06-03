@@ -1,7 +1,7 @@
-<h4 align="center">it's pride month!</h4>
-<h4 align="center">is there perhaps anything QUEER i could work on..</h4>
-<h4 align="center"><img src=".github/hmm.svg" width="100"></h4>
-<h4 align="center">hmm, of course, wonderful idea!</h4>
+<p align="center">it's pride month!</p>
+<p align="center">is there perhaps anything QUEER i could work on..</p>
+<p align="center"><img src=".github/hmm.svg" width="100"></p>
+<p align="center">hmm, of course, that's a <a href="https://www.youtube.com/watch?v=y_X7X-L3n0E">wonderful idea!</a></p>
 
 <p align="center">
   <img src=".github/logo.svg"/>

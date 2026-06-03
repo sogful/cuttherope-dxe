@@ -4,27 +4,14 @@
     <ProjectGuid>{9A732C70-39B7-456E-8029-91F641C29567}</ProjectGuid>
     <RootNamespace>CutTheRopeDX</RootNamespace>
     <AssemblyName>CutTheRope-DX</AssemblyName>
-
-    <!-- all build output goes to a single repo-root bin/ (gitignored), not src/bin/ -->
     <BaseOutputPath>$(MSBuildProjectDirectory)\..\bin\</BaseOutputPath>
-
-    <!-- android-only for now. a DesktopGL (windows) head still lives in the source (Program.cs,
-         the #if !ANDROID seams, the desktop content/packageref groups below) and COMPILES, but
-         the game logic isn't fully fenced for non-android yet so the exe crashes on launch.
-         it's disabled until that's fixed - to re-enable the desktop head, restore:
-         <TargetFrameworks>net9.0;net9.0-android</TargetFrameworks> -->
     <TargetFrameworks>net9.0-android</TargetFrameworks>
-    <!-- local android dev: collapse to a single (non-crosstargeting) android target so the
-         Install/Run + fast deployment targets exist. opt in with -p:CtrAndroidOnly=true. -->
     <TargetFrameworks Condition="'$(CtrAndroidOnly)' == 'true'"></TargetFrameworks>
     <TargetFramework Condition="'$(CtrAndroidOnly)' == 'true'">net9.0-android</TargetFramework>
-    <!-- default android abis: arm64-v8a + armeabi-v7a (modern + older 32-bit phones).
-         override with -p:RuntimeIdentifier=android-x64 for a single-abi emulator build. -->
     <RuntimeIdentifiers Condition="'$(CtrAndroidOnly)' == 'true' AND '$(RuntimeIdentifier)' == ''">android-arm64;android-arm</RuntimeIdentifiers>
     <LangVersion>preview</LangVersion>
 
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <!-- windows exe icon, generated from icon.svg by generate-assets.bat (optional) -->
     <ApplicationIcon Condition="$([MSBuild]::IsOsPlatform('Windows')) AND '$(TargetFramework)' != 'net9.0-android' AND Exists('..\icon.ico')">..\icon.ico</ApplicationIcon>
     <VersionPrefix>1.0.0</VersionPrefix>
     <VersionSuffix>dirty</VersionSuffix>
@@ -42,14 +29,12 @@
     <IncludeSourceRevisionInInformationalVersion Condition="'$(VersionSuffix)' != ''">true</IncludeSourceRevisionInInformationalVersion>
     <IncludeSourceRevisionInInformationalVersion Condition="'$(VersionSuffix)' == ''">false</IncludeSourceRevisionInInformationalVersion>
 
-    <!-- desktop builds textures via mgcb; android packages prebuilt assets instead. -->
     <RunMGCB>true</RunMGCB>
     <RunMGCB Condition="'$(CI)' == 'true'">false</RunMGCB>
 
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <!-- output type -->
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <OutputType>Exe</OutputType>
   </PropertyGroup>
@@ -60,31 +45,22 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 
-  <!-- editable apk metadata (app id, label, version, abis, sdk levels) -->
   <Import Project="Android\android.props" Condition="'$(TargetFramework)' == 'net9.0-android'" />
 
-  <!-- Android head: native monogame.android app (net9.0-android workload) -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
     <OutputType>Exe</OutputType>
     <DefineConstants>$(DefineConstants);ANDROID</DefineConstants>
     <Nullable>disable</Nullable>
     <AndroidManifest>Android\AndroidManifest.xml</AndroidManifest>
-    <!-- substitute the configurable label into the manifest -->
     <AndroidManifestPlaceholders>appLabel=$(AppLabel)</AndroidManifestPlaceholders>
-    <!-- packaged abis are controlled by RuntimeIdentifiers above -->
-    <!-- content is packaged separately for android (prebuilt etc2/xnb + AndroidAsset), not via mgcb -->
     <RunMGCB>false</RunMGCB>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <!-- the net9.0-android TFM makes the Android workload default UseMonoRuntime=true for the whole
-       project, which leaks into the desktop target and makes its publish look for a nonexistent
-       Mono runtime pack. Force CoreCLR back on for the desktop (net9.0) TFM at restore time. -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net9.0'">
     <UseMonoRuntime>false</UseMonoRuntime>
   </PropertyGroup>
 
-  <!-- DesktopGL publish defaults (single-file self-contained exe) -->
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' AND '$(TargetFramework)' != 'net9.0-android'">
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
@@ -102,13 +78,10 @@
       Condition="'$(TargetFramework)' == 'net9.0-android'" />
   </ItemGroup>
 
-  <!-- DesktopGL compiler constant (harmless on android; existing code already defines it everywhere) -->
   <PropertyGroup>
     <DefineConstants>$(DefineConstants);MONOGAME_DESKTOPGL</DefineConstants>
   </PropertyGroup>
 
-  <!-- Desktop (net9.0): copy raw content to output content\, build textures via mgcb, ship sound xnb/ogg + alsoft.ini.
-       android-only generated assets (png source, webp, etc2, binandroid/objandroid) are excluded. -->
   <ItemGroup Condition="'$(TargetFramework)' != 'net9.0-android'">
     <None Include="..\assets\**"
       Exclude="..\assets\sounds\**;..\assets\**\.DS_Store;..\assets\**\*.png;..\assets\**\*.webp;..\assets\**\*.etc2;..\assets\content.mgcb;..\assets\content-android.mgcb;..\assets\content-android.mgcb.bak;..\assets\bin\**\*.*;..\assets\obj\**\*.*;..\assets\binandroid\**\*.*;..\assets\objandroid\**\*.*">
@@ -132,7 +105,6 @@
     <MonoGameContentReference Include="..\assets\content.mgcb" />
   </ItemGroup>
 
-  <!-- entry points: Program.cs (desktop) vs Android\MainActivity.cs (android) -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
     <Compile Remove="Program.cs" />
   </ItemGroup>
@@ -140,23 +112,16 @@
     <Compile Remove="Android\**\*.cs" />
   </ItemGroup>
 
-  <!-- Android: package content read at runtime under assets/content/.
-       textures = prebuilt ETC2/RAW (.etc2), sfx = prebuilt xnb; both made by generate-assets.bat. -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
     <AndroidAsset Include="..\assets\*.json" Link="Assets\content\%(Filename)%(Extension)" />
-    <!-- dimmed repeating tile that fills the widescreen letterbox/pillarbox bars (Renderer.cs) -->
     <AndroidAsset Include="..\assets\tile.png" Link="Assets\content\tile.png" />
     <AndroidAsset Include="..\assets\maps\**\*.*" Link="Assets\content\maps\%(RecursiveDir)%(Filename)%(Extension)" />
     <AndroidAsset Include="..\assets\locales\**\*.*" Link="Assets\content\locales\%(RecursiveDir)%(Filename)%(Extension)" />
-    <!-- fonts: ship only ttf/otf (FontStashSharp can't read woff2) -->
     <AndroidAsset Include="..\assets\fonts\**\*.ttf;..\assets\fonts\**\*.otf" Link="Assets\content\fonts\%(RecursiveDir)%(Filename)%(Extension)" />
     <AndroidAsset Include="..\assets\images\**\*.json" Link="Assets\content\images\%(RecursiveDir)%(Filename)%(Extension)" />
     <AndroidAsset Include="..\assets\images\**\*.xml" Link="Assets\content\images\%(RecursiveDir)%(Filename)%(Extension)" />
-    <!-- GPU-compressed ETC2-RGBA / lossless RAW textures (premultiplied), uploaded with NO cpu decode (Images.cs). -->
     <AndroidAsset Include="..\assets\images\**\*.etc2" Link="Assets\content\images\%(RecursiveDir)%(Filename)%(Extension)" />
-    <!-- PCM sfx xnb (Content.Load) built via content-android.mgcb. -->
     <AndroidAsset Include="..\assets\binandroid\sounds\**\*.xnb" Link="Assets\content\sounds\%(RecursiveDir)%(Filename)%(Extension)" />
-    <!-- music: ogg (Song -> android MediaPlayer, hardware-decoded) + its song xnb. -->
     <AndroidAsset Include="..\assets\sounds\*.ogg" Link="Assets\content\sounds\%(Filename)%(Extension)" />
     <AndroidAsset Include="..\assets\sounds\*.xnb" Exclude="..\assets\sounds\*_windows.xnb" Link="Assets\content\sounds\%(Filename)%(Extension)" />
   </ItemGroup>
