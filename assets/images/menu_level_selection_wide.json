@@ -1,0 +1,34 @@
+{
+    "frames": [
+        {
+            "filename": "menu_level_selection_wide.png",
+            "frame": {
+                "x": 0,
+                "y": 0,
+                "w": 380,
+                "h": 196
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 380,
+                "h": 196
+            },
+            "sourceSize": {
+                "w": 380,
+                "h": 196
+            }
+        }
+    ],
+    "meta": {
+        "image": "menu_level_selection_wide.png",
+        "format": "RGBA8888",
+        "size": {
+            "w": 380,
+            "h": 196
+        },
+        "scale": "1"
+    }
+}
