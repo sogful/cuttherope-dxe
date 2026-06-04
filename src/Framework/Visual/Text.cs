@@ -26,6 +26,22 @@ namespace CutTheRopeDX.Framework.Visual
             ScissorTestEnable = true
         };
 
+        private static RenderTarget2D s_textCompositeTarget;
+
+        /// <param name="graphicsDevice">Device the target is allocated on.</param>
+        /// <returns>A viewport-sized render target used to composite outlined text.</returns>
+        private static RenderTarget2D EnsureCompositeTarget(GraphicsDevice graphicsDevice)
+        {
+            int width = graphicsDevice.Viewport.Width;
+            int height = graphicsDevice.Viewport.Height;
+            if (s_textCompositeTarget == null || s_textCompositeTarget.Width != width || s_textCompositeTarget.Height != height)
+            {
+                s_textCompositeTarget?.Dispose();
+                s_textCompositeTarget = new RenderTarget2D(graphicsDevice, width, height, false, SurfaceFormat.Color, DepthFormat.None);
+            }
+            return s_textCompositeTarget;
+        }
+
         /// <summary>
         /// Creates a text element from a font resource name and string.
         /// </summary>
@@ -372,17 +388,7 @@ namespace CutTheRopeDX.Framework.Visual
             float inheritedBlue = MathHelper.Clamp(parentColor.B / 255f, 0f, 1f);
             float inheritedAlpha = MathHelper.Clamp(color.AlphaChannel * (parentColor.A / 255f), 0f, 1f);
 
-            // Premultiply channels for correct blending
-            float effectiveAlpha = MathHelper.Clamp(textColor.A / 255f * inheritedAlpha, 0f, 1f);
-            Color finalColor = MakePremultipliedColor(
-                textColor,
-                MathHelper.Clamp(inheritedRed, 0f, 1f),
-                MathHelper.Clamp(inheritedGreen, 0f, 1f),
-                MathHelper.Clamp(inheritedBlue, 0f, 1f),
-                effectiveAlpha
-            );
-
-            float yPos = drawY + font.GetTopSpacing();
+            float yStart = drawY + font.GetTopSpacing();
             int lineHeight = (int)(internalFont.LineHeight + font.GetLineOffset());
 
             // Calculate scale from virtual coordinates to physical viewport
@@ -397,7 +403,126 @@ namespace CutTheRopeDX.Framework.Visual
                 Renderer.GetModelViewMatrix() *
                 Matrix.CreateScale(viewportScaleX, viewportScaleY, 1f);
 
-            // Begin SpriteBatch for text rendering with proper scaling
+            void DrawAllText(float alphaScale)
+            {
+                float effectiveAlpha = MathHelper.Clamp(textColor.A / 255f * alphaScale, 0f, 1f);
+                Color finalColor = MakePremultipliedColor(
+                    textColor,
+                    MathHelper.Clamp(inheritedRed, 0f, 1f),
+                    MathHelper.Clamp(inheritedGreen, 0f, 1f),
+                    MathHelper.Clamp(inheritedBlue, 0f, 1f),
+                    effectiveAlpha
+                );
+
+                float yPos = yStart;
+
+                // Render each formatted line
+                foreach (FormattedString formattedString in formattedStrings)
+                {
+                    if (maxHeight != -1f && yPos >= drawY + maxHeight)
+                    {
+                        break;
+                    }
+
+                    float xPos = drawX;
+
+                    // Calculate alignment offset
+                    if (align == 2) // Center
+                    {
+                        xPos += (wrapWidth - formattedString.width) / 2f;
+                    }
+                    else if (align == 3) // Right
+                    {
+                        xPos += wrapWidth - formattedString.width;
+                    }
+
+                    Vector2 position = new(xPos, yPos);
+
+                    // Draw shadow if enabled (with stroke for better backdrop effect)
+                    if (effects?.HasShadow == true)
+                    {
+                        Vector2 shadowBasePos = position + new Vector2(effects.ShadowOffsetX, effects.ShadowOffsetY);
+                        int shadowStrokeAmount = effects.HasStroke ? effects.StrokeAmount : 1;
+                        int shadowSamples = ((shadowStrokeAmount * 2) + 1) * ((shadowStrokeAmount * 2) + 1);
+                        float shadowTargetAlpha = effects.ShadowColor.A / 255f * alphaScale;
+                        float shadowAlpha = CalculatePerPassAlpha(shadowTargetAlpha, shadowSamples);
+                        Color shadowColor = MakePremultipliedColor(
+                            effects.ShadowColor,
+                            MathHelper.Clamp(inheritedRed, 0f, 1f),
+                            MathHelper.Clamp(inheritedGreen, 0f, 1f),
+                            MathHelper.Clamp(inheritedBlue, 0f, 1f),
+                            shadowAlpha
+                        );
+
+                        // Render shadow with stroke outline for better backdrop effect
+                        for (int x = -shadowStrokeAmount; x <= shadowStrokeAmount; x++)
+                        {
+                            for (int y = -shadowStrokeAmount; y <= shadowStrokeAmount; y++)
+                            {
+                                Vector2 shadowPos = shadowBasePos + new Vector2(x, y);
+                                _ = internalFont.DrawText(spriteBatch, formattedString.string_, shadowPos, shadowColor);
+                            }
+                        }
+                    }
+
+                    // Draw stroke if enabled
+                    if (effects?.HasStroke == true)
+                    {
+                        int strokeSamples = (((effects.StrokeAmount * 2) + 1) * ((effects.StrokeAmount * 2) + 1)) - 1;
+                        strokeSamples = Math.Max(strokeSamples, 1);
+                        float strokeTargetAlpha = effects.StrokeColor.A / 255f * alphaScale;
+                        float strokeAlpha = CalculatePerPassAlpha(strokeTargetAlpha, strokeSamples);
+                        Color strokeColor = MakePremultipliedColor(
+                            effects.StrokeColor,
+                            MathHelper.Clamp(inheritedRed, 0f, 1f),
+                            MathHelper.Clamp(inheritedGreen, 0f, 1f),
+                            MathHelper.Clamp(inheritedBlue, 0f, 1f),
+                            strokeAlpha
+                        );
+                        int strokeAmount = effects.StrokeAmount;
+
+                        for (int x = -strokeAmount; x <= strokeAmount; x++)
+                        {
+                            for (int y = -strokeAmount; y <= strokeAmount; y++)
+                            {
+                                if (x != 0 || y != 0)
+                                {
+                                    Vector2 strokePos = position + new Vector2(x, y);
+                                    _ = internalFont.DrawText(spriteBatch, formattedString.string_, strokePos, strokeColor);
+                                }
+                            }
+                        }
+                    }
+
+                    // Draw main text using FontStashSharp's DrawText extension method
+                    _ = internalFont.DrawText(spriteBatch, formattedString.string_, position, finalColor);
+
+                    yPos += lineHeight;
+                }
+            }
+
+            bool fadeAsOneObject = effects?.HasStroke == true && inheritedAlpha > 0f && inheritedAlpha < 0.996f;
+            if (!fadeAsOneObject)
+            {
+                spriteBatch.Begin(
+                    SpriteSortMode.Immediate,
+                    BlendState.AlphaBlend,
+                    SamplerState.LinearClamp, null,
+                    ScissorRasterizerState, null,
+                    transformMatrix
+                );
+                DrawAllText(inheritedAlpha);
+                spriteBatch.End();
+                return;
+            }
+
+            RenderTargetBinding[] previousTargets = graphicsDevice.GetRenderTargets();
+            Rectangle previousScissor = graphicsDevice.ScissorRectangle;
+            RenderTarget2D compositeTarget = EnsureCompositeTarget(graphicsDevice);
+            graphicsDevice.SetRenderTarget(compositeTarget);
+            graphicsDevice.ScissorRectangle = previousScissor;
+            graphicsDevice.Clear(Color.Transparent);
+
             spriteBatch.Begin(
                 SpriteSortMode.Immediate,
                 BlendState.AlphaBlend,
@@ -407,108 +532,26 @@ namespace CutTheRopeDX.Framework.Visual
                 null,
                 transformMatrix
             );
+            DrawAllText(1f);
+            spriteBatch.End();
 
-            // Render each formatted line
-            foreach (FormattedString formattedString in formattedStrings)
+            if (previousTargets == null || previousTargets.Length == 0)
             {
-                if (maxHeight != -1f && yPos >= drawY + maxHeight)
-                {
-                    break;
-                }
-
-                float xPos = drawX;
-
-                // Calculate alignment offset
-                if (align == 2) // Center
-                {
-                    xPos += (wrapWidth - formattedString.width) / 2f;
-                }
-                else if (align == 3) // Right
-                {
-                    xPos += wrapWidth - formattedString.width;
-                }
-
-                Vector2 position = new(xPos, yPos);
-
-                // Draw shadow if enabled (with stroke for better backdrop effect)
-                if (effects?.HasShadow == true)
-                {
-                    Vector2 shadowBasePos = position + new Vector2(effects.ShadowOffsetX, effects.ShadowOffsetY);
-                    int shadowStrokeAmount = effects.HasStroke ? effects.StrokeAmount : 1;
-                    int shadowSamples = ((shadowStrokeAmount * 2) + 1) * ((shadowStrokeAmount * 2) + 1);
-                    float shadowTargetAlpha = effects.ShadowColor.A / 255f * inheritedAlpha;
-                    float shadowAlpha = CalculatePerPassAlpha(shadowTargetAlpha, shadowSamples);
-                    Color shadowColor = MakePremultipliedColor(
-                        effects.ShadowColor,
-                        MathHelper.Clamp(inheritedRed, 0f, 1f),
-                        MathHelper.Clamp(inheritedGreen, 0f, 1f),
-                        MathHelper.Clamp(inheritedBlue, 0f, 1f),
-                        shadowAlpha
-                    );
-
-                    // Render shadow with stroke outline for better backdrop effect
-                    for (int x = -shadowStrokeAmount; x <= shadowStrokeAmount; x++)
-                    {
-                        for (int y = -shadowStrokeAmount; y <= shadowStrokeAmount; y++)
-                        {
-                            Vector2 shadowPos = shadowBasePos + new Vector2(x, y);
-                            _ = internalFont.DrawText(
-                                spriteBatch,
-                                formattedString.string_,
-                                shadowPos,
-                                shadowColor
-                            );
-                        }
-                    }
-                }
-
-                // Draw stroke if enabled
-                if (effects?.HasStroke == true)
-                {
-                    int strokeSamples = (((effects.StrokeAmount * 2) + 1) * ((effects.StrokeAmount * 2) + 1)) - 1;
-                    strokeSamples = Math.Max(strokeSamples, 1);
-                    float strokeTargetAlpha = effects.StrokeColor.A / 255f * inheritedAlpha;
-                    float strokeAlpha = CalculatePerPassAlpha(strokeTargetAlpha, strokeSamples);
-                    Color strokeColor = MakePremultipliedColor(
-                        effects.StrokeColor,
-                        MathHelper.Clamp(inheritedRed, 0f, 1f),
-                        MathHelper.Clamp(inheritedGreen, 0f, 1f),
-                        MathHelper.Clamp(inheritedBlue, 0f, 1f),
-                        strokeAlpha
-                    );
-                    int strokeAmount = effects.StrokeAmount;
-
-                    for (int x = -strokeAmount; x <= strokeAmount; x++)
-                    {
-                        for (int y = -strokeAmount; y <= strokeAmount; y++)
-                        {
-                            if (x != 0 || y != 0)
-                            {
-                                Vector2 strokePos = position + new Vector2(x, y);
-                                // Use FontStashSharp's DrawText extension method
-                                _ = internalFont.DrawText(
-                                    spriteBatch,
-                                    formattedString.string_,
-                                    strokePos,
-                                    strokeColor
-                                );
-                            }
-                        }
-                    }
-                }
-
-                // Draw main text using FontStashSharp's DrawText extension method
-                _ = internalFont.DrawText(
-                    spriteBatch,
-                    formattedString.string_,
-                    position,
-                    finalColor
-                );
-
-                yPos += lineHeight;
+                graphicsDevice.SetRenderTarget(null);
             }
+            else
+            {
+                graphicsDevice.SetRenderTargets(previousTargets);
+            }
+            graphicsDevice.ScissorRectangle = previousScissor;
 
-            // End SpriteBatch
+            spriteBatch.Begin(
+                SpriteSortMode.Deferred,
+                BlendState.AlphaBlend,
+                SamplerState.PointClamp,
+                null, null, null, null
+            );
+            spriteBatch.Draw(compositeTarget, Vector2.Zero, null, Color.White * inheritedAlpha);
             spriteBatch.End();
         }
 
