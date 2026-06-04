@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJ="$DIR/../src/CutTheRopeDX.csproj"
@@ -7,9 +8,18 @@ echo "building desktop $CONFIG.."
 if [ "$CONFIG" = "Release" ]; then
   RID="${2:-linux-x64}"
   dotnet publish "$PROJ" -c Release -f net9.0 -r "$RID" -nodeReuse:false
-  echo "done! at: $DIR/../bin/Release/net9.0/$RID/publish/"
+  OUT="$DIR/bin/Release/net9.0/$RID/publish/CutTheRope-DX"
 else
   dotnet build "$PROJ" -c Debug -f net9.0 -nodeReuse:false
-  echo "done! at: $DIR/../bin/Debug/net9.0/CutTheRope-DX (.exe on windows)"
+  OUT="$DIR/bin/Debug/net9.0/CutTheRope-DX"
 fi
+[ -f "$OUT.exe" ] && OUT="$OUT.exe"
+echo "done! at: $OUT"
 printf '\a'
+
+if [ -f "$OUT" ]; then
+  read -r -p "open the build now? (y/n): " ans || ans=""
+  if [ "$ans" = "y" ] || [ "$ans" = "Y" ]; then
+    "$OUT" &
+  fi
+fi

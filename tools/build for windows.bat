@@ -4,6 +4,12 @@ set "PROJ=%~dp0..\src\CutTheRopeDX.csproj"
 set "CONFIG=Debug"
 if /I "%~1"=="release" set "CONFIG=Release"
 
+if /I "%CONFIG%"=="Release" (
+  set "OUT=%~dp0bin\Release\net9.0\win-x64\publish\CutTheRope-DX.exe"
+) else (
+  set "OUT=%~dp0bin\Debug\net9.0\CutTheRope-DX.exe"
+)
+
 echo.
 echo building windows %CONFIG%..
 echo log: %~dp0build-windows.log
@@ -23,13 +29,14 @@ set "RESULT=%ERRORLEVEL%"
 echo.
 if "%RESULT%"=="0" (
   echo done!
-  if /I "%CONFIG%"=="Release" (
-    echo at: %~dp0..\bin\Release\net9.0\win-x64\publish\CutTheRope-DX.exe
-  ) else (
-    echo at: %~dp0..\bin\Debug\net9.0\CutTheRope-DX.exe
-  )
+  echo at: %OUT%
 ) else (
   echo build failed.. ^(exit %RESULT%^) - see build-windows.log
 )
 powershell -NoProfile -Command "[console]::beep(1046,180); [console]::beep(1568,320)"
+
+if not "%RESULT%"=="0" goto :end
+set /p "OPENIT=open the build now? (y/n): "
+if /I "%OPENIT%"=="y" start "" "%OUT%"
+:end
 endlocal

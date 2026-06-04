@@ -4,7 +4,7 @@
     <ProjectGuid>{9A732C70-39B7-456E-8029-91F641C29567}</ProjectGuid>
     <RootNamespace>CutTheRopeDX</RootNamespace>
     <AssemblyName>CutTheRope-DX</AssemblyName>
-    <BaseOutputPath>$(MSBuildProjectDirectory)\..\bin\</BaseOutputPath>
+    <BaseOutputPath>$(MSBuildProjectDirectory)\..\tools\bin\</BaseOutputPath>
     <TargetFrameworks>net9.0;net9.0-android</TargetFrameworks>
     <TargetFrameworks Condition="'$(CtrAndroidOnly)' == 'true'"></TargetFrameworks>
     <TargetFramework Condition="'$(CtrAndroidOnly)' == 'true'">net9.0-android</TargetFramework>

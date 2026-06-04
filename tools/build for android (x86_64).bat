@@ -3,6 +3,7 @@ setlocal
 set "ANDROID_HOME=C:\Users\Admin\AppData\Local\Android\Sdk"
 set "SDK=%ANDROID_HOME%"
 set "PROJ=%~dp0..\src\CutTheRopeDX.csproj"
+set "OUT=%~dp0bin\CutTheRope-DX-x86_64.apk"
 set "CONFIG=Debug"
 if /I "%~1"=="release" set "CONFIG=Release"
 
@@ -27,12 +28,18 @@ set "RESULT=%ERRORLEVEL%"
 echo.
 if "%RESULT%"=="0" (
   echo done!
-  for /f "delims=" %%F in ('dir /b /s /a-d "%~dp0..\bin\%CONFIG%\net9.0-android\android-x64\*-Signed.apk" 2^>nul') do (
-    copy /y "%%F" "%~dp0..\bin\CutTheRope-DX-x86_64.apk" >nul
-    echo at: %~dp0..\bin\CutTheRope-DX-x86_64.apk  ^(%%~zF bytes^)
+  for /f "delims=" %%F in ('dir /b /s /a-d "%~dp0bin\%CONFIG%\net9.0-android\android-x64\*-Signed.apk" 2^>nul') do (
+    copy /y "%%F" "%OUT%" >nul
+    echo at: %OUT%  ^(%%~zF bytes^)
   )
 ) else (
   echo build failed.. ^(exit %RESULT%^) - see build-android-x86_64.log
 )
 powershell -NoProfile -Command "[console]::beep(1046,180); [console]::beep(1568,320)"
+
+if not "%RESULT%"=="0" goto :end
+if not exist "%OUT%" goto :end
+set /p "OPENIT=open the apk now? (y/n): "
+if /I "%OPENIT%"=="y" start "" "%OUT%"
+:end
 endlocal

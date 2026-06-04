@@ -15,15 +15,6 @@ bld/
 [Ll]ogs/
 *.log
 
-project.lock.json
-project.fragment.lock.json
-artifacts/
-
-ScaffoldingReadMe.txt
-
-*.nupkg
-*.snupkg
-
 ~$*
 *~
 CodeCoverage/

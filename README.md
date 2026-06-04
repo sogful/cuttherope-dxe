@@ -69,5 +69,5 @@ download the latest release from the [releases page](https://github.com/sogful/c
     - on **macos / linux**: the `.sh` files<br>
       <sup>(make them runnable first with `chmod +x tools/*.sh`)</sup>
 
-    all build outputs will go to `/bin/`. you'll also hear a beep when building is finished. <br>
-    do note that compiling for android is *VERY* slow, so to quickly test features you should try building the uncompressed version for windows.
+    all build outputs will go to `/tools/bin/`. you'll also hear a beep when building is finished. <br>
+    do note that building for android is *VERY* slow, so to quickly test features you should try building for windows as it skips compression.
