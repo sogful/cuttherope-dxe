@@ -51,6 +51,7 @@ namespace CutTheRopeDX.GameMain
         ShowCheats,
         CheatUnlockAll,
         CheatNoclip,
+        CheatShowFps,
         BackFromCheats,
     }
 
@@ -267,16 +268,29 @@ namespace CutTheRopeDX.GameMain
         /// </summary>
         public static readonly MenuButtonId BackFromCustom = MenuButton.BackFromCustom;
 
-        /// <summary>Opens the Cheats screen.</summary>
+        /// <summary>
+        /// Opens the Cheats screen.
+        /// </summary>
         public static readonly MenuButtonId ShowCheats = MenuButton.ShowCheats;
 
-        /// <summary>Toggles the "unlock all boxes" cheat.</summary>
+        /// <summary>
+        /// Toggles "Unlock All Boxes"
+        /// </summary>
         public static readonly MenuButtonId CheatUnlockAll = MenuButton.CheatUnlockAll;
 
-        /// <summary>Toggles the noclip cheat.</summary>
+        /// <summary>
+        /// Toggles Noclip.
+        /// </summary>
         public static readonly MenuButtonId CheatNoclip = MenuButton.CheatNoclip;
 
-        /// <summary>Navigates back from the Cheats screen to Options.</summary>
+        /// <summary>
+        /// Toggles the FPS overlay.
+        /// </summary>
+        public static readonly MenuButtonId CheatShowFps = MenuButton.CheatShowFps;
+
+        /// <summary>
+        /// Navigates back from the Extras screen to Options.
+        /// </summary>
         public static readonly MenuButtonId BackFromCheats = MenuButton.BackFromCheats;
 
         /// <summary>

@@ -57,7 +57,7 @@ namespace CutTheRopeDX.Framework.Core
         /// <summary>
         /// Directory name used for Cut the Rope DX save data.
         /// </summary>
-        private const string SaveFolderName = "CutTheRopeDX_SaveData";
+        private const string SaveFolderName = "savedata";
 
         /// <summary>
         /// Gets the full path to the global preferences JSON file.

@@ -1270,10 +1270,6 @@ namespace CutTheRopeDX.GameMain
             ShowView(VIEW_CUSTOM);
         }
 
-        /// <summary>
-        /// Builds the Cheats screen: three on/off toggles (unlock all boxes / noclip / speedhack)
-        /// and a back button. Selected state reflects the current cheat flags.
-        /// </summary>
         public void CreateCheats()
         {
             MenuView menuView = new();
@@ -1281,9 +1277,9 @@ namespace CutTheRopeDX.GameMain
 
             VBox vBox = new VBox().InitWithOffsetAlignWidth(10f, 2, SCREEN_WIDTH);
             vBox.anchor = vBox.parentAnchor = 18;
-            // full-width buttons so the labels fit; on/off shown in the text
             _ = vBox.AddChild(CreateButtonWithTextIDDelegate(CheatLabel("CHEAT_UNLOCK_ALL", Cheats.UnlockAllBoxes), MenuButtonId.CheatUnlockAll, this));
             _ = vBox.AddChild(CreateButtonWithTextIDDelegate(CheatLabel("CHEAT_NOCLIP", Cheats.Noclip), MenuButtonId.CheatNoclip, this));
+            _ = vBox.AddChild(CreateButtonWithTextIDDelegate(CheatLabel("SHOW_FPS", Cheats.ShowFps), MenuButtonId.CheatShowFps, this));
             _ = baseElement.AddChild(vBox);
 
             _ = menuView.AddChild(baseElement);
@@ -1293,7 +1289,6 @@ namespace CutTheRopeDX.GameMain
             AddViewwithID(menuView, VIEW_CHEATS);
         }
 
-        /// <summary>Rebuilds and shows the Cheats screen so toggled states are reflected.</summary>
         public void RefreshCheatsView()
         {
             if (GetView(VIEW_CHEATS) != null)
@@ -1304,17 +1299,9 @@ namespace CutTheRopeDX.GameMain
             ShowView(VIEW_CHEATS);
         }
 
-        /// <summary>
-        /// Applies a cheat toggle: routes saves to the separate cheat profile while any cheat is on
-        /// (so real progress is never touched), and unlocks every box when that cheat is enabled.
-        /// </summary>
         private void ApplyCheatChange()
         {
-            // route saves to a separate profile while any cheat is on (real progress untouched).
-            // unlock-all is a pure runtime override (see CTRPreferences.GetUnlockedForPackLevel),
-            // so nothing is ever written for it.
             Preferences.SetCheatProfile(Cheats.AnyOn);
-            // rebuild pack selection so lock visuals reflect the unlock-all override / profile switch
             if (GetView(VIEW_PACK_SELECT) != null)
             {
                 DeleteView(VIEW_PACK_SELECT);
@@ -1322,7 +1309,6 @@ namespace CutTheRopeDX.GameMain
             CreatePackSelect();
         }
 
-        /// <summary>Builds a cheat toggle label like "Noclip - ON" / "Noclip - OFF".</summary>
         private static string CheatLabel(string key, bool on)
         {
             return Application.GetString(key) + (on ? " (ON)" : " (OFF)");
@@ -1333,8 +1319,6 @@ namespace CutTheRopeDX.GameMain
         /// </summary>
         private void LaunchCustomLevelPicker()
         {
-            // android wires this to the system file picker; after files import, CustomLevelImport
-            // .NeedsRefresh is set and Update() rebuilds the list on the game thread.
             CustomLevelImport.RequestImport?.Invoke();
         }
 
@@ -1362,8 +1346,6 @@ namespace CutTheRopeDX.GameMain
                 CustomLevelImport.ShowToast?.Invoke("Couldn't load that level file.");
                 return;
             }
-            // play through the normal game scene, but served from the imported XML (see MapPickerController
-            // / GameScene reload). pack/level set to 0 so any LevelsList access stays in range.
             CustomLevels.PendingCustomMap = map;
             CTRSoundMgr.StopMusic();
             CTRRootController ctrroot = (CTRRootController)Application.SharedRootController();
@@ -2184,6 +2166,11 @@ namespace CutTheRopeDX.GameMain
                 case var id when id == MenuButtonId.CheatNoclip:
                     Cheats.Noclip = !Cheats.Noclip;
                     ApplyCheatChange();
+                    RefreshCheatsView();
+                    return;
+                case var id when id == MenuButtonId.CheatShowFps:
+                    // debug overlay, not a cheat: no ApplyCheatChange (don't touch the save profile)
+                    Cheats.ShowFps = !Cheats.ShowFps;
                     RefreshCheatsView();
                     return;
                 case var id when id == MenuButtonId.BackFromCheats:

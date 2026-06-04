@@ -7,7 +7,10 @@ using CutTheRopeDX.Desktop;
 using CutTheRopeDX.Framework;
 using CutTheRopeDX.Framework.Core;
 using CutTheRopeDX.Framework.Media;
+using CutTheRopeDX.Framework.Visual;
 using CutTheRopeDX.Helpers;
+
+using FontStashSharp;
 
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -392,8 +395,46 @@ namespace CutTheRopeDX
             {
                 Renderer.CopyFromRenderTargetToScreen();
             }
+            DrawFpsOverlay();
             base.Draw(gameTime);
             bFirstFrame = false;
+        }
+
+        private void DrawFpsOverlay()
+        {
+            if (!GameMain.Cheats.ShowFps)
+            {
+                return;
+            }
+            try
+            {
+                _overlayBatch ??= new SpriteBatch(GraphicsDevice);
+                float size = MathHelper.Clamp(GraphicsDevice.Viewport.Height / 26f, 22f, 52f);
+                if (_fpsFont == null || Math.Abs(_fpsFontSize - size) > 0.5f)
+                {
+                    _fpsFont = FontManager.LoadFont("gooddog_new-webfont.ttf", size, Color.White, FontEffectSettings.None);
+                    _fpsFontSize = size;
+                }
+                DynamicSpriteFont glyphs = _fpsFont?.GetInternalFont();
+                if (glyphs == null)
+                {
+                    return;
+                }
+                string text = frameRate + " FPS";
+                Vector2 pos = new(size * 0.5f, size * 0.3f);
+                float o = MathF.Max(1f, size / 20f);
+                _overlayBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, null);
+                // lightweight but kind of ugly outline
+                _ = glyphs.DrawText(_overlayBatch, text, pos + new Vector2(-o, 0f), Color.Black);
+                _ = glyphs.DrawText(_overlayBatch, text, pos + new Vector2(o, 0f), Color.Black);
+                _ = glyphs.DrawText(_overlayBatch, text, pos + new Vector2(0f, -o), Color.Black);
+                _ = glyphs.DrawText(_overlayBatch, text, pos + new Vector2(0f, o), Color.Black);
+                _ = glyphs.DrawText(_overlayBatch, text, pos, Color.White);
+                _overlayBatch.End();
+            }
+            catch (Exception)
+            {
+            }
         }
 
         /// <summary>
@@ -450,5 +491,20 @@ namespace CutTheRopeDX
         /// Whether the first frame has not yet been rendered.
         /// </summary>
         private bool bFirstFrame = true;
+
+        /// <summary>
+        /// Dedicated sprite batch for the fps overlay, drawn in backbuffer space.
+        /// </summary>
+        private SpriteBatch _overlayBatch;
+
+        /// <summary>
+        /// Cached small font used by the fps overlay.
+        /// </summary>
+        private FontStashFont _fpsFont;
+
+        /// <summary>
+        /// Pixel size the cached fps font was loaded at, to rebuild on viewport changes.
+        /// </summary>
+        private float _fpsFontSize;
     }
 }

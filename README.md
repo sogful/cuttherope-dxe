@@ -43,7 +43,7 @@ download the latest release from the [releases page](https://github.com/sogful/c
   - on android into `/storage/emulated/0/Android/media/page.yell0wsuit.cv.ctrdx/`, 
   - on windows into `/customlevels/`. <br>
 <sup>(`.xml` and somewhat `.json` supported)</sup>
-- cheats unlocking all boxes and noclipping in the settings. turning any cheat on switches the game to a separate save profile to not ruin your real progress for the main game.
+- extras unlocking all boxes and noclipping in the settings. turning any cheat on switches the game to a separate save profile to not ruin your real progress for the main game.
 - fullscreen + widescreen letterboxing, should hopefully work well on MIUI.
 
 ## building

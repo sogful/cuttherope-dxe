@@ -493,8 +493,6 @@ namespace CutTheRopeDX.Framework.Visual
                             }
                         }
                     }
-
-                    // Draw main text using FontStashSharp's DrawText extension method
                     _ = internalFont.DrawText(spriteBatch, formattedString.string_, position, finalColor);
 
                     yPos += lineHeight;
@@ -505,7 +503,7 @@ namespace CutTheRopeDX.Framework.Visual
             if (!fadeAsOneObject)
             {
                 spriteBatch.Begin(
-                    SpriteSortMode.Immediate,
+                    SpriteSortMode.Deferred,
                     BlendState.AlphaBlend,
                     SamplerState.LinearClamp, null,
                     ScissorRasterizerState, null,
@@ -524,7 +522,7 @@ namespace CutTheRopeDX.Framework.Visual
             graphicsDevice.Clear(Color.Transparent);
 
             spriteBatch.Begin(
-                SpriteSortMode.Immediate,
+                SpriteSortMode.Deferred,
                 BlendState.AlphaBlend,
                 SamplerState.LinearClamp,
                 null,
