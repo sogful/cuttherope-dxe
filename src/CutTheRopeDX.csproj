@@ -5,7 +5,7 @@
     <RootNamespace>CutTheRopeDX</RootNamespace>
     <AssemblyName>CutTheRope-DX</AssemblyName>
     <BaseOutputPath>$(MSBuildProjectDirectory)\..\bin\</BaseOutputPath>
-    <TargetFrameworks>net9.0-android</TargetFrameworks>
+    <TargetFrameworks>net9.0;net9.0-android</TargetFrameworks>
     <TargetFrameworks Condition="'$(CtrAndroidOnly)' == 'true'"></TargetFrameworks>
     <TargetFramework Condition="'$(CtrAndroidOnly)' == 'true'">net9.0-android</TargetFramework>
     <RuntimeIdentifiers Condition="'$(CtrAndroidOnly)' == 'true' AND '$(RuntimeIdentifier)' == ''">android-arm64;android-arm</RuntimeIdentifiers>
@@ -102,7 +102,7 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(RunMGCB)' == 'true'">
-    <MonoGameContentReference Include="..\assets\content.mgcb" />
+    <MonoGameContentReference Include="..\assets\content.mgcb" ContentFolder="content" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0-android'">

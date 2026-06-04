@@ -9,7 +9,7 @@
 
 *Cut the Rope: DXfA (Decompiled Extra for Android)* is a fork made to run the improved version of the game on mobile. <br>
 with compressed textures, this port should work even on **lowend devices**! the minimum to run this game is *~2gb of RAM* and *android 5.0*. <br>
-some screens might have buttons that are difficult to press, however in-game all actions should work instantaneously.
+this is still a heavy work in progress, some scenes might have buttons that are difficult to press, however all actions should work instantaneously inside a level.
 
 the original logo was designed by Bingies24 and darealmrcatz.
 
@@ -39,7 +39,9 @@ download the latest release from the [releases page](https://github.com/sogful/c
 
 ## features
 
-- a "custom box" for importing levels! use the "Add Level" button to pick files with your preferred file explorer, or copy them into `/storage/emulated/0/Android/media/page.yell0wsuit.cv.ctrdx/`. 
+- a "custom box" for importing levels! use the "Add Level" button to pick files with your preferred file explorer, or copy them in manually: 
+  - on android into `/storage/emulated/0/Android/media/page.yell0wsuit.cv.ctrdx/`, 
+  - on windows into `/customlevels/`. <br>
 <sup>(`.xml` and somewhat `.json` supported)</sup>
 - cheats unlocking all boxes and noclipping in the settings. turning any cheat on switches the game to a separate save profile to not ruin your real progress for the main game.
 - fullscreen + widescreen letterboxing, should hopefully work well on MIUI.
@@ -67,5 +69,5 @@ download the latest release from the [releases page](https://github.com/sogful/c
     - on **macos / linux**: the `.sh` files<br>
       <sup>(make them runnable first with `chmod +x tools/*.sh`)</sup>
 
-    all build outputs will go to `/bin/`. you'll also hear a beep when it's done. <br>
-    do note that compiling for android is *VERY* slow, so if you want to test features quickly you'll need to rewrite some logic like custom level reading for an executable version to open without crashes.
+    all build outputs will go to `/bin/`. you'll also hear a beep when building is finished. <br>
+    do note that compiling for android is *VERY* slow, so to quickly test features you should try building the uncompressed version for windows.
