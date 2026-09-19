@@ -1,13 +1,11 @@
 # Cut the Rope DX Extended
 
-## About
+a fork with additional export platforms! it isn't recommended for general use. it might also become outdated compared to the real DX.
 
-A fork with additional export platforms. It isn't recommended for general use. It might also become outdated compared to the real DX.
-
-The logo is designed by Bingies24 and darealmrcatz.
+the original logo is designed by Bingies24 and darealmrcatz.
 
 > [!NOTE]
-> These projects are not, and will never be affiliated with or endorsed by ZeptoLab. All rights to the original game and its assets belong to ZeptoLab.
+> these projects are not, and will never be affiliated with or endorsed by ZeptoLab. all rights to the original game and its assets belong to ZeptoLab.
 
 <br>
 
@@ -16,7 +14,8 @@ The logo is designed by Bingies24 and darealmrcatz.
 <br>
 
 ### Roblox
-a faithful luau port! it is not compiled from the C# projects.
+
+a faithful luau port! it is not compiled from the usual C# projects.
 
 - `ports/roblox/src` - runtime modules grouped by roblox service
 - `ports/roblox/tests` - roblox checks and generated golden data
