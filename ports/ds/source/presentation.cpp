@@ -10,6 +10,7 @@ namespace display {
 static glImage sprites[art::spritecount];
 static glImage background;
 static int polygon = 0;
+static bool gamecached = false;
 static constexpr float scale = 192.0f / 1440;
 
 static dx::point screen(dx::point position) { return {128 + (position.x - 1280) * scale, position.y * scale}; }
@@ -25,104 +26,6 @@ static void image(int id, dx::point point, bool absolute = false, int alpha = 31
              static_cast<int>(std::round(origin.y)) + definition.oy, GL_FLIP_NONE, &sprites[id]);
 }
 
-static void text(int x, int y, const char* value) {
-    for (; *value; ++value) {
-        if (*value < 32 || *value > 126) continue;
-        const int id = art::glyph32 + *value - 32;
-        image(id, {static_cast<float>(x), static_cast<float>(y)}, true);
-        x += art::sprites[id].advance;
-    }
-}
-
-static void centered(int x, int y, const char* value) {
-    int width = 0;
-    for (const char* p = value; *p; ++p) {
-        if (*p >= 32 && *p <= 126) width += art::sprites[art::glyph32 + *p - 32].advance;
-    }
-    text(x - width / 2, y, value);
-}
-
-static void number(int x, int y, const char* label, int value) {
-    char buffer[48];
-    std::snprintf(buffer, sizeof(buffer), "%s%d", label, value);
-    centered(x, y, buffer);
-}
-
-static void menus(const dx::simulation& game, const ui::controller& menu) {
-    if (menu.mode == ui::view::playing) {
-        for (int i = 0; i < 3; ++i) {
-            const int frame = menu.starage[i] < 0 ? 0 : std::min(10, 1 + menu.starage[i] / 3);
-            image(art::hudstar0 + frame, {12.0f + i * 20, 13}, true);
-        }
-        image(art::restart, {178, 14}, true);
-        image(art::pause, {227, 14}, true);
-        text(7, 177, "1-1");
-        if (game.state == dx::outcome::playing && !game.ropes[0].cut) text(156, 35, "Cut the rope!");
-        return;
-    }
-    glPolyFmt(POLY_ALPHA(24) | POLY_CULL_NONE | POLY_ID(60));
-    glBoxFilled(0, 0, 255, 191, RGB15(2, 1, 0));
-    image(art::menutitle, {128, 15}, true);
-    const char* title = "PAUSED";
-    switch (menu.mode) {
-    case ui::view::results: title = "WELL DONE!"; break;
-    case ui::view::failure: title = "TRY AGAIN!"; break;
-    case ui::view::levels: title = "CARDBOARD BOX"; break;
-    case ui::view::home: title = "CUT THE ROPE DX"; break;
-    default: break;
-    }
-    centered(128, 9, title);
-    if (menu.mode == ui::view::paused) {
-        centered(128, 29, "Cardboard Box 1-1");
-        centered(82, 171, menu.effects ? "Sound on" : "Sound off");
-        centered(174, 171, menu.music ? "Music on" : "Music off");
-    } else if (menu.mode == ui::view::results) {
-        for (int i = 0; i < 3; ++i) {
-            image(i < game.count && menu.age >= i * 12 ? art::resultstar : art::resultempty,
-                  {83.0f + 45 * i, 55}, true);
-        }
-        number(128, 79, "Star bonus: ", game.count * 1000);
-        number(128, 95, "Time bonus: ", menu.score - game.count * 1000);
-        image(art::separator, {128, 114}, true);
-        number(128, 122, "SCORE  ", menu.score * std::min(menu.age, 60) / 60);
-        centered(128, 177, "More levels coming soon");
-    } else if (menu.mode == ui::view::failure) {
-        centered(128, 53, "Om Nom is still hungry!");
-        centered(128, 75, "Cut the rope and feed him.");
-        for (int i = 0; i < 3; ++i) image(i < game.count ? art::resultstar : art::resultempty, {83.0f + 45 * i, 113}, true);
-        centered(128, 177, "B: level select");
-    } else if (menu.mode == ui::view::levels) {
-        centered(128, 30, "Choose a level");
-        for (int i = 0; i < 3; ++i) image(art::hudstar0 + (i < menu.beststars ? 10 : 0), {108.0f + i * 20, 126}, true);
-        number(128, 140, "Best: ", menu.bestscore);
-        centered(128, 181, "1 level available in this build");
-    } else if (menu.mode == ui::view::home) {
-        centered(128, 40, "Nintendo DS / DSi");
-        centered(82, 138, menu.effects ? "Sound on" : "Sound off");
-        centered(174, 138, menu.music ? "Music on" : "Music off");
-        centered(128, 160, "Swipe the rope. Feed Om Nom.");
-        centered(128, 178, "Progress lasts for this session");
-    }
-    ui::button buttons[8];
-    const int count = menu.buttons(buttons);
-    for (int i = 0; i < count; ++i) {
-        const ui::button& item = buttons[i];
-        const dx::point point{static_cast<float>(item.x), static_cast<float>(item.y)};
-        const bool selected = menu.pressed == i || menu.focus == i;
-        const int alpha = item.enabled ? 31 : 10;
-        int sprite = selected ? art::buttonpressed : art::button;
-        if (item.width == 70) sprite = selected ? art::shortpressed : art::shortbutton;
-        if (item.id == ui::action::play) sprite = art::levelcard;
-        if (item.id == ui::action::effects || item.id == ui::action::music) {
-            image(selected ? art::audiopressed : art::audiobutton, point, true);
-            image(item.id == ui::action::effects ? art::soundicon : art::musicicon, point, true);
-            if (!(item.id == ui::action::effects ? menu.effects : menu.music)) image(art::disabledicon, point, true);
-        } else {
-            image(sprite, point, true, alpha);
-            centered(item.x, item.y - 6, item.label);
-        }
-    }
-}
 
 static void line(dx::point a, dx::point b, u16 color) {
     a = screen(a);
@@ -179,7 +82,7 @@ static void loadgame(const ui::controller& menu) {
     glGenTextures(art::texturecount, textures);
     for (int index = 0; index < art::texturecount; ++index) {
         const art::texture& source = art::textures[index];
-        if ((source.kind == 1 && menu.skins[2] > 0) || (source.kind == 2 && menu.skins[0] > 0)) continue;
+        if (source.kind == 3 || (source.kind == 1 && menu.skins[2] > 0) || (source.kind == 2 && menu.skins[0] > 0)) continue;
         occupied += source.width * source.height;
         glBindTexture(0, textures[index]);
         int width = 0, height = 0;
@@ -204,11 +107,19 @@ static void loadgame(const ui::controller& menu) {
     }
     background = {256, 192, 0, 0, texture};
     frontend::reserve(occupied);
+    gamecached = true;
 }
 
 static void scene(const dx::simulation& game, int frame, const ui::controller& menu, bool, dx::point) {
     if (menu.frontend()) { frontend::draw(menu); return; }
+    if (menu.mode == ui::view::results && menu.age >= 32) {
+        if (gamecached) { frontend::reset(); gamecached = false; }
+        frontend::drawresult(menu, game);
+        return;
+    }
+    if (!gamecached) loadgame(menu);
     frontend::preparegame(menu, game, frame);
+    frontend::prepareoverlay(menu, game);
     glBegin2D();
     polygon = 0;
     glColor(RGB15(31, 31, 31));
@@ -244,7 +155,7 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
     }
     frontend::ribbon();
     frontend::render();
-    menus(game, menu);
+    frontend::render(true);
     glEnd2D();
     glFlush(GL_TRANS_MANUALSORT);
 }

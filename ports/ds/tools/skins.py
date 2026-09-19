@@ -89,7 +89,7 @@ def build(menu):
         references = {}
         for timeline in sorted(required):
             details = skin["timelines"][str(timeline)]
-            frames = []
+            frames, previewframes = [], []
             for frame in range(details["frames"]):
                 path = baked / str(slot) / str(timeline) / (str(frame) + ".png")
                 source = Image.open(path).convert("RGBA")
@@ -102,16 +102,22 @@ def build(menu):
                 add(name, image, "costume" + str(slot) + "x" + str(timeline) + "x" + str(frame // 12),
                     source={"baked": relative, "sha256": digest, "scale": scale})
                 frames.append(name)
+                previewname = "slot" + name
+                previewsize = tuple(round(value * scale * 1.25 / 1.73 * fit / 2) * 2 for value in source.size)
+                previewimage = source.resize(previewsize, Image.Resampling.LANCZOS)
+                add(previewname, previewimage, "slot" + str(slot) + "x" + str(timeline) + "x" + str(frame // 12),
+                    source={"baked": relative, "sha256": digest, "pixels": previewsize, "preview": True})
+                previewframes.append(previewname)
             references[timeline] = len(info["animations"])
             following = config.get("followups", {}).get(str(timeline), -1)
             if timeline == states["IdleLoop"]:
                 following = timeline
-            info["animations"].append(dict(frames=frames, fps=details["fps"], duration=details["duration"], followup=following))
+            info["animations"].append(dict(frames=frames, previewframes=previewframes, fps=details["fps"], duration=details["duration"], followup=following))
             if timeline == preview:
                 still = min(len(frames) - 1, int(14 / 30 * 20))
                 path = baked / str(slot) / str(timeline) / (str(still) + ".png")
                 source = Image.open(path).convert("RGBA")
-                image = source.resize(tuple(round(value * scale) for value in source.size), Image.Resampling.LANCZOS)
+                image = source.resize(previewsize, Image.Resampling.LANCZOS)
                 name = "costumepreview" + str(slot)
                 add(name, image, "costumepreviews" + str((slot - 1) // 4))
                 info["previews"][2].append(name)
@@ -146,9 +152,10 @@ def header(info, ids, fit, scale):
     lines += ["};", "inline constexpr int titlecandies[] = {" + ",".join(str(ids["titlecandy" + str(i)]) for i in range(52)) + "};"]
     for index, animation in enumerate(info["animations"]):
         lines.append(array("animation" + str(index), animation["frames"]))
-    lines += ["struct animation { const int* frames; int count; float fps, duration; int followup; };", "inline constexpr animation animations[] = {"]
+        lines.append(array("slotanimation" + str(index), animation["previewframes"]))
+    lines += ["struct animation { const int* frames; const int* previewframes; int count; float fps, duration; int followup; };", "inline constexpr animation animations[] = {"]
     for index, animation in enumerate(info["animations"]):
-        lines.append(f"{{animation{index},{len(animation['frames'])},{float(animation['fps'])}f,{animation['duration']}f,{animation['followup']}}},")
+        lines.append(f"{{animation{index},slotanimation{index},{len(animation['frames'])},{float(animation['fps'])}f,{animation['duration']}f,{animation['followup']}}},")
     lines += ["};", "inline constexpr int costumes[15][6] = {"]
     lines += ["{" + ",".join(map(str, values)) + "}," for values in info["costumes"]]
     lines += ["};"]

@@ -2,6 +2,7 @@
 #include "menuassets.hpp"
 #include "packed.hpp"
 #include "trace.hpp"
+#include "result.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -33,15 +34,16 @@ struct command {
     u16 color = RGB15(31, 31, 31);
     float vertical = 1;
 };
-static std::array<command, 256> commands;
+static std::array<command, 384> commands;
 static int count = 0;
+static int overlaystart = -1;
 static constexpr float pixels = 192.0f / 1440;
 
 static int x(float value, float fit = menuart::fit) { return std::lround(128 + (value - 1280) * pixels * fit); }
 static int y(float value, float fit = menuart::fit) { return std::lround(96 + (value - 720) * pixels * fit); }
 
 static void add(int id, int px, int py, clip bounds = {}, int flip = GL_FLIP_NONE, float scale = 1, int angle = 0, int alpha = 31, u16 color = RGB15(31, 31, 31)) {
-    if (id < 0 || count >= static_cast<int>(commands.size())) return;
+    if (id < 0 || count >= static_cast<int>(commands.size()) || scale <= .001f || alpha <= 0) return;
     commands[count++] = {id, px, py, alpha, flip, angle, scale, bounds, color, scale};
 }
 
@@ -194,14 +196,183 @@ static void options(const ui::controller& menu) {
     add(menu.unlockall() ? menuart::option8 : menuart::option9, 164, 185, {}, GL_FLIP_NONE, .65f);
 }
 
-static int animation(int index, float seconds) {
+static int animation(int index, float seconds, bool preview = false) {
     for (int limit = 0; limit < 64; ++limit) {
         const auto& item = menuart::animations[index];
-        if (seconds < item.duration || item.followup < 0) return item.frames[std::min(item.count - 1, static_cast<int>(seconds * item.fps))];
+        if (seconds < item.duration || item.followup < 0) return (preview ? item.previewframes : item.frames)[std::min(item.count - 1, static_cast<int>(seconds * item.fps))];
         if (item.followup == index) seconds = std::fmod(seconds, item.duration);
         else { seconds -= item.duration; index = item.followup; }
     }
     return menuart::animations[index].frames[0];
+}
+
+static float unit(float value) { return std::clamp(value, 0.0f, 1.0f); }
+static void gamelabel(const ui::controller& menu, int key, int px, int py, float alpha = 1) {
+    add(menuart::gamelabels[menu.locale][key], px, py, {}, GL_FLIP_NONE, 1, 0, std::lround(unit(alpha) * 31));
+}
+static void digits(const ui::controller& menu, const char* value, int px, int py, bool score, float alpha = 1) {
+    const auto* font = score ? menuart::scoredigits : menuart::digits[menu.locale];
+    float width = 0;
+    for (const char* p = value; *p; ++p) width += font[*p == ':' ? 10 : *p - '0'].advance;
+    float left = px - width / 2;
+    for (; *value; ++value) {
+        const auto& glyph = font[*value == ':' ? 10 : *value - '0'];
+        add(glyph.sprite, std::lround(left + glyph.advance / 2), py, {}, GL_FLIP_NONE, 1, 0, std::lround(unit(alpha) * 31));
+        left += glyph.advance;
+    }
+}
+static void rect(clip bounds, u16 color, int alpha) {
+    if (count < static_cast<int>(commands.size()) && alpha > 0) commands[count++] = {-1, 0, 0, alpha, GL_FLIP_NONE, 0, 1, bounds, color};
+}
+static void piece(int id, float left, float top, float width, float height, int flip = GL_FLIP_NONE, float brightness = 1) {
+    if (width < .1f || height < .1f) return;
+    const auto& source = menuart::sprites[id];
+    const float sx = width / source.w, sy = height / source.h;
+    const int shade = std::lround(unit(brightness) * 31);
+    add(id, std::lround(left - source.ox * sx), std::lround(top - source.oy * sy), {}, flip, sx, 0, 31, RGB15(shade, shade, shade));
+    commands[count - 1].vertical = sy;
+}
+static void doors(float progress, bool opening, bool loading) {
+    const float t = unit(progress), closed = opening ? 1 - t : t;
+    const float base = -320 * pixels, width = 1293 * pixels, height = 192 * (1.1f - .1f * closed);
+    const float side = (1 - closed) * 72 * pixels;
+    piece(menuart::doorshade, (opening ? -t : t - 1) * 891 * 4 * pixels + base, 0, 891 * 4 * pixels, 400 * 4 * pixels);
+    const float leftside = opening ? (1280 - 12) * (1 - t) - 25 * t : -13 * (1 - t) + (1293 - 16) * t;
+    const float rightside = opening ? (1280 + 14) * (1 - t) + 2560 * t : (2560 - 40) * (1 - t) + (1280 + 20) * t;
+    piece(menuart::cover1, base + leftside * pixels, 0, side, 192 * (1 + .3f * closed));
+    piece(menuart::cover1, base + rightside * pixels, 0, side, 192 * (1 + .3f * closed));
+    piece(menuart::cover0, base - 13 * pixels, (192 - height) / 2, width * closed, height, GL_FLIP_NONE, 1 - .15f * closed);
+    piece(menuart::cover0, base + (1280 + 1293) * pixels - width * closed, (192 - height) / 2, width * closed, height,
+          GL_FLIP_H | GL_FLIP_V, .4f + .45f * closed);
+    if (loading) {
+        const float lx = (1293 - 50) * closed - 40 * (1 - closed), rx = (1280 + 10) * closed + (2560 + 25) * (1 - closed);
+        const auto& left = menuart::sprites[menuart::loading6];
+        const auto& right = menuart::sprites[menuart::loading7];
+        piece(menuart::loading6, base + lx * pixels, 80 * pixels, left.w * closed, left.h * (1.3f - .3f * closed));
+        piece(menuart::loading7, base + rx * pixels, 80 * pixels, right.w * closed, right.h * (1.3f - .3f * closed));
+    }
+}
+
+static void results(const ui::controller& menu, bool hiding = false) {
+    const float t = (hiding ? menu.resulttime + menu.doorframe : menu.age) * .016f;
+    const float opacity = hiding ? 1 - unit(menu.doorframe * .016f / .5f) : unit(t / .5f);
+    const auto& a = menuart::resultanchors;
+    for (int i = 0; i < 3; ++i) add(i < menu.resultstars ? menuart::result13 : menuart::result14, a[i][0], a[i][1], {}, GL_FLIP_NONE, 1, 0, std::lround(opacity * 31));
+    gamelabel(menu, menuart::gameLEVEL_CLEARED1 + menu.resultstars, a[3][0], a[3][1], opacity);
+    add(menuart::result15, a[4][0], a[4][1], {}, GL_FLIP_NONE, 1, 0, std::lround(opacity * 31));
+    const auto state = ui::resultat(t, menu.resultstars, menu.score, menu.elapsed);
+    const int title = menuart::gameSTAR_BONUS + state.row, total = state.score, value = state.value;
+    const float alpha = state.alpha, scorealpha = state.scorealpha;
+    const bool time = state.row == 1, final = state.row == 2;
+    gamelabel(menu, title, a[final ? 7 : 5][0], a[final ? 7 : 5][1], opacity * alpha);
+    char buffer[24];
+    if (time) std::snprintf(buffer, sizeof(buffer), "%d:%02d", value / 60, value % 60);
+    else std::snprintf(buffer, sizeof(buffer), "%d", value);
+    if (!final) digits(menu, buffer, a[6][0], a[6][1], false, opacity * alpha);
+    std::snprintf(buffer, sizeof(buffer), "%d", total);
+    digits(menu, buffer, a[8][0], a[8][1], true, opacity * scorealpha);
+    if (menu.improved && t > 3.8f) {
+        const float f = unit((t - 3.8f) / .5f), eased = f * f;
+        add(menuart::stamp17 + menuart::stamps[menu.locale] - 17, a[12][0], a[12][1], {}, GL_FLIP_NONE, 3 - 2 * eased, 0, std::lround(31 * eased * opacity));
+    }
+    for (int i = 0; i < 3; ++i) {
+        const int slot = i == 0 ? 11 : i == 1 ? 10 : 9;
+        const float alpha = opacity * (i == 1 ? .35f : 1);
+        add(menu.pressed == i && !hiding ? menuart::shortdown : menuart::shortup, a[slot][0], a[slot][1], {}, GL_FLIP_NONE, 1, 0, std::lround(alpha * 31));
+        gamelabel(menu, menuart::gameREPLAY + i, a[slot][0], a[slot][1], alpha);
+    }
+    if (!hiding && menu.resultstars == 3 && t > .5f && t < 5.5f) {
+        unsigned seed = 0x43545244;
+        auto random = [&seed](float low, float high) { seed = seed * 1664525 + 1013904223; return low + (high - low) * ((seed >> 8) / 16777215.0f); };
+        const float age = t - .5f;
+        for (int i = 0; i < 70; ++i) {
+            const int variant = random(0, 2.999f), offset = random(0, 7.999f);
+            const float px = random(-200, 2560), py = random(-80, 200), life = random(2, 5), fall = random(300, 800), first = random(-360, 360), last = random(-360, 360);
+            const float ratio = age / life;
+            if (ratio >= 1) continue;
+            add(menuart::confetti0 + variant * 9 + (static_cast<int>(age / .05f) + offset) % 9,
+                x(px + 7.5f), y(py - 61 + fall * ratio), {}, GL_FLIP_NONE, unit(age / .3f),
+                static_cast<int>((first + (last - first) * ratio) * 32768 / 360), std::max(1, static_cast<int>(std::lround((1 - ratio) * 31))));
+        }
+    }
+}
+
+void prepareoverlay(const ui::controller& menu, const dx::simulation& game) {
+    overlaystart = count;
+    if ((menu.mode == ui::view::playing || menu.mode == ui::view::paused) && menu.door != 2 && !(menu.door == 1 && menu.replaypanel)) {
+        for (int i = 0; i < 3; ++i) {
+            const int frame = menu.starage[i] < 0 ? 0 : std::min(10, 1 + menu.starage[i] / 3);
+            add(menuart::hud1 + frame, std::lround((86 * i + 43) * menuart::fit * pixels), std::lround(43.5f * menuart::fit * pixels));
+        }
+        const auto& p = menuart::hudpositions[menu.locale];
+        add(menuart::hud0, p[2], p[3], {}, GL_FLIP_NONE, 1, 0, menu.pressed == 0 ? 31 : 19);
+        add(menuart::hud0 + menuart::hudquads[menu.locale], p[0], p[1], {}, GL_FLIP_NONE, 1, 0, menu.pressed == 1 ? 31 : 19);
+        const auto& name = menuart::sprites[menuart::levelnames[menu.locale]];
+        const float time = game.ticks * .016f;
+        const float alpha = time < 1 ? unit((time - .5f) / .5f) : time > 2 ? 1 - unit((time - 2) / .5f) : 1;
+        const int inset = std::lround(40 * menuart::fit * pixels), bottom = menu.locale >= 10 ? 180 : 183;
+        add(menuart::levelnames[menu.locale], inset + name.w / 2, bottom, {}, GL_FLIP_NONE, 1, 0, std::lround(alpha * 31));
+        add(menuart::levelwords[menu.locale], inset + menuart::sprites[menuart::levelwords[menu.locale]].w / 2, bottom - 9, {}, GL_FLIP_NONE, 1, 0, std::lround(alpha * 31));
+        if (game.state == dx::outcome::playing && time < 10.5f) {
+            const int opacity = std::lround(31 * (time < .5f ? unit(time / .5f) : time > 10 ? 1 - unit((time - 10) / .5f) : 1));
+            for (const auto& item : menuart::tutorials[menu.locale]) {
+                if (item.sprite < 0) break;
+                add(item.sprite, item.x, item.y, {}, GL_FLIP_NONE, 1, 0, opacity);
+            }
+        }
+    }
+    if (menu.mode == ui::view::paused && !menu.door) {
+        rect({}, RGB15(3, 3, 3), 16);
+        const auto& plate = menuart::sprites[menuart::pauseplate];
+        add(menuart::pauseplate, 128, plate.h / 2);
+        char score[24];
+        std::snprintf(score, sizeof(score), "%d", menu.bestscore);
+        float width = 0;
+        for (const char* p = score; *p; ++p) width += menuart::digits[menu.locale][*p - '0'].advance;
+        const float right = 256 - (menu.locale == 9 ? 76 : 20) * pixels;
+        digits(menu, score, std::lround(right - width / 2), 5, false);
+        const auto& best = menuart::bestlabels[menu.locale];
+        add(best.sprite, std::lround(right - width - best.advance / 2), 5);
+        ui::button buttons[8];
+        const int size = menu.buttons(buttons);
+        for (int i = 0; i < size; ++i) {
+            const auto& b = buttons[i];
+            if (i < 4) {
+                add(menu.pressed == i ? menuart::longdown : menuart::longup, b.x, b.y, {}, GL_FLIP_NONE, 1, 0, b.enabled ? 31 : 11);
+                gamelabel(menu, menuart::gameCONTINUE + i, b.x, b.y, b.enabled ? 1 : .35f);
+            } else {
+                add(menu.pressed == i ? menuart::option1 : menuart::option0, b.x, b.y);
+                add(i == 4 ? menuart::option2 : menuart::option3, b.x, b.y);
+                if (!(i == 4 ? menu.effects : menu.music)) add(menuart::option4, b.x, b.y);
+            }
+        }
+    }
+    if (menu.mode == ui::view::results) { doors(menu.age * .016f / .5f, false, false); results(menu); }
+    if (menu.mode == ui::view::failure) {
+        rect({}, RGB15(2, 1, 0), 24);
+        add(menuart::failuretitle, 128, 32);
+        add(menuart::failurehint, 128, 66);
+        ui::button buttons[8];
+        const int size = menu.buttons(buttons);
+        for (int i = 0; i < size; ++i) {
+            const auto& b = buttons[i];
+            add(menu.pressed == i ? menuart::shortdown : menuart::shortup, b.x, b.y, {}, GL_FLIP_NONE, 1, 0, b.enabled ? 31 : 11);
+            gamelabel(menu, menuart::gameREPLAY + i, b.x, b.y, b.enabled ? 1 : .35f);
+        }
+    }
+    if (menu.door) doors(menu.doorframe * .016f / .5f, menu.door == 1, menu.door == 1);
+    if (menu.door == 1 && menu.replaypanel) results(menu, true);
+    (void)game;
+    upload();
+}
+
+void drawresult(const ui::controller& menu, const dx::simulation& game) {
+    count = 0;
+    prepareoverlay(menu, game);
+    glBegin2D();
+    render(true);
+    glEnd2D();
+    glFlush(GL_TRANS_MANUALSORT);
 }
 
 static void skins(const ui::controller& menu) {
@@ -218,8 +389,7 @@ static void skins(const ui::controller& menu) {
         if (menu.skintab == 2) {
             if (i == 0) { if (selected) preview = menuart::classicpreviews[menu.skinage / 3 % 19]; }
             else {
-                factor = 1.25f / 1.73f * menuart::fit;
-                if (selected) preview = animation(menuart::costumes[i - 1][5], menu.skinage * .016f);
+                if (selected) preview = animation(menuart::costumes[i - 1][5], menu.skinage * .016f, true);
             }
         }
         add(preview, px, py - (menu.skintab == 2 ? 1 : 3), window, GL_FLIP_NONE, factor);
@@ -228,6 +398,7 @@ static void skins(const ui::controller& menu) {
 
 void preparegame(const ui::controller& menu, const dx::simulation& game, int elapsed) {
     count = 0;
+    overlaystart = -1;
     if (menu.skins[2] > 0) {
         int state = 0, since = elapsed;
         if (game.mouth) { state = 2; since = game.ticks - game.mouthtick; }
@@ -332,6 +503,7 @@ void ribbon() {
 
 void draw(const ui::controller& menu) {
     count = 0;
+    overlaystart = -1;
     add(menu.mode == ui::view::home ? menuart::titleback : menu.mode == ui::view::levels ? menuart::levelbacks[menu.pack] : menu.mode == ui::view::skins ? menuart::skinback : menuart::menuback, 128, 96);
     if (menu.mode != ui::view::skins) add(menuart::shadow, 128, 96, {}, GL_FLIP_NONE, (1781 * 2 * pixels) / 256, 4096 + (frame % 4500) * 32768 / 4500);
     switch (menu.mode) {
@@ -391,11 +563,12 @@ void draw(const ui::controller& menu) {
     glFlush(GL_TRANS_MANUALSORT);
 }
 
-void render() {
-    for (int i = 0; i < count; ++i) {
+void render(bool overlay) {
+    const int first = overlay ? overlaystart : 0, last = !overlay && overlaystart >= 0 ? overlaystart : count;
+    for (int i = first; i < last; ++i) {
         const command& item = commands[i];
         if (item.id < 0) {
-            glPolyFmt(POLY_ALPHA(31) | POLY_CULL_NONE | POLY_ID(49));
+            glPolyFmt(POLY_ALPHA(item.alpha) | POLY_CULL_NONE | POLY_ID(60));
             glBoxFilled(item.bounds.left, item.bounds.top, item.bounds.right - 1, item.bounds.bottom - 1, item.color);
             continue;
         }
@@ -404,7 +577,11 @@ void render() {
         glColor(item.color);
         glPolyFmt(POLY_ALPHA(item.alpha) | POLY_CULL_NONE | POLY_ID(i % 48 + 1));
         if (item.angle) {
-            glSpriteRotateScaleXY(item.x, item.y, item.angle, floattof32(item.scale), floattof32(item.vertical), item.flip, &image);
+            const float angle = item.angle * (6.2831853f / 32768);
+            const float dx = (source.ox + source.w / 2.0f) * item.scale, dy = (source.oy + source.h / 2.0f) * item.vertical;
+            glSpriteRotateScaleXY(item.x + std::lround(dx * std::cos(angle) - dy * std::sin(angle)),
+                item.y + std::lround(dx * std::sin(angle) + dy * std::cos(angle)), item.angle,
+                floattof32(item.scale), floattof32(item.vertical), item.flip, &image);
         } else {
             int px = item.x + std::lround(source.ox * item.scale), py = item.y + std::lround(source.oy * item.vertical);
             {
@@ -413,8 +590,8 @@ void render() {
                 image.width = std::min(source.w - left, static_cast<int>((item.bounds.right - px) / item.scale) - left);
                 image.height = std::min(source.h - top, static_cast<int>((item.bounds.bottom - py) / item.vertical) - top);
                 if (image.width <= 0 || image.height <= 0) continue;
-                image.u_off += left;
-                image.v_off += top;
+                image.u_off += item.flip & GL_FLIP_H ? source.w - left - image.width : left;
+                image.v_off += item.flip & GL_FLIP_V ? source.h - top - image.height : top;
                 if (item.scale == 1 && item.vertical == 1) glSprite(px + left, py + top, item.flip, &image);
                 else glSpriteScaleXY(px + std::lround(left * item.scale), py + std::lround(top * item.vertical), floattof32(item.scale), floattof32(item.vertical), item.flip, &image);
             }

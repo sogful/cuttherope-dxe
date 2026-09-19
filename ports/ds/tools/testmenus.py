@@ -75,14 +75,23 @@ for page, path, result in zip(manifest["pages"], files, native):
         bits = page["alphabits"]
         for pixel, packed in zip(atlas.getdata(), data):
             expected = pixel[3] * ((1 << bits) - 1) / 255
-            if page["dither"]:
+            if page["dither"] and page["dither"] != "low":
                 assert abs((packed >> (8 - bits)) - expected) <= 1
             else:
                 assert packed >> (8 - bits) == round(expected)
 
 checked = 0
+previews = 0
 for item in manifest["sprites"]:
     source = item.get("source") or {}
+    if source.get("preview"):
+        image = Image.open(repo / source["baked"]).convert("RGBA").resize(source["pixels"], Image.Resampling.LANCZOS)
+        assert all(v % 2 == 0 for v in image.size), "Preview canvas must keep an integer shared origin"
+        box = image.getbbox() or (0, 0, 1, 1)
+        assert item["trim"] == list(box) and item["ox"] == box[0] - image.width // 2 and item["oy"] == box[1] - image.height // 2
+        x, y, w, h = (item[key] for key in ("x", "y", "w", "h"))
+        assert atlases[item["page"]].crop((x, y, x + w, y + h)).tobytes() == image.crop(box).tobytes()
+        previews += 1
     if "resource" not in source:
         continue
     path = repo / "content/images" / source["resource"]
@@ -129,6 +138,23 @@ for scene, view, indent, actions, scale in cases:
         assert abs(item["x"] - expected[0]) <= 1 and abs(item["y"] - expected[1]) <= 1, (scene, item, expected)
         positions += 1
 header = (generated / "menuassets.hpp").read_text()
+def generatedpoints(name):
+    body = re.search(r"inline constexpr int " + name + r"\[[^;]+?= \{(.*?)\};", header, re.S).group(1)
+    return [tuple(map(int, pair.split(","))) for pair in re.findall(r"\{([\d, -]+)\}", body)]
+
+markers = json.loads((repo / "content/images/menu_results.json").read_text())["frames"]
+markers = [(f["spriteSourceSize"]["x"], f["spriteSourceSize"]["y"]) for f in markers[:13]]
+center = [(min(p[i] for p in markers[:12]) + max(p[i] for p in markers[:12])) / 2 for i in (0, 1)]
+for actual, marker in zip(generatedpoints("resultanchors"), markers):
+    expected = [128 + (marker[0] - center[0]) * manifest["fit"] * 192 / 1440, 96 + (marker[1] - center[1]) * manifest["fit"] * 192 / 1440]
+    assert all(abs(a - b) <= .5 for a, b in zip(actual, expected))
+for actual, quad in zip(generatedpoints("hudpositions"), (12,14,13,12,18,12,12,12,16,15,17,17)):
+    frames = json.loads((repo / "content/images/hud_ui.json").read_text())["frames"]
+    pause, restart = frames[quad]["spriteSourceSize"], frames[0]["spriteSourceSize"]
+    scale = manifest["fit"] * 192 / 1440
+    expected = [256 - (8 + pause["w"] / 2) * scale, (8 + pause["h"] / 2) * scale,
+                256 - (pause["w"] + 16 + restart["w"] / 2) * scale, (8 + restart["h"] / 2) * scale]
+    assert all(abs(a - b) <= .5 for a, b in zip(actual, expected))
 metrics = {name: float(value) for name, value in re.findall(r"inline constexpr float (skin\w+) = ([\d.]+)f;", header)}
 grid = (baselines / "Menu.CandySelect.FourThree.txt").read_text()
 boxes = re.findall(r"^            Button ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)", grid, re.MULTILINE)
@@ -141,6 +167,7 @@ for index, rect in enumerate(boxes):
     assert all(abs(a - b) < 1 for a, b in zip(actual, expected)), (index, actual, expected)
     positions += 1
 report = dict(passed=True, sourceSprites=checked, sourceLayoutPositions=positions, packedPages=len(files),
-              compressedBytes=sum(page["compressed"] for page in manifest["pages"]), locales=manifest["locales"])
+              compressedBytes=sum(page["compressed"] for page in manifest["pages"]), locales=manifest["locales"], registeredPreviewFrames=previews,
+              resultAnchors=13, localizedHudLayouts=12)
 (root / "build/menutest.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
 print(f"PASS: {positions} C# 4:3 golden positions, {checked} source sprite registrations, {len(files)} ROM decoder round trips, 12 locale/font source sets")

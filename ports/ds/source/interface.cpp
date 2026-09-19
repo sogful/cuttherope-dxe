@@ -67,23 +67,20 @@ int controller::buttons(button* out) const {
     };
     switch (mode) {
     case view::playing:
-        add(action::restart, 178, 14, 28, 28, "");
-        add(action::pause, 227, 14, 54, 28, "");
+        add(action::restart, menuart::hudpositions[locale][2], menuart::hudpositions[locale][3], 14, 14, "");
+        add(action::pause, menuart::hudpositions[locale][0], menuart::hudpositions[locale][1], 28, 14, "");
         break;
     case view::paused:
-        add(action::resume, 128, 51, 112, 28, "Continue");
-        add(action::restart, 65, 85, 112, 28, "Replay");
-        add(action::skip, 191, 85, 112, 28, "Skip level", false);
-        add(action::levels, 65, 118, 112, 28, "Level select");
-        add(action::home, 191, 118, 112, 28, "Main menu");
-        add(action::effects, 82, 157, 54, 28, "");
-        add(action::music, 174, 157, 54, 28, "");
+        for (int i = 0; i < 6; ++i) {
+            static constexpr action actions[] = {action::resume, action::skip, action::levels, action::home, action::effects, action::music};
+            add(actions[i], menuart::pausepositions[i][0], menuart::pausepositions[i][1], i < 4 ? 104 : 49, 26, "", i != 1);
+        }
         break;
     case view::results:
     case view::failure:
-        add(action::restart, 44, 160, 70, 30, "Replay");
-        add(action::next, 128, 160, 70, 30, "Next", false);
-        add(action::levels, 212, 160, 70, 30, "Menu");
+        add(action::restart, menuart::resultanchors[11][0], menuart::resultanchors[11][1], 54, 24, "");
+        add(action::next, menuart::resultanchors[10][0], menuart::resultanchors[10][1], 54, 24, "", false);
+        add(action::levels, menuart::resultanchors[9][0], menuart::resultanchors[9][1], 54, 24, "");
         break;
     default: break;
     }
@@ -108,16 +105,25 @@ void controller::activate(action command, int argument) {
     case action::resume: enter(view::playing); break;
     case action::restart:
     case action::play:
+        replaypanel = mode == view::results;
+        resulttime = age;
+        door = command == action::play || mode == view::results ? 1 : 0;
+        doorframe = 0;
         reset = true;
-        resultage = score = 0;
+        resultage = 0;
+        if (!replaypanel) score = 0;
         for (int& value : starage) value = -1;
         enter(view::playing);
         break;
     case action::levels:
         returnview = mode;
-        enter(view::levels);
+        if (!frontend() && mode != view::results) { door = 2; doorframe = 0; destination = view::levels; }
+        else enter(view::levels);
         break;
-    case action::home: enter(view::home); break;
+    case action::home:
+        if (!frontend()) { door = 2; doorframe = 0; destination = view::home; }
+        else enter(view::home);
+        break;
     case action::back:
         if (mode == view::packs || mode == view::options) enter(view::home);
         else if (mode == view::levels) enter(view::packs);
@@ -158,6 +164,7 @@ void controller::activate(action command, int argument) {
 
 void controller::update(const dx::simulation& game, input current) {
     reset = clicked = gameTouch = false;
+    if (blocked()) { suspend(current); return; }
     if (frontend()) { frontinput(current); return; }
     button list[32];
     const int count = buttons(list);
@@ -281,6 +288,10 @@ void controller::frontinput(input current) {
 }
 
 void controller::advance(const dx::simulation& game) {
+    if (door) {
+        if (++doorframe >= 32) { const int previous = door; door = 0; if (previous == 2) enter(destination); }
+        return;
+    }
     ++age;
     ++skinage;
     if (notice > 0) --notice;
@@ -302,6 +313,9 @@ void controller::advance(const dx::simulation& game) {
     if (game.state == dx::outcome::playing) return;
     if (++resultage < 60) return;
     score = points(game.count, game.resulttick);
+    elapsed = game.resulttick;
+    resultstars = game.count;
+    improved = (bestscore > 0 && score > bestscore) || (beststars > 0 && game.count > beststars);
     if (game.state == dx::outcome::won) {
         bestscore = std::max(bestscore, score);
         beststars = std::max(beststars, game.count);

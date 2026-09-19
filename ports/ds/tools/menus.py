@@ -186,8 +186,12 @@ def pack():
         items = [record for record in records if record["group"] == group and "page" not in record]
         if group == "menu_bgr_shadow":
             width, height, positions = 256, 256, [(0, 0)]
+        elif group == "pauseplate":
+            width, height, positions = 256, max(8, 1 << math.ceil(math.log2(items[0]["image"].height))), [(0, 0)]
         else:
-            _, width, height, positions = min(result for width in (32, 64, 128, 256) if (result := assets.layout(items, width)))
+            layouts = [result for width in (32, 64, 128, 256) if (result := assets.layout(items, width))]
+            assert layouts, (group, [(r["name"], r["image"].size) for r in items])
+            _, width, height, positions = min(layouts)
         assert width * height <= 131072, (group, width, height)
         canvas = Image.new("RGBA", (width, height))
         page = len(pages)
@@ -195,8 +199,9 @@ def pack():
             canvas.paste(record["image"], (x, y))
             record.update(x=x, y=y, w=record["image"].width, h=record["image"].height, page=page)
         pages.append(dict(name="menupage" + str(page), image=canvas, group=group, direct=False, bytes=width * height,
-                          alphabits=5 if group == "menu_bgr_shadow" else 3,
-                          dither=not group.startswith(("text", "packtext", "credits"))))
+                          alphabits=5 if group in ("menu_bgr_shadow", "doorshade") else 3,
+                          dither=False if group == "doorshade" or group.startswith(("text", "packtext", "credits")) else
+                          "low" if group.startswith(("menu_buttons", "menu_extra_buttons", "menu_options_packed", "skin_selection", "menu_level_ui", "hud_ui")) else True))
     members = defaultdict(list)
     for record in records:
         members[record["page"]].append(record)
@@ -260,6 +265,8 @@ def main():
         quad("box" + str(i), resource, config["packQuadIndex"], restore=True, group="box" + str(i))
     import skins
     skininfo = skins.build(globals())
+    import gameui
+    gameinfo = gameui.build(globals())
     keys = ["PLAY", "OPTIONS", "LANGUAGE", "RESET", "CREDITS", "YES", "NO", "RESET_TEXT", "DRAG_TO_CUT", "CLICK_TO_CUT",
             "CANDIES_BTN", "ROPE_SKINS_BTN", "OM_NOM_BTN", "TRACES_BTN", "unlockall", "unavailable"]
     keys += ["language" + str(i) for i in range(12)]
@@ -400,6 +407,7 @@ def main():
         header.append('{' + ','.join(fields) + '},')
     header += ['};', f'inline constexpr float fit = {fit:.8f}f;', f'inline constexpr float mainfit = {mainfit:.8f}f;']
     header += skins.header(skininfo, ids, fit, scale)
+    header += gameui.header(gameinfo, ids)
     header += ['inline constexpr int levelbacks[] = {' + ','.join(str(ids['levelback' + str(i)]) for i in range(17)) + '};', '}']
     (output / "menuassets.hpp").write_text('\n'.join(header) + '\n', encoding="utf-8")
     (output / "menuassets.s").write_text('\n'.join(assembly) + '\n', encoding="utf-8")
@@ -420,6 +428,10 @@ def main():
     anchors += ["src/CutTheRopeDX.Core/Framework/Core/RootController.cs", "ports/roblox/src/ReplicatedStorage/SessionState.luau"]
     manifest["layoutSources"] = {name: hashlib.sha256((root.parents[1] / name).read_bytes()).hexdigest() for name in anchors}
     manifest["skinSources"] = skininfo["sources"]
+    manifest["gameui"] = gameinfo
+    for name in ("BoxOpenClose", "GameController", "GameScene.Show", "GameScene", "CTRResourceMgr"):
+        path = "src/CutTheRopeDX.Core/GameMain/" + name + ".cs"
+        manifest["layoutSources"][path] = hashlib.sha256((root.parents[1] / path).read_bytes()).hexdigest()
     (output / "menumanifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"DX menus: {len(records)} sprites, {len(pages)} pageable textures, {sum(page['compressed'] for page in pages):,} compressed bytes")
 

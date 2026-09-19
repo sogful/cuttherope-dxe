@@ -37,6 +37,12 @@ public:
     int skintab = 0, skinage = 0, notice = 0;
     float skinvelocity = 0;
     bool candyhint = true;
+    int door = 0, doorframe = 0, elapsed = 0, resultstars = 0;
+    bool improved = false;
+    bool replaypanel = false;
+    int resulttime = 0;
+    view destination = view::levels;
+    bool blocked() const { return door != 0 || (mode == view::results && age < 32); }
     bool unlockall() const { return saves.unlocked; }
     void initialize(const char* directory);
     void persist();

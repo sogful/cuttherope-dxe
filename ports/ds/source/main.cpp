@@ -11,7 +11,7 @@
 #include <cstdio>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 4;
+    std::uint32_t magic = 0x44585250, version = 5;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -19,6 +19,7 @@ struct diagnostics {
     std::uint32_t view = 0, effects = 1, music = 1, score = 0, bestscore = 0, beststars = 0;
     std::uint32_t locale = 0, pack = 0, clickcut = 0, scroll = 0, texturebytes = 0;
     std::uint32_t unlocked = 0, skintab = 0, candy = 0, rope = 0, costume = 0, trace = 0, skinoffset = 0, transition = 0, storage = 0;
+    std::uint32_t door = 0, doorframe = 0, menuage = 0, improved = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -75,7 +76,7 @@ int main() {
             trace::trail.reset();
         }
         audio::update(menu);
-        if (menu.mode == ui::view::playing) {
+        if (menu.mode == ui::view::playing && !menu.blocked() && !display::busy()) {
             trace::trail.update(menu.gameTouch, pointer, menu.skins[3]);
             if (menu.gameTouch && (held ? game.swipe(previous, pointer) : menu.clickcut && game.tap(pointer))) {
                 telemetry.cuts = telemetry.cuts + 1;
@@ -99,11 +100,11 @@ int main() {
         }
         if (game.state == dx::outcome::won && !shownresult) {
             audio::effect(monsterchewingdata, monsterchewingbytes);
-            audio::effect(windata, winbytes);
             shownresult = true;
             nocashMessage("CTRD DS: level won");
         }
-        menu.advance(game);
+        if (!display::busy()) menu.advance(game);
+        if (menu.mode == ui::view::results && oldview != ui::view::results) audio::effect(windata, winbytes);
         if (menu.clicked || menu.mode != oldview) menu.persist();
         display::draw(game, frame, menu, menu.gameTouch, pointer);
         const unsigned micros = timerTicks2usec(cpuEndTiming());
@@ -122,6 +123,10 @@ int main() {
         telemetry.x = game.candy().pos.x;
         telemetry.y = game.candy().pos.y;
         telemetry.paused = menu.mode != ui::view::playing;
+        telemetry.door = menu.door;
+        telemetry.doorframe = menu.doorframe;
+        telemetry.menuage = menu.age;
+        telemetry.improved = menu.improved;
         telemetry.view = static_cast<unsigned>(menu.mode);
         telemetry.effects = menu.effects;
         telemetry.music = menu.music;

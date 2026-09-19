@@ -24,11 +24,14 @@ def indexed(image, lookup, dither=True, bits=3, origin=(0, 0)):
     if dither:
         background = tuple(lookup.getpalette()[:3])
         rgb.putdata([pixel[:3] if pixel[3] >= 18 else background for pixel in image.getdata()])
-    indices = rgb.quantize(palette=lookup, dither=Image.Dither.FLOYDSTEINBERG if dither else Image.Dither.NONE)
+    if dither == "low":
+        rgb.putdata([tuple(max(0, min(255, channel + round((matrix[(i // image.width + origin[1]) % 4][(i % image.width + origin[0]) % 4] - 7.5) / 8)))
+                           for channel in pixel) for i, pixel in enumerate(rgb.getdata())])
+    indices = rgb.quantize(palette=lookup, dither=Image.Dither.FLOYDSTEINBERG if dither and dither != "low" else Image.Dither.NONE)
     maximum, shift = (1 << bits) - 1, 8 - bits
     result = bytearray()
     for index, (alpha, color) in enumerate(zip(image.getchannel("A").getdata(), indices.getdata())):
-        if dither:
+        if dither and dither != "low":
             threshold = (matrix[(index // image.width + origin[1]) % 4][(index % image.width + origin[0]) % 4] + .5) / 16
             opacity = min(maximum, int(alpha * maximum / 255 + threshold))
         else:

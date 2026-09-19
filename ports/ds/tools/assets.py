@@ -213,7 +213,7 @@ def main():
     header += ["}", "namespace art {", "struct sprite { int x, y, w, h, ox, oy, advance, page; };",
                "struct texture { int width, height; const unsigned char* pixels; const unsigned char* palette; int kind; };",
                "inline constexpr texture textures[] = {"]
-    header += [f"{{{page['width']},{page['height']},{page['name']}data,{page['name']}palettedata,{1 if page['source'].startswith('char_animations') else 2 if page['source'].startswith('candies/') else 0}}}," for page in pages]
+    header += [f"{{{page['width']},{page['height']},{page['name']}data,{page['name']}palettedata,{1 if page['source'].startswith('char_animations') else 2 if page['source'].startswith('candies/') else 0 if page['source'].startswith(('obj_', 'char_supports')) else 3}}}," for page in pages]
     header += ["};", f"inline constexpr int texturecount = {len(pages)};", "enum id {"]
     header += [record["name"] + "," for record in records]
     header += ["spritecount };", "inline constexpr sprite sprites[] = {"]

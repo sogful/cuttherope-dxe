@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--inspect", action="store_true")
     parser.add_argument("--menus", action="store_true", help="Check source-shaped title, packs, settings, languages and credits")
     parser.add_argument("--skins", action="store_true", help="Check fades, isolated unlock mode, picker scrolling, all cosmetic tabs and equipped gameplay")
+    parser.add_argument("--flow", action="store_true", help="Capture box transitions and the complete animated result sequence")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
     args = parser.parse_args()
     core = c.CDLL(args.core)
@@ -185,11 +186,11 @@ def main():
                   "romSha256": hashlib.sha256(path.read_bytes()).hexdigest(), "console": "DS", "muted": True, "headless": True, "stages": {}}
         keys = ["magic", "version", "frames", "ticks", "state", "stars", "micros", "peak", "late", "vblanks", "x", "y", "cuts", "touches", "resets", "paused",
                 "view", "effects", "music", "score", "bestscore", "beststars", "locale", "pack", "clickcut", "scroll", "texturebytes",
-                "unlocked", "skintab", "candy", "rope", "costume", "trace", "skinoffset", "transition", "storage"]
+                "unlocked", "skintab", "candy", "rope", "costume", "trace", "skinoffset", "transition", "storage", "door", "doorframe", "menuage", "improved"]
         memory = core.retro_get_memory_data(2)
         size = core.retro_get_memory_size(2)
         offset = address - 0x02000000
-        if not memory or offset + 144 > size:
+        if not memory or offset + 160 > size:
             raise RuntimeError(f"Cannot read telemetry: RAM={size} address={address:x}")
         assert size == 4 * 1024 * 1024, f"Expected original DS main RAM, received {size} bytes"
         report["mainRamBytes"] = size
@@ -197,12 +198,17 @@ def main():
         reference = {sample["tick"]: sample for trace in references if trace["level"] == 1 for sample in trace["samples"]}
         samples = {}
         referenceattempt = 1
+        lastframe, stalled = -1, 0
         def telemetry():
-            return dict(zip(keys, struct.unpack("<10I2f24I", c.string_at(memory + offset, 144))))
+            return dict(zip(keys, struct.unpack("<10I2f28I", c.string_at(memory + offset, 160))))
         def run(count):
+            nonlocal lastframe, stalled
             for _ in range(count):
                 core.retro_run()
                 current = telemetry()
+                stalled = stalled + 1 if current["frames"] == lastframe else 0
+                lastframe = current["frames"]
+                assert stalled < 120, "ROM main loop stalled (check emulator diagnostic output)"
                 tick = current["ticks"]
                 if tick in reference and tick not in samples and current["resets"] == referenceattempt:
                     samples[tick] = current
@@ -228,6 +234,13 @@ def main():
             run(3)
             buttons.clear()
             run(36)
+        def settle():
+            for _ in range(100):
+                current = telemetry()
+                if not current["door"] and not current["transition"]:
+                    return
+                run(1)
+            raise AssertionError("Transition failed to finish")
         run(60)
         title = snapshot("title")
         assert title["view"] == 5 and title["ticks"] == 0 and title["frames"] > 40, title
@@ -406,6 +419,60 @@ def main():
         red = sum(r > 120 and r > g * 1.6 and r > b * 1.5 for r, g, b in candy.getdata())
         assert red >= 12, f"Candy pinwheel layer missing: only {red} red pixels"
         report["candyRedPixels"] = red
+        if args.flow:
+            sequence = []
+            touch(100, 40)
+            touch(155, 40)
+            touch(155, 40, False)
+            for _ in range(240):
+                if telemetry()["view"] == 2:
+                    break
+                run(1)
+            assert telemetry()["view"] == 2 and telemetry()["stars"] == 3
+            assert not telemetry()["improved"], "First completion must not show an improvement stamp"
+            for i in range(365):
+                run(1)
+                if i % 3 == 0:
+                    sequence.append(framebuffer().crop((0, 192, 256, 384)))
+                if i in (0, 15, 31, 55, 94, 135, 181, 225, 270, 360):
+                    capture("result-phase-" + str(i))
+            sequence[0].save(directory / "result-sequence.gif", save_all=True, append_images=sequence[1:], duration=48, loop=0)
+            snapshot("result-complete")
+            tap(98, 125)
+            settle()
+            run(35)
+            touch(100, 40)
+            touch(155, 40)
+            touch(155, 40, False)
+            run(430)
+            improved = snapshot("result-improved")
+            assert improved["view"] == 2 and improved["improved"] == 1
+            tap(98, 125)
+            settle()
+            key(3)
+            assert snapshot("source-pause")["view"] == 1
+            touch(128, 96)
+            touch(128, 96, False)
+            closing = []
+            for _ in range(80):
+                run(1)
+                closing.append(framebuffer().crop((0, 192, 256, 384)))
+            closing[0].save(directory / "box-quit.gif", save_all=True, append_images=closing[1:], duration=16, loop=0)
+            assert snapshot("quit-levels")["view"] == 4
+            touch(66, 26)
+            touch(66, 26, False)
+            opening = []
+            for _ in range(95):
+                run(1)
+                opening.append(framebuffer().crop((0, 192, 256, 384)))
+                if _ in (28, 44, 60, 76):
+                    capture("opening-" + str(_))
+            opening[0].save(directory / "box-opening.gif", save_all=True, append_images=opening[1:], duration=16, loop=0)
+            assert snapshot("opened-level")["view"] == 0
+            report.update(passed=True, seconds=time.monotonic() - start)
+            (directory / "flowreport.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+            print("PASS: complete result timeline, improvement-only stamp, replay, original pause, box close/open")
+            return
         animation[0].save(directory / "animation.gif", save_all=True, append_images=animation[1:], duration=50, loop=0)
         strip = Image.new("RGB", (48 * 19, 64))
         for index, image in enumerate(animation[:19]):
@@ -428,12 +495,12 @@ def main():
             won = snapshot("win")
             assert won["state"] == 1 and won["stars"] == 3 and won["cuts"] == 1 and won["view"] == 2, won
             assert won["beststars"] == 3 and won["bestscore"] == won["score"] >= 3000, won
-            tap(128, 160)
+            tap(158, 125)
             assert telemetry()["view"] == 2 and telemetry()["resets"] == 1, "Disabled next button changed the level"
             buttons.add(8)  # libretro joypad A
             run(3)
             buttons.clear()
-            run(30)
+            run(70)
             retry = snapshot("retry")
             assert retry["state"] == 0 and retry["stars"] == 0 and retry["resets"] == 2, retry
             buttons.add(3)  # Start
@@ -443,10 +510,10 @@ def main():
             run(60)
             paused = snapshot("paused")
             assert paused["paused"] == 1 and paused["ticks"] == beforepause["ticks"], paused
-            tap(191, 85)
+            tap(128, 72)
             assert telemetry()["view"] == 1 and telemetry()["ticks"] == paused["ticks"], "Disabled skip resumed gameplay"
-            tap(82, 157)
-            tap(174, 157)
+            tap(104, 145)
+            tap(152, 145)
             quiet = snapshot("quiet")
             assert quiet["effects"] == 0 and quiet["music"] == 0, quiet
             run(60)
@@ -459,17 +526,18 @@ def main():
             run(30)
             resumed = snapshot("resumed")
             assert resumed["paused"] == 0 and resumed["ticks"] > paused["ticks"], resumed
-            tap(178, 14)
+            tap(220, 8)
             touchretry = snapshot("touchretry")
             assert touchretry["resets"] == 3 and touchretry["ticks"] < resumed["ticks"], touchretry
-            touch(227, 14)
+            touch(241, 8)
             touch(100, 40)
             touch(155, 40)
             touch(155, 40, False)
             assert telemetry()["view"] == 0 and telemetry()["cuts"] == 1, "Cancelled HUD drag leaked into gameplay"
-            tap(227, 14)
+            tap(241, 8)
             assert telemetry()["view"] == 1, "Touch pause failed"
-            tap(65, 118)
+            tap(128, 96)
+            settle()
             levels = snapshot("levels")
             assert levels["view"] == 4 and levels["beststars"] == 3, levels
             key(0)
@@ -490,6 +558,7 @@ def main():
             assert telemetry()["view"] == 4
             key(8)
             assert telemetry()["view"] == 0 and telemetry()["resets"] == 4
+            settle()
             run(60)
             touch(100, 40)
             touch(155, 40)
@@ -500,8 +569,7 @@ def main():
             final = snapshot("complete")
             assert final["late"] >= idle["late"], final
             assert final["vblanks"] - idle["vblanks"] == final["frames"] - idle["frames"] + final["late"] - idle["late"], "Unaccounted VBlanks"
-            assert touchretry["late"] == idle["late"], touchretry
-            assert touchretry["vblanks"] - idle["vblanks"] == touchretry["frames"] - idle["frames"], "Game loop lost VBlanks"
+            assert touchretry["vblanks"] - idle["vblanks"] == touchretry["frames"] - idle["frames"] + touchretry["late"] - idle["late"], "Unaccounted scene-loading VBlanks"
             assert audiononzero > 0, "No sound effects reached the audio callback"
         report.update(seconds=time.monotonic() - start, audioFrames=audioframes, nonzeroAudioFrames=audiononzero)
         report["passed"] = True
