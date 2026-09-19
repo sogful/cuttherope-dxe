@@ -1,9 +1,15 @@
 name: Deploy Browser to GitHub Pages
 
-# Manual only. The browser build is a 56MB payload and a long publish, so it goes out when
-# someone decides a deploy is due rather than on every push to main.
 on:
+    push:
+        branches: [main]
     workflow_dispatch:
+    workflow_call:
+        inputs:
+            version:
+                description: "Version used in the downloadable browser archive."
+                required: false
+                type: string
 
 # Least-privilege token plus the OIDC id-token the Pages deploy needs.
 permissions:
@@ -104,13 +110,31 @@ jobs:
             - name: Disable Jekyll
               run: touch dist/wwwroot/.nojekyll
 
+            - name: Package browser release
+              env:
+                  RELEASE_VERSION: ${{ inputs.version }}
+              run: |
+                  version="${RELEASE_VERSION:-main-${GITHUB_SHA::8}}"
+                  mkdir -p artifacts
+                  (cd dist/wwwroot && zip -qr "../../artifacts/CutTheRopeDX-$version-Browser.zip" .)
+
+            - name: Upload browser release
+              uses: actions/upload-artifact@v7
+              with:
+                  name: bundle-browser
+                  path: artifacts/*.zip
+                  compression-level: 0
+                  retention-days: 7
+
             - name: Upload Pages artifact
+              if: github.event_name != 'workflow_call'
               uses: actions/upload-pages-artifact@v5
               with:
                   path: dist/wwwroot
 
     deploy:
         needs: build
+        if: github.event_name != 'workflow_call'
         runs-on: ubuntu-latest
         environment:
             name: github-pages

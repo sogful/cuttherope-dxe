@@ -9,7 +9,6 @@ on:
                 description: "Version to build, e.g. 2.30.0"
                 required: true
                 type: string
-    # The prerelease workflow builds through this one, so both publish the same bundles.
     workflow_call:
         inputs:
             version:
@@ -27,9 +26,6 @@ jobs:
             version: ${{ steps.resolve.outputs.version }}
             prerelease: ${{ steps.resolve.outputs.prerelease }}
         steps:
-            # Tag pushes carry a leading "v" the scripts must not receive; dispatch and
-            # called runs supply the bare version already. Releases are X.Y.Z; a CI
-            # prerelease is X.Y.Z-prerelease+<run number>.
             - id: resolve
               env:
                   INPUT_VERSION: ${{ inputs.version }}
@@ -50,10 +46,6 @@ jobs:
                   echo "version=$version" >> "$GITHUB_OUTPUT"
                   echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
-    # The raw asset download is shared with the Pages deploy, so both agree on what "the
-    # assets" are and neither re-implements the fetch. It runs once here to fill the cache
-    # the three packaging jobs restore from; none of them needs it to have succeeded, since
-    # the build fetches whatever is still missing.
     assets:
         uses: ./.github/workflows/content.yml
 
@@ -64,9 +56,6 @@ jobs:
             - uses: actions/checkout@v7
             - uses: ./.github/actions/setup-dotnet
 
-            # The publish deploys content straight from content/, and fetches anything
-            # missing on its own. Restoring what the assets job already downloaded is
-            # purely to skip that download; a miss costs time, not correctness.
             - name: Restore fetched assets
               uses: actions/cache/restore@v6
               with:
@@ -93,9 +82,6 @@ jobs:
             - name: Install macOS workload
               run: dotnet workload install macos
 
-            # The publish deploys content straight from content/, and fetches anything
-            # missing on its own. Restoring what the assets job already downloaded is
-            # purely to skip that download; a miss costs time, not correctness.
             - name: Restore fetched assets
               uses: actions/cache/restore@v6
               with:
@@ -103,9 +89,6 @@ jobs:
                   key: ${{ needs.assets.outputs.cache-key }}
                   enableCrossOsArchive: true
 
-            # bundle_ffmpeg_macos.sh copies the dylibs out of Homebrew's ffmpeg. The major is
-            # pinned because FFmpeg.AutoGen resolves functions by soname, so a runner that had
-            # moved on to the next FFmpeg would ship a bundle with no working video decoder.
             - run: brew install ffmpeg@9
 
             - name: Build ffmpeg DMG
@@ -130,9 +113,6 @@ jobs:
             - uses: actions/checkout@v7
             - uses: ./.github/actions/setup-dotnet
 
-            # The publish deploys content straight from content/, and fetches anything
-            # missing on its own. Restoring what the assets job already downloaded is
-            # purely to skip that download; a miss costs time, not correctness.
             - name: Restore fetched assets
               uses: actions/cache/restore@v6
               with:
@@ -149,8 +129,93 @@ jobs:
                   compression-level: 0
                   retention-days: 7
 
+    browser:
+        needs: version
+        uses: ./.github/workflows/deploy-pages.yml
+        with:
+            version: ${{ needs.version.outputs.version }}
+
+    android:
+        needs: version
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  fetch-depth: 0
+
+            - uses: ./.github/actions/setup-dotnet
+
+            - name: Install Android workload
+              run: dotnet workload install android
+
+            - name: Install Android SDK dependencies
+              run: >-
+                  dotnet build
+                  src/CutTheRopeDX.Android/CutTheRopeDX.Android.csproj
+                  -t:InstallAndroidDependencies
+                  -f net10.0-android36.0
+                  -p:AndroidSdkDirectory=$ANDROID_SDK_ROOT
+                  -p:AcceptAndroidSDKLicenses=true
+
+            - name: Restore Android-formatted assets
+              shell: pwsh
+              run: ./ports/android/tools/restore-assets.ps1
+
+            - name: Build Android APK
+              run: >-
+                  dotnet build
+                  src/CutTheRopeDX.Android/CutTheRopeDX.Android.csproj
+                  -c Release
+                  -p:Version=${{ needs.version.outputs.version }}
+                  -p:ApplicationDisplayVersion=${{ needs.version.outputs.version }}
+                  -p:ApplicationVersion=${{ github.run_number }}
+                  -p:AndroidPackageFormat=apk
+
+            - name: Package Android release
+              env:
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: |
+                  mkdir -p artifacts
+                  apk=$(find src/CutTheRopeDX.Android/bin/Release/net10.0-android36.0 -name '*-Signed.apk' -print -quit)
+                  if [ -z "$apk" ]; then
+                      apk=$(find src/CutTheRopeDX.Android/bin/Release/net10.0-android36.0 -name '*.apk' -print -quit)
+                  fi
+                  test -n "$apk"
+                  cp "$apk" "artifacts/CutTheRopeDX-$VERSION-Android.apk"
+
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: bundle-android
+                  path: artifacts/*.apk
+                  compression-level: 0
+                  retention-days: 7
+
+    roblox:
+        needs: version
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+
+            - name: Package Rojo source
+              env:
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: |
+                  mkdir -p artifacts
+                  zip -qr "artifacts/CutTheRopeDX-$VERSION-Roblox.zip" \
+                      ports/roblox/src \
+                      ports/roblox/tests \
+                      ports/roblox/default.project.json \
+                      README.md
+
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: bundle-roblox
+                  path: artifacts/*.zip
+                  compression-level: 0
+                  retention-days: 7
+
     release:
-        needs: [version, windows, macos, linux]
+        needs: [version, windows, macos, linux, browser, android, roblox]
         runs-on: ubuntu-latest
         permissions:
             contents: write
@@ -165,8 +230,6 @@ jobs:
               with:
                   tag_name: v${{ needs.version.outputs.version }}
                   name: v${{ needs.version.outputs.version }}
-                  # A dispatched or prerelease run has no tag yet; pin the one it creates to
-                  # the commit that was built rather than the default branch's head.
                   target_commitish: ${{ github.sha }}
                   prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
                   make_latest: ${{ needs.version.outputs.prerelease == 'true' && 'false' || 'true' }}
