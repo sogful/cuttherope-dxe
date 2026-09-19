@@ -66,6 +66,8 @@ namespace CutTheRopeDX.GameMain
         /// <inheritdoc />
         public override void Activate()
         {
+            PortTrace.Event("loading_start", writer =>
+                writer.WriteNumber("nextController", nextController));
             AndroidAPI.ShowBanner();
             base.Activate();
             resourcesLoaded = false; // Reset flag when activating
@@ -87,6 +89,13 @@ namespace CutTheRopeDX.GameMain
         /// </summary>
         public void AllResourcesLoaded()
         {
+            PortTrace.Event("loading_resources_ready", writer =>
+            {
+                writer.WriteNumber("nextController", nextController);
+                writer.WriteNumber(
+                    "elapsedMs",
+                    Stopwatch.GetElapsedTime(loadStartedTicks).TotalMilliseconds);
+            });
             // Just set flag - Update() will handle transition after animation completes
             resourcesLoaded = true;
 

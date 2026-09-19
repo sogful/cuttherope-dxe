@@ -5,6 +5,7 @@ using System.Globalization;
 using CutTheRopeDX.Commons;
 using CutTheRopeDX.Framework;
 using CutTheRopeDX.Framework.Core;
+using CutTheRopeDX.Framework.Diagnostics;
 using CutTheRopeDX.Framework.Helpers;
 using CutTheRopeDX.Framework.Media;
 using CutTheRopeDX.Framework.Platform;
@@ -1466,6 +1467,18 @@ namespace CutTheRopeDX.GameMain
         /// </summary>
         public void CreateLevelSelect()
         {
+            PortTrace.Event("level_select_build", writer =>
+            {
+                writer.WriteNumber("pack", pack);
+                writer.WriteNumber("level", level);
+                writer.WriteString("cover", PackConfig.GetBoxCoverOrDefault(pack));
+                writer.WriteStartObject("bounds");
+                writer.WriteNumber("x", VisibleBounds.x);
+                writer.WriteNumber("y", VisibleBounds.y);
+                writer.WriteNumber("w", VisibleBounds.w);
+                writer.WriteNumber("h", VisibleBounds.h);
+                writer.WriteEndObject();
+            });
             float transitionDuration = 0.3f;
             MenuView menuView = new();
             string boxCover = PackConfig.GetBoxCoverOrDefault(pack);
@@ -1848,6 +1861,13 @@ namespace CutTheRopeDX.GameMain
         /// <param name="n">Menu button identifier that was pressed.</param>
         public void OnButtonPressed(MenuButtonId n)
         {
+            PortTrace.Event("menu_button", writer =>
+            {
+                writer.WriteNumber("button", n.Value);
+                writer.WriteNumber("pack", pack);
+                writer.WriteNumber("level", level);
+                writer.WriteNumber("view", activeViewID);
+            });
             if (n.IsLevelButton() && levelLaunchPending)
             {
                 return;

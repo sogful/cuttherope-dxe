@@ -95,6 +95,8 @@ namespace CutTheRopeDX.GameMain
         /// <inheritdoc />
         public override void Activate()
         {
+            PortTrace.Event("game_start", writer =>
+                writer.WriteNumber("pack", CTRPreferences.GetLastGamePack()));
             PostFlurryLevelEvent("LEVEL_STARTED");
             Application.SharedRootController().SetViewTransition(-1);
             base.Activate();

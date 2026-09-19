@@ -1,7 +1,7 @@
 # Cut the Rope DX
 
 <p align="center">
-  <img alt="Logo of Cut the Rope DX" src="./images/CutTheRopeDXLogo.svg"/>
+  <img alt="Logo of Cut the Rope DX" src="./extras/images/CutTheRopeDXLogo.svg"/>
 </p>
 
 ## About

@@ -1,0 +1,60 @@
+local Shared=game:GetService("ReplicatedStorage"):WaitForChild("CutTheRope"):WaitForChild("Shared")
+local Scroller=require(Shared.PackScroller)
+local Session=require(Shared.SessionState)
+local function near(a,b) assert(math.abs(a-b)<.001, tostring(a).." ~= "..tostring(b)) end
+local function settle(model)
+	for _=1,600 do if model:update(1/60) then return end end
+	error("Selector never settled")
+end
+local count=0
+local function check(name,callback) callback() count+=1 print("DX PACK PASS: "..name) end
+check("original .8 arrow snap",function()
+	local model=Scroller.new(17,1)
+	model:moveTo(2,.8) model:update(1/60)
+	near(model.x,-640*4*.8/60)
+	settle(model) near(model.x,-640)
+end)
+check("drag follows pointer and releases forward",function()
+	local model=Scroller.new(17,2)
+	model:begin(1200)
+	for step=1,5 do model:drag(1200-step*20) model:update(1/60) end
+	near(model.x,-740)
+	assert(not model:release()) assert(model.selected==3)
+	settle(model) near(model.x,-1280)
+end)
+check("stationary release chooses nearest slot",function()
+	local model=Scroller.new(17,2)
+	model:begin(1200) model:drag(1100)
+	for _=1,10 do model:update(1/60) end
+	model:release() assert(model.selected==2)
+	settle(model) near(model.x,-640)
+end)
+check("tap jitter, jump rejection and bounded endpoints",function()
+	local model=Scroller.new(17,1)
+	model:begin(1200) model:drag(1202)
+	assert(model:release())
+	model:moveTo(-100) settle(model) near(model.x,0)
+	model:begin(100) model:drag(1800) near(model.x,0)
+	model:release() model:moveTo(100) settle(model) near(model.x,-16*640)
+end)
+check("first-slot rubber band returns to first slot",function()
+	local model=Scroller.new(17,1)
+	model:begin(100) model:drag(200) model:drag(300)
+	near(model.x,150)
+	model:update(1/60) model:release() settle(model) near(model.x,0)
+end)
+check("a drag returning to its start is not a tap",function()
+	local model=Scroller.new(17,2)
+	model:begin(1200) model:drag(1100) model:drag(1200)
+	assert(not model:release())
+end)
+check("hint claim is one shot across progress resets",function()
+	local shown,changed=Session.titleHintShown,Session.candyChanged
+	Session.titleHintShown,Session.candyChanged=nil,nil
+	assert(Session.claimTitleHint()) assert(not Session.claimTitleHint())
+	-- Do not clear player records during a diagnostic check.
+	assert(Session.titleHintShown)
+	Session.titleHintShown,Session.candyChanged=shown,changed
+end)
+workspace:SetAttribute("DxPackSelectionChecks",count)
+print("DX PACK CHECKS: "..count.." passed")

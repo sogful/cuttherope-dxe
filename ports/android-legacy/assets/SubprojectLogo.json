@@ -1,0 +1,34 @@
+{
+    "frames": [
+        {
+            "filename": "SubprojectLogo.png",
+            "frame": {
+                "x": 0,
+                "y": 0,
+                "w": 346,
+                "h": 311
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 346,
+                "h": 311
+            },
+            "sourceSize": {
+                "w": 346,
+                "h": 311
+            }
+        }
+    ],
+    "meta": {
+        "image": "SubprojectLogo.png",
+        "format": "RGBA8888",
+        "size": {
+            "w": 346,
+            "h": 311
+        },
+        "scale": "1"
+    }
+}

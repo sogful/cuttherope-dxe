@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 
 using CutTheRopeDX.Commons;
+using CutTheRopeDX.Framework.Diagnostics;
 using CutTheRopeDX.Framework.Platform;
 using CutTheRopeDX.Framework.Visual;
 
@@ -363,6 +364,12 @@ namespace CutTheRopeDX.Framework.Core
         /// <param name="n">View identifier to show.</param>
         public virtual void ShowView(int n)
         {
+            PortTrace.Event("view_show", writer =>
+            {
+                writer.WriteString("controller", GetType().Name);
+                writer.WriteNumber("view", n);
+                writer.WriteNumber("previous", activeViewID);
+            });
             if (activeViewID != -1)
             {
                 HideActiveView();
