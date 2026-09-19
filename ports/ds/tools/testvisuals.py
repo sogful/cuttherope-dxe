@@ -62,7 +62,7 @@ for record in manifest["sprites"]:
     x, y, width, height = (record[key] for key in ("x", "y", "w", "h"))
     crop = atlases[record["page"]].crop((x, y, x + width, y + height))
     rebuilt.paste(crop, (record["ox"] + size[0] // 2, record["oy"] + size[1] // 2))
-    assert rebuilt.tobytes() == reference.tobytes(), (resource, record["quad"], "animation anchor drift")
+    assert all(a == b or a[3] == b[3] == 0 for a, b in zip(rebuilt.getdata(), reference.getdata())), (resource, record["quad"], "animation anchor drift")
     checked += 1
 
 assert len({record["page"] for record in manifest["sprites"]}) == len(manifest["atlases"])

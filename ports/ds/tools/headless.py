@@ -42,6 +42,9 @@ def main():
     directory = root / "build/headless"
     directory.mkdir(parents=True, exist_ok=True)
     folder = str(directory).encode()
+    system = directory / "system"
+    system.mkdir(exist_ok=True)
+    systemfolder = str(system).encode()
     values = {}
     frame = None
     pixel = 1
@@ -68,7 +71,7 @@ def main():
         nonlocal pixel
         cmd = command & 0xffff
         if cmd in (9, 30, 31):
-            return write(data, c.c_char_p, folder)
+            return write(data, c.c_char_p, systemfolder if cmd == 9 else folder)
         if cmd in (3, 74):
             return write(data, c.c_bool, True)
         if cmd in (2, 17, 49):
@@ -178,11 +181,12 @@ def main():
         address = int(next(line.split()[0] for line in symbols if line.endswith(" telemetry")), 16)
         report = {"core": str(Path(args.core).resolve()), "coreSha256": hashlib.sha256(Path(args.core).read_bytes()).hexdigest(),
                   "romSha256": hashlib.sha256(path.read_bytes()).hexdigest(), "console": "DS", "muted": True, "headless": True, "stages": {}}
-        keys = ["magic", "version", "frames", "ticks", "state", "stars", "micros", "peak", "late", "vblanks", "x", "y", "cuts", "touches", "resets", "paused"]
+        keys = ["magic", "version", "frames", "ticks", "state", "stars", "micros", "peak", "late", "vblanks", "x", "y", "cuts", "touches", "resets", "paused",
+                "view", "effects", "music", "score", "bestscore", "beststars"]
         memory = core.retro_get_memory_data(2)
         size = core.retro_get_memory_size(2)
         offset = address - 0x02000000
-        if not memory or offset + 64 > size:
+        if not memory or offset + 88 > size:
             raise RuntimeError(f"Cannot read telemetry: RAM={size} address={address:x}")
         assert size == 4 * 1024 * 1024, f"Expected original DS main RAM, received {size} bytes"
         report["mainRamBytes"] = size
@@ -190,7 +194,7 @@ def main():
         reference = {sample["tick"]: sample for trace in references if trace["level"] == 1 for sample in trace["samples"]}
         samples = {}
         def telemetry():
-            return dict(zip(keys, struct.unpack("<10I2f4I", c.string_at(memory + offset, 64))))
+            return dict(zip(keys, struct.unpack("<10I2f10I", c.string_at(memory + offset, 88))))
         def run(count):
             for _ in range(count):
                 core.retro_run()
@@ -201,6 +205,7 @@ def main():
                 if current["resets"] == 0 and 10 <= tick < 124 and tick % 3 == 1:
                     animation.append(framebuffer().crop((0, 192, 256, 384)))
         def snapshot(label):
+            run(3)  # Allow submitted 3D frames to reach the display after a UI transition.
             result = telemetry()
             report["stages"][label] = result
             print(label, result, flush=True)
@@ -214,6 +219,10 @@ def main():
         errors = [math.hypot(samples[tick]["x"] - point["x"], samples[tick]["y"] - point["y"]) for tick, point in reference.items()]
         report["maximumDesktopError"] = max(errors)
         assert max(errors) < .05, errors
+        candy = framebuffer().crop((119, 192 + 60, 137, 192 + 77))
+        red = sum(r > 120 and r > g * 1.6 and r > b * 1.5 for r, g, b in candy.getdata())
+        assert red >= 12, f"Candy pinwheel layer missing: only {red} red pixels"
+        report["candyRedPixels"] = red
         animation[0].save(directory / "animation.gif", save_all=True, append_images=animation[1:], duration=50, loop=0)
         strip = Image.new("RGB", (48 * 19, 64))
         for index, image in enumerate(animation[:19]):
@@ -228,6 +237,14 @@ def main():
             def touch(x, y, held=True):
                 pointer[:] = [round(x / 255 * 65534 - 32767), round((192 + y) / 383 * 65534 - 32767), int(held)]
                 run(3)
+            def tap(x, y):
+                touch(x, y)
+                touch(x, y, False)
+            def key(ident):
+                buttons.add(ident)
+                run(3)
+                buttons.clear()
+                run(3)
             touch(180, 150)
             touch(180, 130)
             touch(180, 130, False)
@@ -238,7 +255,10 @@ def main():
             touch(155, 40, False)
             run(180)
             won = snapshot("win")
-            assert won["state"] == 1 and won["stars"] == 3 and won["cuts"] == 1, won
+            assert won["state"] == 1 and won["stars"] == 3 and won["cuts"] == 1 and won["view"] == 2, won
+            assert won["beststars"] == 3 and won["bestscore"] == won["score"] >= 3000, won
+            tap(128, 160)
+            assert telemetry()["view"] == 2 and telemetry()["resets"] == 0, "Disabled next button changed the level"
             buttons.add(8)  # libretro joypad A
             run(3)
             buttons.clear()
@@ -252,16 +272,60 @@ def main():
             run(60)
             paused = snapshot("paused")
             assert paused["paused"] == 1 and paused["ticks"] == beforepause["ticks"], paused
+            tap(191, 85)
+            assert telemetry()["view"] == 1 and telemetry()["ticks"] == paused["ticks"], "Disabled skip resumed gameplay"
+            tap(82, 157)
+            tap(174, 157)
+            quiet = snapshot("quiet")
+            assert quiet["effects"] == 0 and quiet["music"] == 0, quiet
+            run(60)
+            silence = audiononzero
+            run(60)
+            assert audiononzero == silence, "Audio persisted with both toggles off"
             buttons.add(3)
             run(3)
             buttons.clear()
             run(30)
             resumed = snapshot("resumed")
             assert resumed["paused"] == 0 and resumed["ticks"] > paused["ticks"], resumed
-            touch(225, 10)
-            touch(225, 10, False)
+            tap(178, 14)
             touchretry = snapshot("touchretry")
             assert touchretry["resets"] == 2 and touchretry["ticks"] < resumed["ticks"], touchretry
+            touch(227, 14)
+            touch(100, 40)
+            touch(155, 40)
+            touch(155, 40, False)
+            assert telemetry()["view"] == 0 and telemetry()["cuts"] == 1, "Cancelled HUD drag leaked into gameplay"
+            tap(227, 14)
+            assert telemetry()["view"] == 1, "Touch pause failed"
+            tap(65, 118)
+            levels = snapshot("levels")
+            assert levels["view"] == 4 and levels["beststars"] == 3, levels
+            key(0)  # B returns to the pause menu.
+            assert telemetry()["view"] == 1
+            tap(191, 118)
+            home = snapshot("home")
+            assert home["view"] == 5, home
+            tap(82, 123)
+            tap(174, 123)
+            beforemusic = audiononzero
+            run(60)
+            assert telemetry()["effects"] == 1 and telemetry()["music"] == 1 and audiononzero > beforemusic
+            key(5)  # D-pad down wraps from Music to Play.
+            key(8)  # A: Play -> level select -> 1-1.
+            assert telemetry()["view"] == 4
+            key(8)
+            assert telemetry()["view"] == 0 and telemetry()["resets"] == 3
+            run(60)
+            touch(100, 40)
+            touch(155, 40)
+            touch(155, 40, False)
+            run(200)
+            fastwin = snapshot("fastwin")
+            assert fastwin["view"] == 2 and fastwin["score"] > 5000 and fastwin["bestscore"] == fastwin["score"], fastwin
+            final = snapshot("complete")
+            assert final["late"] == 0, final
+            assert final["vblanks"] - idle["vblanks"] == final["frames"] - idle["frames"], "Game loop lost VBlanks"
             assert touchretry["late"] == 0, touchretry
             assert touchretry["vblanks"] - idle["vblanks"] == touchretry["frames"] - idle["frames"], "Game loop lost VBlanks"
             assert audiononzero > 0, "No sound effects reached the audio callback"
@@ -270,7 +334,7 @@ def main():
         report["soakFrames"] = 0 if args.inspect else args.soak
         (directory / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(f"PASS: DS boot, {len(samples)} original trajectories (max error {max(errors):.6f}), "
-              f"{report['soakFrames']} soak frames" + ("" if args.inspect else ", swipe, stars, win, retry, pause/resume, sound"), flush=True)
+              f"{report['soakFrames']} soak frames" + ("" if args.inspect else ", candy layers, HUD, swipe, win/score, retry, pause, audio toggles, menu navigation, no input leakage"), flush=True)
     finally:
         if loaded:
             core.retro_unload_game()

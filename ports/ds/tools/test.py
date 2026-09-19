@@ -28,3 +28,9 @@ result["maximumDesktopError"] = max(errors)
 (build / "simulationtest.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
 print(f"PASS: {len(reference)} real DX reference samples; maximum error {max(errors):.6f} DX pixels")
 print("PASS:", result["checks"])
+binary = build / "interfacetest.exe"
+subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror",
+                "-I" + str(root / "include"), "-I" + str(root / "generated"),
+                str(root / "source/simulation.cpp"), str(root / "source/interface.cpp"),
+                str(root / "tests/interface.cpp"), "-o", str(binary)], check=True)
+subprocess.run([str(binary)], check=True)

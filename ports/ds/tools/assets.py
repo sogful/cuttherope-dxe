@@ -119,6 +119,27 @@ def main():
     sprite("hookback", "obj_hook", 0)
     sprite("hookfront", "obj_hook", 1)
     sprite("support", "char_supports", 0)
+    def ui(name, resource, index, width):
+        crop, _ = readframe(resource, index)
+        sprite(name, resource, index, width / crop.width / scale, restore=False)
+    ui("restart", "hud_ui", 0, 23)
+    ui("pause", "hud_ui", 12, 46)
+    for index in range(11):
+        sprite("hudstar" + str(index), "hud_ui", index + 1, 1.2)
+    ui("button", "menu_buttons", 0, 112)
+    ui("buttonpressed", "menu_buttons", 1, 112)
+    ui("shortbutton", "menu_buttons", 3, 70)
+    ui("shortpressed", "menu_buttons", 2, 70)
+    ui("menutitle", "menu_pause", 0, 248)
+    ui("audiobutton", "menu_options_packed", 0, 54)
+    ui("audiopressed", "menu_options_packed", 1, 54)
+    ui("soundicon", "menu_options_packed", 2, 21)
+    ui("musicicon", "menu_options_packed", 3, 16)
+    ui("disabledicon", "menu_options_packed", 4, 15)
+    ui("resultstar", "menu_results", 13, 33)
+    ui("resultempty", "menu_results", 14, 31)
+    ui("separator", "menu_results", 15, 172)
+    ui("levelcard", "menu_level_ui", 0, 58)
     fontpath = content / "fonts/gooddog_new-webfont.ttf"
     sources.add(fontpath)
     font = ImageFont.truetype(str(fontpath), 13)
@@ -149,18 +170,19 @@ def main():
     (output / "logo.bin").write_bytes(rgb15(upper))
     upper.crop((0, 0, 256, 192)).save(output / "logo.png")
 
-    sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "monster_open", "monster_chewing", "win"]
+    sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "monster_open", "monster_chewing", "win", "tap"]
     audio = []
-    for name in sfx:
-        path = content / "sounds/sfx" / (name + ".wav")
+    for name in sfx + ["game_music", "menu_music"]:
+        music = name.endswith("_music")
+        path = content / ("sounds" if music else "sounds/sfx") / (name + ".wav")
         sources.add(path)
         with wave.open(str(path), "rb") as sound:
             data = sound.readframes(sound.getnframes())
             width = sound.getsampwidth()
             if sound.getnchannels() == 2:
                 data = audioop.tomono(data, width, .5, .5)
-            data, _ = audioop.ratecv(data, width, 1, sound.getframerate(), 16000, None)
-            data = audioop.lin2lin(data, width, 2)
+            data, _ = audioop.ratecv(data, width, 1, sound.getframerate(), 11025 if music else 16000, None)
+            data = audioop.lin2lin(data, width, 1 if music else 2)
         data += b"\0" * (-len(data) % 4)
         stem = name.replace("_", "")
         (output / (stem + ".bin")).write_bytes(data)
@@ -210,6 +232,7 @@ def main():
                 "audiobytes": sum(size for _, size in audio),
                 "sources": {str(path.relative_to(content)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)},
                 "sprites": [{key: value for key, value in record.items() if key != "image"} for record in records]}
+    assert manifest["texturebytes"] <= 384 * 1024, "Main-engine textures exceed VRAM A+B+D"
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"Converted original level 1-1, {len(records)} sprites, {manifest['texturebytes']} texture bytes, {manifest['audiobytes']} audio bytes")
 
