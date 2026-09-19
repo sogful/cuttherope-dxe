@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ProjectGuid>{9A732C70-39B7-456E-8029-91F641C29567}</ProjectGuid>
+    <RootNamespace>CutTheRopeDX</RootNamespace>
+    <AssemblyName>CutTheRope-DX</AssemblyName>
+    <BaseOutputPath>$(MSBuildProjectDirectory)\..\tools\bin\</BaseOutputPath>
+    <TargetFrameworks>net9.0;net9.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="'$(CtrAndroidOnly)' == 'true'"></TargetFrameworks>
+    <TargetFramework Condition="'$(CtrAndroidOnly)' == 'true'">net9.0-android</TargetFramework>
+    <RuntimeIdentifiers Condition="'$(CtrAndroidOnly)' == 'true' AND '$(RuntimeIdentifier)' == ''">android-arm64;android-arm</RuntimeIdentifiers>
+    <LangVersion>preview</LangVersion>
+
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <ApplicationIcon Condition="$([MSBuild]::IsOsPlatform('Windows')) AND '$(TargetFramework)' != 'net9.0-android' AND Exists('..\icon.ico')">..\icon.ico</ApplicationIcon>
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <VersionSuffix>dirty</VersionSuffix>
+    <Company>ZeptoLab</Company>
+    <Product>Cut The Rope: DX</Product>
+    <Description>Cut the Rope: DX, a fan-made enhancement of the PC version of Cut the Rope.</Description>
+    <Copyright>Copyright © 2012</Copyright>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
+    <IsAotCompatible>true</IsAotCompatible>
+    <TieredCompilation>false</TieredCompilation>
+    <IncludeSourceRevisionInInformationalVersion Condition="'$(VersionSuffix)' != ''">true</IncludeSourceRevisionInInformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion Condition="'$(VersionSuffix)' == ''">false</IncludeSourceRevisionInInformationalVersion>
+
+    <RunMGCB>true</RunMGCB>
+    <RunMGCB Condition="'$(CI)' == 'true'">false</RunMGCB>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' AND $([MSBuild]::IsOsPlatform('Windows'))">
+    <OutputType>WinExe</OutputType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' AND !$([MSBuild]::IsOsPlatform('Windows'))">
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <Import Project="Android\android.props" Condition="'$(TargetFramework)' == 'net9.0-android'" />
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
+    <OutputType>Exe</OutputType>
+    <DefineConstants>$(DefineConstants);ANDROID</DefineConstants>
+    <Nullable>disable</Nullable>
+    <AndroidManifest>Android\AndroidManifest.xml</AndroidManifest>
+    <AndroidManifestPlaceholders>appLabel=$(AppLabel)</AndroidManifestPlaceholders>
+    <RunMGCB>false</RunMGCB>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <UseMonoRuntime>false</UseMonoRuntime>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' AND '$(TargetFramework)' != 'net9.0-android'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <StripSymbols>true</StripSymbols>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FontStashSharp.MonoGame" Version="1.5.5" />
+    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.4.1" />
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.4.1"
+      Condition="'$(TargetFramework)' != 'net9.0-android'" />
+    <PackageReference Include="MonoGame.Framework.Android" Version="3.8.4.1"
+      Condition="'$(TargetFramework)' == 'net9.0-android'" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <DefineConstants>$(DefineConstants);MONOGAME_DESKTOPGL</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' != 'net9.0-android'">
+    <None Include="..\assets\**"
+      Exclude="..\assets\sounds\**;..\assets\**\.DS_Store;..\assets\**\*.png;..\assets\**\*.webp;..\assets\**\*.etc2;..\assets\content.mgcb;..\assets\content-android.mgcb;..\assets\content-android.mgcb.bak;..\assets\bin\**\*.*;..\assets\obj\**\*.*;..\assets\binandroid\**\*.*;..\assets\objandroid\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>content\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
+    <None Include="..\assets\sounds\*.xnb" Exclude="..\assets\sounds\*_windows.xnb">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>content\sounds\%(Filename)%(Extension)</Link>
+    </None>
+    <None Include="..\assets\sounds\*.ogg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>content\sounds\%(Filename)%(Extension)</Link>
+    </None>
+    <None Include="..\alsoft.ini">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(RunMGCB)' == 'true'">
+    <MonoGameContentReference Include="..\assets\content.mgcb" ContentFolder="content" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
+    <Compile Remove="Program.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != 'net9.0-android'">
+    <Compile Remove="Android\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
+    <AndroidAsset Include="..\assets\*.json" Link="Assets\content\%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\assets\tile.png" Link="Assets\content\tile.png" />
+    <AndroidAsset Include="..\assets\maps\**\*.*" Link="Assets\content\maps\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\assets\locales\**\*.*" Link="Assets\content\locales\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\assets\fonts\**\*.ttf;..\assets\fonts\**\*.otf" Link="Assets\content\fonts\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\assets\images\**\*.json" Link="Assets\content\images\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\assets\images\**\*.xml" Link="Assets\content\images\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\assets\images\**\*.etc2" Link="Assets\content\images\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\assets\binandroid\sounds\**\*.xnb" Link="Assets\content\sounds\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\assets\sounds\*.ogg" Link="Assets\content\sounds\%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\assets\sounds\*.xnb" Exclude="..\assets\sounds\*_windows.xnb" Link="Assets\content\sounds\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Target Name="RestoreDotnetTools" BeforeTargets="CollectPackageReferences">
+    <Message
+      Text="Restoring dotnet tools (first build only, or after upgrading MonoGame / clearing the nuget cache)"
+      Importance="High" />
+    <Exec Command="dotnet tool restore" />
+  </Target>
+</Project>
