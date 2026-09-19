@@ -22,7 +22,7 @@ void update(const ui::controller& menu) {
     if (silenced || (menu.mode != lastview && menu.mode == ui::view::paused) || menu.reset) {
         for (int i = 1; i < 16; ++i) soundKill(i);
     }
-    const int target = menu.mode == ui::view::home || menu.mode == ui::view::levels ? 1 : 0;
+    const int target = menu.frontend() ? 1 : 0;
     if (target != track) {
         soundKill(0);
         soundPlaySampleChannel(0, target ? menumusicdata : gamemusicdata, SoundFormat_8Bit,

@@ -22,7 +22,10 @@ for page in manifest["atlases"]:
     drift = [0, 0, 0]
     for expected, packed in zip(source.getdata(), data):
         alpha = expected[3]
-        assert packed >> 5 == round(alpha * 7 / 255)
+        if page["dither"]:
+            assert abs((packed >> 5) - alpha * 7 / 255) <= 1
+        else:
+            assert packed >> 5 == round(alpha * 7 / 255)
         if alpha < 128:
             continue
         actual = [((palette[packed & 31] >> shift) & 31) * 255 // 31 for shift in (0, 5, 10)]

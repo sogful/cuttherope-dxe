@@ -47,5 +47,9 @@ int main() {
     for (int tick = 0; tick < 3600; ++tick) game.tick();
     assert(game.state == dx::outcome::playing);
     assert(std::isfinite(game.candy().pos.x) && std::isfinite(game.candy().pos.y));
-    std::printf("],\"winTick\":%d,\"checks\":\"miss,zero stroke,cut,delayed detach,three stars,win,retry,loss,long idle\"}\n", wontick);
+    assert(!game.tap({1400, 300}));
+    assert(game.tap({1280, 300}));
+    assert(!game.tap({1280, 300}));
+    assert(game.ropes[0].pending >= 0);
+    std::printf("],\"winTick\":%d,\"checks\":\"miss,zero stroke,cut,delayed detach,three stars,win,retry,loss,long idle,tap radius,tap cut\"}\n", wontick);
 }

@@ -1,14 +1,67 @@
 #include "interface.hpp"
 #include <algorithm>
 #include <cmath>
+#include "menuassets.hpp"
 
 namespace ui {
+void controller::initialize(const char* directory) {
+    saves.initialize(directory);
+    const auto& settings = saves.preferences;
+    effects = settings.effects; music = settings.music; locale = settings.locale; clickcut = settings.clickcut;
+    for (int i = 0; i < 4; ++i) skins[i] = settings.skins[i];
+    candyhint = skins[0] == 0;
+    bestscore = saves.active().levels[0].score;
+    beststars = saves.active().levels[0].stars;
+}
+void controller::persist() {
+    auto& settings = saves.preferences;
+    settings.effects = effects; settings.music = music; settings.locale = locale; settings.clickcut = clickcut;
+    for (int i = 0; i < 4; ++i) settings.skins[i] = skins[i];
+    saves.save();
+}
+void controller::suspend(input current) {
+    reset = clicked = gameTouch = false;
+    held = current.touch;
+    captured = true;
+    armed = pressed = -1;
+}
+int controller::skinhit(int px, int py) const {
+    if (py < menuart::skintop || py >= menuart::skinbottom) return -1;
+    const float x = px - menuart::skinleft, y = py - menuart::skintop + skinoffsets[skintab];
+    if (x < 0 || y < 0) return -1;
+    const int column = x / menuart::skinpitch, row = y / menuart::skinrow;
+    const float offset = y - row * menuart::skinrow;
+    const float center = (menuart::skinrow - 10 * menuart::fit * 192 / 1440) / 2;
+    if (column > 3 || x - column * menuart::skinpitch >= menuart::skinwidth ||
+        offset < center - menuart::skinheight / 2 || offset >= center + menuart::skinheight / 2) return -1;
+    const int index = row * 4 + column;
+    return index < menuart::skincounts[skintab] ? index : -1;
+}
+int controller::pressedskin() const {
+    const int index = skinhit(lastx, lasty);
+    return mode == view::skins && held && !dragging && index == skinhit(originx, originy) ? index : -1;
+}
 int controller::points(int stars, int ticks) {
     return static_cast<int>(std::ceil(stars * 1000.0f + std::max(0.0f, 30.0f - ticks * .016f) * 100.0f));
 }
 
 int controller::buttons(button* out) const {
     int count = 0;
+    if (frontend()) {
+        if (mode == view::levels) {
+            for (int i = 0; i < 25; ++i) {
+                const int px = std::lround(128 + (824 + (i % 5) * 228 - 1280) * menuart::fit * (192.0f / 1440));
+                const int py = std::lround(96 + (203.5f + (i / 5) * 258 - 720) * menuart::fit * (192.0f / 1440));
+                out[count++] = {pack == 0 && i == 0 ? action::play : action::unavailable, px, py, 29, 29, "", unlockall() || (pack == 0 && i == 0), i};
+            }
+        }
+        for (const auto& item : menuart::controls) {
+            if (item.view != mode) continue;
+            const bool enabled = item.action != action::openpack || pack == 0 || unlockall();
+            out[count++] = {item.action, item.x, item.y, item.w, item.h, "", enabled, item.argument};
+        }
+        return count;
+    }
     auto add = [&](action id, int x, int y, int w, int h, const char* label, bool enabled = true) {
         out[count++] = {id, x, y, w, h, label, enabled};
     };
@@ -32,29 +85,23 @@ int controller::buttons(button* out) const {
         add(action::next, 128, 160, 70, 30, "Next", false);
         add(action::levels, 212, 160, 70, 30, "Menu");
         break;
-    case view::levels:
-        add(action::play, 128, 83, 68, 68, "1-1");
-        add(action::back, 44, 166, 70, 30, "Back");
-        add(action::home, 204, 166, 70, 30, "Home");
-        break;
-    case view::home:
-        add(action::levels, 128, 76, 112, 28, "Play");
-        add(action::effects, 82, 123, 54, 28, "");
-        add(action::music, 174, 123, 54, 28, "");
-        break;
+    default: break;
     }
     return count;
 }
 
 void controller::enter(view target) {
+    if (mode == view::packs && strip.down) { strip.release(); strip.moveto(strip.selected); }
     mode = target;
     age = focus = 0;
     pressed = armed = -1;
     captured = true;
     gameTouch = false;
+    keyboard = dragging = false;
+    if (target == view::credits) { creditoffset = 0; autoscroll = true; }
 }
 
-void controller::activate(action command) {
+void controller::activate(action command, int argument) {
     clicked = true;
     switch (command) {
     case action::pause: enter(view::paused); break;
@@ -71,16 +118,48 @@ void controller::activate(action command) {
         enter(view::levels);
         break;
     case action::home: enter(view::home); break;
-    case action::back: enter(returnview); break;
+    case action::back:
+        if (mode == view::packs || mode == view::options) enter(view::home);
+        else if (mode == view::levels) enter(view::packs);
+        else if (mode == view::skins) enter(view::home);
+        else if (frontend()) enter(view::options);
+        else enter(returnview);
+        break;
     case action::effects: effects = !effects; break;
     case action::music: music = !music; break;
+    case action::packs: enter(view::packs); break;
+    case action::options: enter(view::options); break;
+    case action::languages: enter(view::languages); break;
+    case action::credits: enter(view::credits); break;
+    case action::resetmenu: enter(view::resetmenu); break;
+    case action::erase: saves.clear(); bestscore = beststars = 0; enter(view::options); break;
+    case action::unlock:
+        saves.complete(0, bestscore, beststars);
+        saves.toggle();
+        bestscore = saves.active().levels[0].score; beststars = saves.active().levels[0].stars;
+        break;
+    case action::skinmenu: candyhint = false; enter(view::skins); break;
+    case action::skintab: skintab = argument; skinage = 0; skinvelocity = 0; break;
+    case action::skin: skins[skintab] = argument; skinage = 0; break;
+    case action::unavailable: notice = 120; break;
+    case action::clickcut: clickcut = !clickcut; break;
+    case action::language: locale = argument; break;
+    case action::previouspack: strip.moveto(pack - 1); pack = strip.selected; settled = 100; break;
+    case action::nextpack: strip.moveto(pack + 1); pack = strip.selected; settled = 100; break;
+    case action::openpack:
+        if ((pack == 0 || unlockall()) && !strip.moving) {
+            if (std::abs(strip.x + pack * 640) < 1) enter(view::levels);
+            else strip.moveto(pack);
+        }
+        break;
     default: clicked = false; break;
     }
 }
 
 void controller::update(const dx::simulation& game, input current) {
     reset = clicked = gameTouch = false;
-    button list[8];
+    if (frontend()) { frontinput(current); return; }
+    button list[32];
     const int count = buttons(list);
     const bool gameplay = mode == view::playing && game.state == dx::outcome::playing;
     if (current.touch && !held) {
@@ -121,8 +200,101 @@ void controller::update(const dx::simulation& game, input current) {
     gameTouch = current.touch && !captured && mode == view::playing && !reset && game.state == dx::outcome::playing;
 }
 
+void controller::frontinput(input current) {
+    strip.count = menuart::boxcount;
+    button list[32];
+    const int count = buttons(list);
+    if (current.touch && !held) {
+        keyboard = dragging = false;
+        originx = lastx = current.x;
+        originy = lasty = current.y;
+        armed = -1;
+        if (mode == view::packs && current.x >= 38 && current.x < 218) strip.begin(current.x / (menuart::fit * (192.0f / 1440)));
+        if (mode == view::credits) autoscroll = false;
+        if (mode == view::skins) skinvelocity = 0;
+        for (int i = 0; i < count; ++i) {
+            if (list[i].enabled && list[i].contains(current.x, current.y)) {
+                armed = focus = i;
+                break;
+            }
+        }
+    }
+    if (current.touch && held) {
+        const bool strip = mode == view::packs && originx >= 38 && originx < 218;
+        const bool credits = mode == view::credits && originy >= 23 && originy < 169;
+        const bool skins = mode == view::skins && originy >= menuart::skintop && originy < menuart::skinbottom;
+        if ((strip || credits || skins) && (std::abs(current.x - originx) > 3 || std::abs(current.y - originy) > 3)) dragging = true;
+        if (dragging) {
+            armed = -1;
+            if (strip) this->strip.drag(current.x / (menuart::fit * (192.0f / 1440)));
+            if (credits) creditoffset = std::clamp(creditoffset + lasty - current.y, 0.0f, std::max(0.0f, menuart::creditheights[locale] - 146.0f));
+            if (skins) {
+                skinvelocity = (lasty - current.y) * .5f + skinvelocity * .5f;
+                skinoffsets[skintab] = std::clamp(skinoffsets[skintab] + lasty - current.y, 0.0f, menuart::skinmax[skintab]);
+            }
+        }
+    }
+    pressed = current.touch && armed >= 0 && list[armed].contains(current.x, current.y) ? armed : -1;
+    if (!current.touch && held) {
+        const int selected = armed;
+        armed = pressed = -1;
+        if (mode == view::packs && strip.down) {
+            strip.release();
+            pack = strip.selected;
+        }
+        if (dragging && mode == view::packs) settled = 100;
+        else if (selected >= 0 && list[selected].contains(current.x, current.y)) activate(list[selected].id, list[selected].argument);
+        else if (mode == view::skins && !dragging) {
+            const int index = skinhit(current.x, current.y);
+            if (index >= 0 && index == skinhit(originx, originy)) activate(action::skin, index);
+        }
+        else if (mode == view::packs && current.x >= 38 && current.x < 218 && current.y >= 51 && current.y < 141) {
+            strip.moveto(static_cast<int>(std::round(packposition + (current.x - 128) / (640 * menuart::fit * (192.0f / 1440)))));
+            pack = strip.selected;
+            settled = 100;
+        }
+        dragging = false;
+    }
+    held = current.touch;
+    lastx = current.x;
+    lasty = current.y;
+    if (current.keys & cancel) {
+        if (mode != view::home) activate(action::back);
+    } else if (current.keys & (previous | following)) {
+        keyboard = true;
+        const int direction = current.keys & previous ? -1 : 1;
+        if (mode == view::packs) activate(direction < 0 ? action::previouspack : action::nextpack);
+        else if (mode == view::credits) {
+            autoscroll = false;
+            creditoffset = std::clamp(creditoffset + direction * 8.0f, 0.0f, std::max(0.0f, menuart::creditheights[locale] - 146.0f));
+        } else if (mode == view::skins) {
+            const int chosen = std::clamp(skins[skintab] + direction, 0, menuart::skincounts[skintab] - 1);
+            activate(action::skin, chosen);
+            skinoffsets[skintab] = std::clamp(chosen / 4 * menuart::skinrow, 0.0f, menuart::skinmax[skintab]);
+        } else {
+            do { focus = (focus + direction + count) % count; } while (!list[focus].enabled);
+        }
+    } else if (current.keys & accept) {
+        if (mode == view::packs) activate(action::openpack);
+        else activate(list[focus].id, list[focus].argument);
+    }
+}
+
 void controller::advance(const dx::simulation& game) {
     ++age;
+    ++skinage;
+    if (notice > 0) --notice;
+    if (mode == view::skins && !held) {
+        skinoffsets[skintab] = std::clamp(skinoffsets[skintab] + skinvelocity, 0.0f, menuart::skinmax[skintab]);
+        skinvelocity *= .88f;
+        if (std::abs(skinvelocity) < .05f) skinvelocity = 0;
+    }
+    if (mode == view::packs) {
+        if (strip.update(.016f)) settled = 0;
+        else ++settled;
+        packposition = -strip.x / 640;
+    }
+    if (mode == view::credits && autoscroll) creditoffset = std::min(creditoffset + .5f * (192.0f / 1440), std::max(0.0f, menuart::creditheights[locale] - 146.0f));
     if (mode != view::playing) return;
     for (int i = 0; i < 3; ++i) {
         if (game.stars[i]) starage[i] = std::min(starage[i] + 1, 30);
@@ -133,6 +305,7 @@ void controller::advance(const dx::simulation& game) {
     if (game.state == dx::outcome::won) {
         bestscore = std::max(bestscore, score);
         beststars = std::max(beststars, game.count);
+        saves.complete(0, bestscore, beststars);
     }
     enter(game.state == dx::outcome::won ? view::results : view::failure);
 }

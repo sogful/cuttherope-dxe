@@ -2,6 +2,7 @@ import json
 import math
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -31,6 +32,12 @@ print("PASS:", result["checks"])
 binary = build / "interfacetest.exe"
 subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror",
                 "-I" + str(root / "include"), "-I" + str(root / "generated"),
-                str(root / "source/simulation.cpp"), str(root / "source/interface.cpp"),
+                str(root / "source/simulation.cpp"), str(root / "source/interface.cpp"), str(root / "source/progress.cpp"),
                 str(root / "tests/interface.cpp"), "-o", str(binary)], check=True)
 subprocess.run([str(binary)], check=True)
+binary = build / "progresstest.exe"
+subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", "-I" + str(root / "include"),
+                str(root / "source/progress.cpp"), str(root / "tests/progress.cpp"), "-o", str(binary)], check=True)
+directory = build / ("savetest" + uuid.uuid4().hex)
+directory.mkdir()
+subprocess.run([str(binary), str(directory)], check=True)

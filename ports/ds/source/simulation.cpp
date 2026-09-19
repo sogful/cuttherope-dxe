@@ -171,6 +171,31 @@ bool simulation::swipe(point start, point end) {
     return changed;
 }
 
+bool simulation::tap(point position) {
+    if (state != outcome::playing) return false;
+    float nearest = 60;
+    int chosen = -1;
+    point sample{};
+    for (int index = 0; index < definition.hookcount; ++index) {
+        if (ropes[index].cut) continue;
+        point points[125];
+        int size = 0;
+        samples(index, 0, ropes[index].count, points, size);
+        for (int i = 0; i < size; ++i) {
+            const float distance = (points[i] - position).length();
+            if (distance < nearest) { nearest = distance; chosen = index; sample = points[i]; }
+        }
+    }
+    if (chosen < 0) return false;
+    int segment = 0;
+    nearest = 1e9f;
+    for (int i = 0; i < ropes[chosen].count - 1; ++i) {
+        const float distance = (bodies[ropes[chosen].bodies[i]].pos - sample).length();
+        if (distance < nearest) { nearest = distance; segment = i; }
+    }
+    return sever(chosen, segment);
+}
+
 void simulation::samples(int index, int first, int count, point* output, int& size) const {
     size = 0;
     if (count < 3) return;

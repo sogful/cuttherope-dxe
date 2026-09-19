@@ -9,6 +9,7 @@ import xml.etree.ElementTree as xml
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+import colors
 
 root = Path(__file__).resolve().parents[1]
 content = root.parents[1] / "content"
@@ -79,25 +80,23 @@ def atlases():
             image = record["image"]
             record.update(page=page, x=x, y=y, w=image.width, h=image.height)
             atlas.paste(image, (x, y))
-        visible = [pixel[:3] for pixel in atlas.getdata() if pixel[3] >= 18]
-        training = Image.new("RGB", (len(visible), 1))
-        training.putdata(visible)
-        palette = training.quantize(colors=32, method=Image.Quantize.MEDIANCUT).getpalette()[:96]
-        palette += palette[:3] * ((96 - len(palette)) // 3)
-        lookup = Image.new("P", (1, 1))
-        lookup.putpalette(palette * 8)
-        quantized = atlas.convert("RGB").quantize(palette=lookup, dither=Image.Dither.NONE)
-        packed = bytes((round(alpha * 7 / 255) << 5) | (color & 31)
-                       for alpha, color in zip(atlas.getchannel("A").getdata(), quantized.getdata()))
+        dither = resource != "font"
+        lookup, palette = colors.palette(atlas, dither=dither)
+        packed = bytearray(width * height)
+        for record in items:
+            data = colors.indexed(record["image"], lookup, dither, origin=(record["ox"], record["oy"]))
+            for row in range(record["h"]):
+                start = (record["y"] + row) * width + record["x"]
+                packed[start:start + record["w"]] = data[row * record["w"]:(row + 1) * record["w"]]
         stem = "atlas" + str(page)
         atlas.save(output / (stem + ".png"))
         (output / (stem + ".bin")).write_bytes(packed)
-        colors = [(palette[i] >> 3) | ((palette[i + 1] >> 3) << 5) | ((palette[i + 2] >> 3) << 10) for i in range(0, 96, 3)]
-        (output / (stem + "palette.bin")).write_bytes(struct.pack("<32H", *colors))
+        (output / (stem + "palette.bin")).write_bytes(palette)
+        palette = struct.unpack("<32H", palette)
         preview = Image.new("RGBA", atlas.size)
-        preview.putdata([tuple(((colors[pixel & 31] >> shift) & 31) * 255 // 31 for shift in (0, 5, 10)) + ((pixel >> 5) * 255 // 7,) for pixel in packed])
+        preview.putdata([tuple(((palette[pixel & 31] >> shift) & 31) * 255 // 31 for shift in (0, 5, 10)) + ((pixel >> 5) * 255 // 7,) for pixel in packed])
         preview.save(output / (stem + "preview.png"))
-        pages.append({"name": stem, "source": resource, "width": width, "height": height, "bytes": len(packed)})
+        pages.append({"name": stem, "source": resource, "width": width, "height": height, "bytes": len(packed), "dither": dither})
     return pages
 
 
@@ -160,7 +159,7 @@ def main():
     landscape = background.crop((left, 0, left + width, background.height)).resize((256, 192), Image.Resampling.LANCZOS)
     backdrop = Image.new("RGB", (256, 256))
     backdrop.paste(landscape, (0, 0))
-    (output / "background.bin").write_bytes(rgb15(backdrop))
+    (output / "background.bin").write_bytes(colors.direct(backdrop))
     backdrop.save(output / "background.png")
 
     logopath = root / "assets/logods.png"
@@ -212,9 +211,9 @@ def main():
     header = ["#pragma once", "#include <cstdint>", 'extern "C" {']
     header += [f"extern const unsigned char {name}data[];" for name in blobs]
     header += ["}", "namespace art {", "struct sprite { int x, y, w, h, ox, oy, advance, page; };",
-               "struct texture { int width, height; const unsigned char* pixels; const unsigned char* palette; };",
+               "struct texture { int width, height; const unsigned char* pixels; const unsigned char* palette; int kind; };",
                "inline constexpr texture textures[] = {"]
-    header += [f"{{{page['width']},{page['height']},{page['name']}data,{page['name']}palettedata}}," for page in pages]
+    header += [f"{{{page['width']},{page['height']},{page['name']}data,{page['name']}palettedata,{1 if page['source'].startswith('char_animations') else 2 if page['source'].startswith('candies/') else 0}}}," for page in pages]
     header += ["};", f"inline constexpr int texturecount = {len(pages)};", "enum id {"]
     header += [record["name"] + "," for record in records]
     header += ["spritecount };", "inline constexpr sprite sprites[] = {"]
@@ -235,6 +234,8 @@ def main():
     assert manifest["texturebytes"] <= 384 * 1024, "Main-engine textures exceed VRAM A+B+D"
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"Converted original level 1-1, {len(records)} sprites, {manifest['texturebytes']} texture bytes, {manifest['audiobytes']} audio bytes")
+    import menus
+    menus.main()
 
 
 if __name__ == "__main__":

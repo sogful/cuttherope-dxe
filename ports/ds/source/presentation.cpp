@@ -1,5 +1,6 @@
 #include "presentation.hpp"
 #include "assets.hpp"
+#include "frontend.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -129,7 +130,7 @@ static void line(dx::point a, dx::point b, u16 color) {
     glLine(static_cast<int>(a.x), static_cast<int>(a.y), static_cast<int>(b.x), static_cast<int>(b.y), color);
 }
 
-static void strand(const dx::simulation& game, int index, int first, int count) {
+static void strand(const dx::simulation& game, int index, int first, int count, int skin) {
     dx::point points[125];
     int size = 0;
     game.samples(index, first, count, points, size);
@@ -138,7 +139,15 @@ static void strand(const dx::simulation& game, int index, int first, int count) 
     glPolyFmt(POLY_ALPHA(alpha) | POLY_CULL_NONE | POLY_ID(49));
     for (int segment = 1; segment < size; ++segment) {
         const bool bright = (segment / 3) % 2 == 0;
-        const u16 color = rope.pending >= 0 ? RGB15(31, 31, 31) : bright ? RGB15(21, 14, 8) : RGB15(15, 9, 5);
+        static constexpr float colors[9][2][3] = {
+            {{.475f,.305f,.185f},{.67555556f,.44f,.27555556f}}, {{.624f,.294f,.114f},{1,.627f,.463f}},
+            {{.404f,.612f,.635f},{.773f,.898f,.902f}}, {{.757f,.533f,0},{.98f,.843f,.2f}},
+            {{.980f,.243f,.243f},{.282f,.525f,.153f}}, {{.176f,.318f,.659f},{1,1,1}},
+            {{.631f,.957f,1},{.996f,.631f,.953f}}, {{1,.329f,.318f},{1,.992f,.941f}},
+            {{1,.831f,.404f},{.251f,.239f,.278f}}
+        };
+        const float* rgb = colors[skin][bright ? 1 : 0];
+        const u16 color = rope.pending >= 0 ? RGB15(31, 31, 31) : RGB15(std::lround(rgb[0] * 31), std::lround(rgb[1] * 31), std::lround(rgb[2] * 31));
         line(points[segment - 1], points[segment], color);
         line(points[segment - 1] + dx::point{4, 0}, points[segment] + dx::point{4, 0}, color);
     }
@@ -159,10 +168,19 @@ void initialize() {
     glScreen2D();
     glClearColor(8, 5, 3, 31);
     glEnable(GL_ANTIALIAS);
+    setBrightness(1, -16);
+    frontend::initialize();
+}
+
+static void loadgame(const ui::controller& menu) {
+    frontend::reset();
+    unsigned occupied = 131072;
     int textures[art::texturecount];
     glGenTextures(art::texturecount, textures);
     for (int index = 0; index < art::texturecount; ++index) {
         const art::texture& source = art::textures[index];
+        if ((source.kind == 1 && menu.skins[2] > 0) || (source.kind == 2 && menu.skins[0] > 0)) continue;
+        occupied += source.width * source.height;
         glBindTexture(0, textures[index]);
         int width = 0, height = 0;
         for (int size = source.width; size > 8; size >>= 1) ++width;
@@ -185,9 +203,12 @@ void initialize() {
         while (true) swiWaitForVBlank();
     }
     background = {256, 192, 0, 0, texture};
+    frontend::reserve(occupied);
 }
 
-void draw(const dx::simulation& game, int frame, const ui::controller& menu, bool touching, dx::point finger) {
+static void scene(const dx::simulation& game, int frame, const ui::controller& menu, bool, dx::point) {
+    if (menu.frontend()) { frontend::draw(menu); return; }
+    frontend::preparegame(menu, game, frame);
     glBegin2D();
     polygon = 0;
     glColor(RGB15(31, 31, 31));
@@ -196,10 +217,10 @@ void draw(const dx::simulation& game, int frame, const ui::controller& menu, boo
     image(art::support, game.definition.target);
     for (int index = 0; index < game.definition.hookcount; ++index) {
         const dx::rope& item = game.ropes[index];
-        if (!item.cut) strand(game, index, 0, item.count);
+        if (!item.cut) strand(game, index, 0, item.count, menu.skins[1]);
         else if (item.remaining > 0) {
-            strand(game, index, 0, item.split);
-            strand(game, index, item.split, item.count - item.split);
+            strand(game, index, 0, item.split, menu.skins[1]);
+            strand(game, index, item.split, item.count - item.split, menu.skins[1]);
         }
         image(art::hookfront, game.definition.hooks[index].anchor);
     }
@@ -215,20 +236,43 @@ void draw(const dx::simulation& game, int frame, const ui::controller& menu, boo
         target = elapsed < 12 ? art::omnom28 + elapsed / 3 : art::omnom32 + (elapsed - 12) / 3 % 9;
     }
     if (game.state == dx::outcome::lost) target = art::sad0 + std::min(12, (frame - game.resulttick) / 3);
-    image(target, game.definition.target);
-    if (game.state != dx::outcome::won) {
+    if (menu.skins[2] == 0) image(target, game.definition.target);
+    if (menu.skins[0] == 0 && game.state != dx::outcome::won) {
         image(art::candy0, game.candy().pos);
         image(art::candy1, game.candy().pos);
         image(art::candy2, game.candy().pos);
     }
-    if (touching) {
-        const dx::point position = screen(finger);
-        glPolyFmt(POLY_ALPHA(20) | POLY_CULL_NONE | POLY_ID(50));
-        glBoxFilled(position.x - 1, position.y - 1, position.x + 1, position.y + 1, RGB15(31, 30, 26));
-    }
+    frontend::ribbon();
+    frontend::render();
     menus(game, menu);
     glEnd2D();
     glFlush(GL_TRANS_MANUALSORT);
+}
+
+static int loaded = -1, transition = 0;
+static ui::controller previous;
+bool busy() { return transition != 0; }
+void draw(const dx::simulation& game, int frame, const ui::controller& menu, bool touching, dx::point finger) {
+    const int desired = menu.frontend() ? static_cast<int>(menu.mode) * 12 + menu.locale : 0;
+    if (loaded != desired && !transition) transition = loaded < 0 ? 13 : 1;
+    if (transition > 0 && transition <= 12) {
+        setBrightness(1, -(transition * 16 / 12));
+        scene(game, frame, previous, false, finger);
+        ++transition;
+        return;
+    }
+    if (transition == 13) {
+        setBrightness(1, -16);
+        if (menu.frontend()) { if (loaded <= 0) frontend::reset(); }
+        else loadgame(menu);
+        loaded = desired;
+    }
+    if (transition >= 13) {
+        setBrightness(1, -std::clamp((27 - transition) * 16 / 12, 0, 16));
+        if (++transition > 27) transition = 0;
+    }
+    scene(game, frame, menu, touching, finger);
+    previous = menu;
 }
 
 }

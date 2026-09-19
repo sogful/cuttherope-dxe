@@ -19,7 +19,7 @@ def main():
     if not compiler.exists():
         raise SystemExit("Run powershell -File tools/setup.ps1 first.")
     os.chdir(root)
-    if args.assets or not (root / "generated/assets.hpp").exists():
+    if args.assets or not (root / "generated/assets.hpp").exists() or not (root / "generated/menuassets.hpp").exists():
         subprocess.run([sys.executable, "tools/assets.py"], check=True)
     build = root / "build"
     dist = root / "dist"
@@ -42,6 +42,9 @@ def main():
     subprocess.run([str(compiler), "-mcpu=arm946e-s+nofp", "-c", "generated/assets.s", "-o", str(assets)], check=True, env=environment)
     if not args.bootcheck:
         objects.append(str(assets))
+        menus = build / "menuassets.o"
+        subprocess.run([str(compiler), "-mcpu=arm946e-s+nofp", "-c", "generated/menuassets.s", "-o", str(menus)], check=True, env=environment)
+        objects.append(str(menus))
     name = "bootcheck" if args.bootcheck else "cuttherope"
     elf = build / (name + ".elf")
     subprocess.run([str(compiler.with_name("arm-none-eabi-gcc.exe")), *flags, *objects, "-L" + str(sdk / "libs/libnds/lib"),
@@ -50,6 +53,7 @@ def main():
     rom = dist / (name + ".nds")
     subprocess.run([str(sdk / "tools/ndstool/ndstool.exe"), "-c", str(rom), "-uc", "0",
                     "-9", str(elf), "-7", str(sdk / "sys/arm7/main_core/arm7_maxmod.elf"),
+                    "-d", str(root / "generated/nitro"),
                     "-b", str(sdk / "sys/icon.bmp"), "Cut the Rope DX;DS feasibility slice;DX Extended"], check=True, env=environment)
     size = compiler.with_name("arm-none-eabi-size.exe")
     subprocess.run([str(size), str(elf)], check=True, env=environment)

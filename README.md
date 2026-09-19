@@ -13,14 +13,18 @@ the original logo is designed by Bingies24 and darealmrcatz.
 
 <br>
 
-### Roblox
+### ds
+
+WIP!!
+
+### roblox
 
 a faithful luau port! it is not compiled from the usual C# projects.
 
 - `ports/roblox/src` - runtime modules grouped by roblox service
 - `ports/roblox/tests` - roblox checks and generated golden data
 
-### Android
+### android
 
 <p align="center">
   <img src="./extras/images/androidlogo.svg" width="200"/>
@@ -28,7 +32,7 @@ a faithful luau port! it is not compiled from the usual C# projects.
 
 *Cut the Rope: DXfA (Decompiled Extra for Android)* is a fork made to run the improved version of the game on mobile. <br>
 with compressed textures, this port should work even on **lowend devices**! the minimum to run this game is *~2gb of RAM* and *android 5.0*. <br>
-this is still a heavy work in progress, some scenes might have buttons that are difficult to press, however all actions should work instantaneously inside a level.
+some scenes might have buttons that are difficult to press, however all actions should work instantaneously inside a level.
 
 <table>
   <tr valign="center">

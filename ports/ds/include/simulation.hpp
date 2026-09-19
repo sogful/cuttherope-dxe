@@ -41,6 +41,7 @@ public:
     void reset(const level& data);
     void tick();
     bool swipe(point start, point end);
+    bool tap(point position);
     bool sever(int index, int segment);
     void samples(int index, int first, int count, point* output, int& size) const;
     const body& candy() const { return bodies[0]; }
