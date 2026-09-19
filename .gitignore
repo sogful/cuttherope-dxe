@@ -74,5 +74,10 @@ content/**/*.webp
 
 src/CutTheRopeDX.Browser/wwwroot/content/
 dist/
-
 ports/roblox/generated/
+ports/android/assets/**
+!ports/android/assets/images/
+!ports/android/assets/images/CustomBoxGray.*
+!ports/android/assets/images/SubprojectLogo.*
+!ports/android/assets/images/menu_bgr_gray.*
+!ports/android/assets/images/menu_level_selection_wide.*

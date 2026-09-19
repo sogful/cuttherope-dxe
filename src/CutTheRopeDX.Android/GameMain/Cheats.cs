@@ -1,5 +1,5 @@
 namespace CutTheRopeDX.GameMain
-
+{
     internal static class Cheats
     {
         public static bool UnlockAllBoxes { get; set; }

@@ -18,8 +18,8 @@ The logo is designed by Bingies24 and darealmrcatz.
 ### Roblox
 a faithful luau port! it is not compiled from the C# projects.
 
-- `src` - runtime modules grouped by roblox service
-- `tests` - roblox checks and generated golden data
+- `ports/roblox/src` - runtime modules grouped by roblox service
+- `ports/roblox/tests` - roblox checks and generated golden data
 
 ### Android
 
@@ -30,8 +30,6 @@ a faithful luau port! it is not compiled from the C# projects.
 *Cut the Rope: DXfA (Decompiled Extra for Android)* is a fork made to run the improved version of the game on mobile. <br>
 with compressed textures, this port should work even on **lowend devices**! the minimum to run this game is *~2gb of RAM* and *android 5.0*. <br>
 this is still a heavy work in progress, some scenes might have buttons that are difficult to press, however all actions should work instantaneously inside a level.
-
-the original logo was designed by Bingies24 and darealmrcatz.
 
 <table>
   <tr valign="center">
@@ -61,7 +59,9 @@ the original logo was designed by Bingies24 and darealmrcatz.
 
 #### building
 
-1. install the [.NET 9 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/9.0), and add the android workload:
+the android project is at `src/CutTheRopeDX.Android/CutTheRopeDX.Android.csproj`. its compressed assets are restored from the merged android history instead of being duplicated in the current tree.
+
+1. install the [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0), and add the android workload:
 
     ```bash
     dotnet workload install android
@@ -69,18 +69,22 @@ the original logo was designed by Bingies24 and darealmrcatz.
 
     also install the android sdk, preferrably through [android studio](https://developer.android.com/studio) and point ``ANDROID_HOME`` at it!
 
-2. clone the repository:
+2. clone the repository with its full history:
 
     ```bash
-    git clone https://github.com/sogful/cuttherope-dxfa.git
-    cd cuttherope-dxfa
+    git clone https://github.com/sogful/cuttherope-dxe.git
+    cd cuttherope-dxe
     ```
 
-3. build with the scripts in `/tools/`:
+3. restore the android assets and build with the scripts in `/ports/android/tools/`:
+
+    ```bash
+    pwsh ports/android/tools/restore-assets.ps1
+    ```
 
     - on **windows**: the `.bat` files
     - on **macos / linux**: the `.sh` files<br>
-      <sup>(make them runnable first with `chmod +x tools/*.sh`)</sup>
+      <sup>(make them runnable first with `chmod +x ports/android/tools/*.sh`)</sup>
 
-    all build outputs will go to `/tools/bin/`. you'll also hear a beep when building is finished. <br>
-    do note that building for android is *VERY* slow, so to quickly test features you should try building for windows as it skips compression.
+    all build outputs will go to `/ports/android/tools/bin/`. you'll also hear a beep when building is finished. <br>
+    do note that building for android is *VERY* slow.

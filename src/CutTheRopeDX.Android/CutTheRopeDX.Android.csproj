@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-android36.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>CutTheRopeDX</RootNamespace>
+    <AssemblyName>CutTheRope-DX-Android</AssemblyName>
+    <ApplicationTitle>Cut the Rope: DX</ApplicationTitle>
+    <ApplicationId>page.yell0wsuit.cv.ctrdx</ApplicationId>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <SupportedOSPlatformVersion>21</SupportedOSPlatformVersion>
+    <AndroidTargetSdkVersion>36</AndroidTargetSdkVersion>
+    <AndroidManifest>Android\AndroidManifest.xml</AndroidManifest>
+    <AndroidManifestPlaceholders>appLabel=$(ApplicationTitle)</AndroidManifestPlaceholders>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <RunAOTCompilation>false</RunAOTCompilation>
+    <PublishTrimmed>false</PublishTrimmed>
+    <AndroidLinkMode>None</AndroidLinkMode>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <LangVersion>preview</LangVersion>
+    <DefineConstants>$(DefineConstants);ANDROID;MONOGAME_DESKTOPGL</DefineConstants>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TieredCompilation>false</TieredCompilation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FontStashSharp.MonoGame" Version="1.5.5" />
+    <PackageReference Include="MonoGame.Framework.Android" Version="3.8.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Program.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AndroidAsset Include="..\..\ports\android\assets\*.json"
+                  Link="Assets\content\%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\..\ports\android\assets\tile.png"
+                  Link="Assets\content\tile.png" />
+    <AndroidAsset Include="..\..\ports\android\assets\maps\**\*.*"
+                  Link="Assets\content\maps\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\..\ports\android\assets\locales\**\*.*"
+                  Link="Assets\content\locales\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\..\ports\android\assets\fonts\**\*.ttf;..\..\ports\android\assets\fonts\**\*.otf"
+                  Link="Assets\content\fonts\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\..\ports\android\assets\images\**\*.json;..\..\ports\android\assets\images\**\*.xml;..\..\ports\android\assets\images\**\*.etc2"
+                  Link="Assets\content\images\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\..\ports\android\assets\binandroid\sounds\**\*.xnb"
+                  Link="Assets\content\sounds\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AndroidAsset Include="..\..\ports\android\assets\sounds\*.ogg;..\..\ports\android\assets\sounds\*.xnb"
+                  Exclude="..\..\ports\android\assets\sounds\*_windows.xnb"
+                  Link="Assets\content\sounds\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

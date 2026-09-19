@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJ="$DIR/../src/CutTheRopeDX.csproj"
+PROJ="$DIR/../../../src/CutTheRopeDX.Android/CutTheRopeDX.Android.csproj"
 OUT="$DIR/bin/CutTheRope-DX-arm.apk"
 CONFIG="Debug"; [ "${1:-}" = "release" ] && CONFIG="Release"
 
@@ -10,12 +10,13 @@ SDKARG=()
 
 echo "building $CONFIG.."
 dotnet build "$PROJ" -c "$CONFIG" \
-  -p:CtrAndroidOnly=true "${SDKARG[@]}" \
+  "${SDKARG[@]}" -p:RuntimeIdentifier=android-arm64 \
+  -p:BaseOutputPath="$DIR/bin/" \
   -p:EmbedAssembliesIntoApk=true \
   -p:DebugSymbols=false -p:DebugType=none \
   -p:AndroidPackageFormat=apk -p:RunAOTCompilation=false -nodeReuse:false
 
-apk="$(find "$DIR/bin/$CONFIG/net9.0-android" -name '*-Signed.apk' 2>/dev/null | head -1)"
+apk="$(find "$DIR/bin/$CONFIG/net10.0-android36.0" -name '*-Signed.apk' 2>/dev/null | head -1)"
 if [ -n "$apk" ]; then
   cp -f "$apk" "$OUT"
   echo "done! at: $OUT"
