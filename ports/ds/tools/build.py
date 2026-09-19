@@ -36,7 +36,8 @@ def main():
     for source in sources:
         target = build / (source.stem + ".o")
         print("Compile", source.name, flush=True)
-        subprocess.run([str(compiler), *flags, "-c", str(source), "-o", str(target)], check=True, env=environment)
+        hotflags = ["-marm", "-O3"] if source.stem in ("simulation", "mechanics") else []
+        subprocess.run([str(compiler), *flags, *hotflags, "-c", str(source), "-o", str(target)], check=True, env=environment)
         objects.append(str(target))
     assets = build / "assets.o"
     subprocess.run([str(compiler), "-mcpu=arm946e-s+nofp", "-c", "generated/assets.s", "-o", str(assets)], check=True, env=environment)

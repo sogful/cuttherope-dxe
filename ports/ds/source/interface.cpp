@@ -10,8 +10,25 @@ void controller::initialize(const char* directory) {
     effects = settings.effects; music = settings.music; locale = settings.locale; clickcut = settings.clickcut;
     for (int i = 0; i < 4; ++i) skins[i] = settings.skins[i];
     candyhint = skins[0] == 0;
-    bestscore = saves.active().levels[0].score;
-    beststars = saves.active().levels[0].stars;
+    best();
+}
+void controller::best() {
+    const auto& saved = saves.active().levels[levelid()];
+    bestscore = saved.score; beststars = saved.stars;
+}
+int controller::totalstars(int box) const {
+    int total = 0;
+    const int begin = box < 0 ? 0 : box * 25, end = box < 0 ? 425 : begin + 25;
+    for (int i = begin; i < end; ++i) total += saves.active().levels[i].stars;
+    return total;
+}
+bool controller::packopen(int box) const {
+    return box >= 0 && box < menuart::boxcount && (unlockall() || totalstars() >= menuart::thresholds[box]);
+}
+bool controller::levelopen(int index) const {
+    if (!packopen(pack) || index < 0 || index >= 25) return false;
+    const auto& records = saves.active().levels;
+    return unlockall() || index == 0 || records[pack * 25 + index].completed || records[pack * 25 + index - 1].completed;
 }
 void controller::persist() {
     auto& settings = saves.preferences;
@@ -52,12 +69,12 @@ int controller::buttons(button* out) const {
             for (int i = 0; i < 25; ++i) {
                 const int px = std::lround(128 + (824 + (i % 5) * 228 - 1280) * menuart::fit * (192.0f / 1440));
                 const int py = std::lround(96 + (203.5f + (i / 5) * 258 - 720) * menuart::fit * (192.0f / 1440));
-                out[count++] = {pack == 0 && i == 0 ? action::play : action::unavailable, px, py, 29, 29, "", unlockall() || (pack == 0 && i == 0), i};
+                out[count++] = {pack < 2 ? action::play : action::unavailable, px, py, 29, 29, "", levelopen(i), i};
             }
         }
         for (const auto& item : menuart::controls) {
             if (item.view != mode) continue;
-            const bool enabled = item.action != action::openpack || pack == 0 || unlockall();
+            const bool enabled = item.action != action::openpack || packopen(pack);
             out[count++] = {item.action, item.x, item.y, item.w, item.h, "", enabled, item.argument};
         }
         return count;
@@ -79,7 +96,7 @@ int controller::buttons(button* out) const {
     case view::results:
     case view::failure:
         add(action::restart, menuart::resultanchors[11][0], menuart::resultanchors[11][1], 54, 24, "");
-        add(action::next, menuart::resultanchors[10][0], menuart::resultanchors[10][1], 54, 24, "", false);
+        add(action::next, menuart::resultanchors[10][0], menuart::resultanchors[10][1], 54, 24, "", mode == view::results && hasnext());
         add(action::levels, menuart::resultanchors[9][0], menuart::resultanchors[9][1], 54, 24, "");
         break;
     default: break;
@@ -105,9 +122,15 @@ void controller::activate(action command, int argument) {
     case action::resume: enter(view::playing); break;
     case action::restart:
     case action::play:
+    case action::next:
+        if (command == action::next) {
+            if (!hasnext()) break;
+            if (++level == 25) { level = 0; ++pack; strip.moveto(pack); packposition = pack; }
+        } else if (command == action::play) level = argument;
+        best();
         replaypanel = mode == view::results;
         resulttime = age;
-        door = command == action::play || mode == view::results ? 1 : 0;
+        door = command != action::restart || mode == view::results ? 1 : 0;
         doorframe = 0;
         reset = true;
         resultage = 0;
@@ -140,9 +163,8 @@ void controller::activate(action command, int argument) {
     case action::resetmenu: enter(view::resetmenu); break;
     case action::erase: saves.clear(); bestscore = beststars = 0; enter(view::options); break;
     case action::unlock:
-        saves.complete(0, bestscore, beststars);
         saves.toggle();
-        bestscore = saves.active().levels[0].score; beststars = saves.active().levels[0].stars;
+        best();
         break;
     case action::skinmenu: candyhint = false; enter(view::skins); break;
     case action::skintab: skintab = argument; skinage = 0; skinvelocity = 0; break;
@@ -153,7 +175,7 @@ void controller::activate(action command, int argument) {
     case action::previouspack: strip.moveto(pack - 1); pack = strip.selected; settled = 100; break;
     case action::nextpack: strip.moveto(pack + 1); pack = strip.selected; settled = 100; break;
     case action::openpack:
-        if ((pack == 0 || unlockall()) && !strip.moving) {
+        if (packopen(pack) && !strip.moving) {
             if (std::abs(strip.x + pack * 640) < 1) enter(view::levels);
             else strip.moveto(pack);
         }
@@ -319,7 +341,7 @@ void controller::advance(const dx::simulation& game) {
     if (game.state == dx::outcome::won) {
         bestscore = std::max(bestscore, score);
         beststars = std::max(beststars, game.count);
-        saves.complete(0, bestscore, beststars);
+        saves.complete(levelid(), bestscore, beststars);
     }
     enter(game.state == dx::outcome::won ? view::results : view::failure);
 }

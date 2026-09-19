@@ -161,6 +161,15 @@ def main():
     backdrop.paste(landscape, (0, 0))
     (output / "background.bin").write_bytes(colors.direct(backdrop))
     backdrop.save(output / "background.png")
+    fabricpath = images / "backgrounds/bgr_02_p1.png"
+    sources.add(fabricpath)
+    fabric = Image.open(fabricpath).convert("RGB")
+    fabricwidth = round(fabric.height * 256 / 192)
+    fabricleft = (fabric.width - fabricwidth) // 2
+    fabric = fabric.crop((fabricleft, 0, fabricleft + fabricwidth, fabric.height)).resize((256, 192), Image.Resampling.LANCZOS)
+    fabricbackdrop = Image.new("RGB", (256, 256))
+    fabricbackdrop.paste(fabric, (0, 0))
+    (output / "fabricbackground.bin").write_bytes(colors.direct(fabricbackdrop))
 
     logopath = root / "assets/logods.png"
     logo = ImageOps.contain(Image.open(logopath).convert("RGBA"), (256, 192), Image.Resampling.LANCZOS)
@@ -169,7 +178,8 @@ def main():
     (output / "logo.bin").write_bytes(rgb15(upper))
     upper.crop((0, 0, 256, 192)).save(output / "logo.png")
 
-    sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "monster_open", "monster_chewing", "win", "tap"]
+    sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "monster_open", "monster_chewing", "win", "tap",
+           "bubble", "bubble_break", "pump_1", "rope_get", "spider_activate", "spider_fall", "spider_win", "candy_break"]
     audio = []
     for name in sfx + ["game_music", "menu_music"]:
         music = name.endswith("_music")
@@ -187,27 +197,10 @@ def main():
         (output / (stem + ".bin")).write_bytes(data)
         audio.append((stem, len(data)))
 
-    mapfile = content / "maps/1_1.xml"
-    sources.add(mapfile)
-    document = xml.parse(mapfile).getroot()
-    settings = document.find("./layer[@name='settings']/map")
-    objects = document.find("./layer[@name='Objects']")
-    width, height = int(settings.get("width")) * 3, int(settings.get("height")) * 3
-    offset = (2560 - width) / 2
-    def point(node):
-        return "{" + str(float(node.get("x")) * 3 + offset) + "f, " + str(float(node.get("y")) * 3) + "f}"
-    hooks = list(objects.findall("grab"))
-    assert len(hooks) <= 8
-    stars = list(objects.findall("star"))
-    assert len(stars) == 3
-    speed = float(document.find("./layer[@name='settings']/gameDesign").get("ropePhysicsSpeed")) * 1.4
-    leveltext = "#pragma once\n#include \"simulation.hpp\"\nnamespace dx {\ninline const level firstlevel = {\n"
-    leveltext += point(objects.find("candy")) + ", " + point(objects.find("target")) + ",\n{{" + ", ".join(point(star) for star in stars) + "}},\n{{"
-    leveltext += ", ".join("{" + point(hook) + ", " + str(float(hook.get("length")) * 3) + "f}" for hook in hooks)
-    leveltext += f"}}}},\n{len(hooks)}, {speed}f, {float(offset)}f, {float(width)}f, {float(height)}f\n}};\n}}\n"
-    (output / "level.hpp").write_text(leveltext, encoding="utf-8")
+    import levels
+    levels.build(content, output, sources)
 
-    blobs = [name for page in pages for name in (page["name"], page["name"] + "palette")] + ["background", "logo"] + [name for name, _ in audio]
+    blobs = [name for page in pages for name in (page["name"], page["name"] + "palette")] + ["background", "fabricbackground", "logo"] + [name for name, _ in audio]
     header = ["#pragma once", "#include <cstdint>", 'extern "C" {']
     header += [f"extern const unsigned char {name}data[];" for name in blobs]
     header += ["}", "namespace art {", "struct sprite { int x, y, w, h, ox, oy, advance, page; };",
@@ -225,7 +218,7 @@ def main():
     for name in blobs:
         assembly += [".balign 4", f".global {name}data", f"{name}data:", f'.incbin "generated/{name}.bin"']
     (output / "assets.s").write_text("\n".join(assembly) + "\n", encoding="utf-8")
-    manifest = {"level": "1_1", "viewport": [256, 192], "scale": scale, "atlases": pages,
+    manifest = {"level": "1_1", "levelCount": 50, "viewport": [256, 192], "scale": scale, "atlases": pages,
                 "texturebytes": sum(page["bytes"] for page in pages) + 131072,
                 "upperbytes": 131072, "logo": {"source": "assets/logods.png", "sha256": hashlib.sha256(logopath.read_bytes()).hexdigest()},
                 "audiobytes": sum(size for _, size in audio),
@@ -233,7 +226,7 @@ def main():
                 "sprites": [{key: value for key, value in record.items() if key != "image"} for record in records]}
     assert manifest["texturebytes"] <= 384 * 1024, "Main-engine textures exceed VRAM A+B+D"
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(f"Converted original level 1-1, {len(records)} sprites, {manifest['texturebytes']} texture bytes, {manifest['audiobytes']} audio bytes")
+    print(f"Converted 50 original Cardboard/Fabric maps, {len(records)} base sprites, {manifest['texturebytes']} base texture bytes, {manifest['audiobytes']} audio bytes")
     import menus
     menus.main()
 

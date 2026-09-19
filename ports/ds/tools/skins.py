@@ -51,7 +51,8 @@ def build(menu):
     classic = []
     for index in range(19):
         name = "classicpreview" + str(index)
-        quad(name, "char_animations", index, .75 * fit, restore=True, group="classicpreview")
+        size = round(640 * scale * .75 * fit / 2) * 2
+        quad(name, "char_animations", index, .75 * fit, restore=True, group="classicpreview", pixels=(size, size))
         classic.append(name)
     info["classic"] = classic
     info["previews"][2].append(classic[0])

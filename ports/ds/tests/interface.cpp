@@ -76,10 +76,9 @@ int main() {
     key(ui::accept);
     assert(menu.mode == ui::view::results);
     settle();
-    tap(158, 125);
-    assert(menu.mode == ui::view::results);
+    assert(menu.hasnext() && menu.levelopen(1) && !menu.levelopen(2));
     key(ui::following);
-    assert(menu.focus == 2);
+    assert(menu.focus == 1);
     key(ui::previous);
     assert(menu.focus == 0);
     key(ui::accept);
@@ -140,6 +139,20 @@ int main() {
     const auto time = ui::resultat(2.9f, 3, 5200, 500);
     assert(time.row == 1 && std::abs(time.score - 4100) <= 1 && time.value == 4);
     assert(ui::resultat(3.8f, 3, 5200, 500).score == 5200);
+    ui::controller progression;
+    assert(!progression.packopen(1));
+    for (int i = 0; i < 10; ++i) progression.saves.complete(i, 5000, 3);
+    assert(progression.packopen(1) && !progression.packopen(2) && progression.totalstars() == 30);
+    progression.pack = 1;
+    assert(progression.levelopen(0) && !progression.levelopen(1));
+    progression.saves.complete(25, 0, 0);
+    assert(progression.levelopen(1));
+    progression.mode = ui::view::results; progression.age = 100;
+    progression.update(game, {158,125,0,true});
+    progression.update(game, {158,125,0,false});
+    assert(progression.level == 1 && progression.levelid() == 26 && progression.reset);
+    progression.pack = 1; progression.level = 24;
+    assert(!progression.hasnext());
     int previous = 0;
     for (int i = 0; i < 360; ++i) {
         const auto state = ui::resultat(i * .016f, 3, 5200, 500);

@@ -11,10 +11,12 @@ static glImage sprites[art::spritecount];
 static glImage background;
 static int polygon = 0;
 static bool gamecached = false;
+static int gamebox = -1;
+static float cameray = 0;
 static constexpr float scale = 192.0f / 1440;
 
-static dx::point screen(dx::point position) { return {128 + (position.x - 1280) * scale, position.y * scale}; }
-dx::point world(int x, int y) { return {1280 + (x - 128) / scale, y / scale}; }
+static dx::point screen(dx::point position) { return {128 + (position.x - 1280) * scale, (position.y - cameray) * scale}; }
+dx::point world(int x, int y) { return {1280 + (x - 128) / scale, y / scale + cameray}; }
 
 static void image(int id, dx::point point, bool absolute = false, int alpha = 31) {
     const art::sprite& definition = art::sprites[id];
@@ -82,7 +84,7 @@ static void loadgame(const ui::controller& menu) {
     glGenTextures(art::texturecount, textures);
     for (int index = 0; index < art::texturecount; ++index) {
         const art::texture& source = art::textures[index];
-        if (source.kind == 3 || (source.kind == 1 && menu.skins[2] > 0) || (source.kind == 2 && menu.skins[0] > 0)) continue;
+        if (source.kind == 3 || source.kind == 1 || (source.kind == 2 && menu.skins[0] > 0)) continue;
         occupied += source.width * source.height;
         glBindTexture(0, textures[index]);
         int width = 0, height = 0;
@@ -101,34 +103,46 @@ static void loadgame(const ui::controller& menu) {
     int texture = 0;
     glGenTextures(1, &texture);
     glBindTexture(0, texture);
-    if (!glTexImage2D(0, 0, GL_RGBA, TEXTURE_SIZE_256, TEXTURE_SIZE_256, 0, TEXGEN_OFF, backgrounddata)) {
+    if (!glTexImage2D(0, 0, GL_RGBA, TEXTURE_SIZE_256, TEXTURE_SIZE_256, 0, TEXGEN_OFF, menu.pack == 1 ? fabricbackgrounddata : backgrounddata)) {
         nocashMessage("CTRD DS: background texture allocation failed");
         while (true) swiWaitForVBlank();
     }
     background = {256, 192, 0, 0, texture};
     frontend::reserve(occupied);
     gamecached = true;
+    gamebox = menu.pack;
 }
 
 static void scene(const dx::simulation& game, int frame, const ui::controller& menu, bool, dx::point) {
     if (menu.frontend()) { frontend::draw(menu); return; }
     if (menu.mode == ui::view::results && menu.age >= 32) {
-        if (gamecached) { frontend::reset(); gamecached = false; }
         frontend::drawresult(menu, game);
         return;
     }
-    if (!gamecached) loadgame(menu);
+    if (!gamecached || gamebox != menu.pack) loadgame(menu);
+    cameray = game.cameray;
     frontend::preparegame(menu, game, frame);
     frontend::prepareoverlay(menu, game);
     glBegin2D();
     polygon = 0;
     glColor(RGB15(31, 31, 31));
-    glSprite(0, 0, GL_FLIP_NONE, &background);
+    const int backgroundy = -static_cast<int>(std::round(cameray * scale)) % 192;
+    glSprite(0, backgroundy, GL_FLIP_NONE, &background);
+    if (backgroundy) glSprite(0, backgroundy + 192, GL_FLIP_NONE, &background);
     for (int index = 0; index < game.definition.hookcount; ++index) image(art::hookback, game.definition.hooks[index].anchor);
-    image(art::support, game.definition.target);
     for (int index = 0; index < game.definition.hookcount; ++index) {
         const dx::rope& item = game.ropes[index];
-        if (!item.cut) strand(game, index, 0, item.count, menu.skins[1]);
+        const auto& hook = game.definition.hooks[index];
+        const float opacity = item.attached < 0 ? 1 : 1 - (game.visuals - item.attached) * .016f * 1.5f;
+        if (hook.radius >= 0 && opacity > 0) {
+            glPolyFmt(POLY_ALPHA(std::max(1, static_cast<int>(opacity * 18))) | POLY_CULL_NONE | POLY_ID(51));
+            for (int edge = 0; edge < 48; edge += 2) {
+                const float a = edge * 6.2831853f / 48, b = (edge + 1) * 6.2831853f / 48;
+                line(hook.anchor + dx::point{std::cos(a), std::sin(a)} * hook.radius,
+                     hook.anchor + dx::point{std::cos(b), std::sin(b)} * hook.radius, RGB15(31,31,31));
+            }
+        }
+        if (item.count && !item.cut) strand(game, index, 0, item.count, menu.skins[1]);
         else if (item.remaining > 0) {
             strand(game, index, 0, item.split, menu.skins[1]);
             strand(game, index, item.split, item.count - item.split, menu.skins[1]);
@@ -136,19 +150,11 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
         image(art::hookfront, game.definition.hooks[index].anchor);
     }
     for (int index = 0; index < 3; ++index) {
-        if (game.stars[index]) continue;
-        image(art::star0, game.definition.stars[index], false, 12);
-        image(art::star1 + (frame / 3 + index * 5) % 18, game.definition.stars[index]);
+        if (game.stars[index] || game.expired[index]) continue;
+        image(art::star0, game.starpositions[index], false, 12);
+        image(art::star1 + (frame / 3 + index * 5) % 18, game.starpositions[index]);
     }
-    int target = art::omnom0 + frame / 3 % 19;
-    if (game.mouth) target = art::omnom19 + std::min(8, (game.ticks - game.mouthtick) / 3);
-    if (game.state == dx::outcome::won) {
-        const int elapsed = frame - game.resulttick;
-        target = elapsed < 12 ? art::omnom28 + elapsed / 3 : art::omnom32 + (elapsed - 12) / 3 % 9;
-    }
-    if (game.state == dx::outcome::lost) target = art::sad0 + std::min(12, (frame - game.resulttick) / 3);
-    if (menu.skins[2] == 0) image(target, game.definition.target);
-    if (menu.skins[0] == 0 && game.state != dx::outcome::won) {
+    if (menu.skins[0] == 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
         image(art::candy0, game.candy().pos);
         image(art::candy1, game.candy().pos);
         image(art::candy2, game.candy().pos);
@@ -164,7 +170,7 @@ static int loaded = -1, transition = 0;
 static ui::controller previous;
 bool busy() { return transition != 0; }
 void draw(const dx::simulation& game, int frame, const ui::controller& menu, bool touching, dx::point finger) {
-    const int desired = menu.frontend() ? static_cast<int>(menu.mode) * 12 + menu.locale : 0;
+    const int desired = menu.frontend() ? static_cast<int>(menu.mode) * 12 + menu.locale : menu.pack;
     if (loaded != desired && !transition) transition = loaded < 0 ? 13 : 1;
     if (transition > 0 && transition <= 12) {
         setBrightness(1, -(transition * 16 / 12));
@@ -174,7 +180,7 @@ void draw(const dx::simulation& game, int frame, const ui::controller& menu, boo
     }
     if (transition == 13) {
         setBrightness(1, -16);
-        if (menu.frontend()) { if (loaded <= 0) frontend::reset(); }
+        if (menu.frontend()) { if (loaded < 2) frontend::reset(); }
         else loadgame(menu);
         loaded = desired;
     }

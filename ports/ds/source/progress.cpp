@@ -16,10 +16,19 @@ static bool read(const char* path, int kind, void* output, unsigned size, unsign
     FILE* file = std::fopen(path, "rb");
     if (!file) return false;
     header info{};
-    bool valid = std::fread(&info, sizeof(info), 1, file) == 1 && info.magic == 0x58524443 && info.version == 1 &&
-        info.kind == static_cast<unsigned>(kind) && info.size == size && std::fread(output, size, 1, file) == 1 && std::fgetc(file) == EOF;
+    bool valid = std::fread(&info, sizeof(info), 1, file) == 1 && info.magic == 0x58524443 && (info.version == 1 || info.version == 2) &&
+        info.kind == static_cast<unsigned>(kind);
+    const bool legacy = valid && info.version == 1 && kind < 2 && info.size == 425 * 8;
+    alignas(4) std::uint32_t previous[425][2]{};
+    void* destination = legacy ? static_cast<void*>(previous) : output;
+    const unsigned expected = legacy ? sizeof(previous) : size;
+    valid = valid && info.size == expected && std::fread(destination, expected, 1, file) == 1 && std::fgetc(file) == EOF;
     std::fclose(file);
-    valid = valid && hash(output, size) == info.checksum;
+    valid = valid && hash(destination, expected) == info.checksum;
+    if (valid && legacy) {
+        auto& data = *static_cast<profile*>(output);
+        for (int i = 0; i < 425; ++i) data.levels[i] = {previous[i][0], previous[i][1], (previous[i][0] || previous[i][1]) ? 1u : 0u};
+    }
     if (valid) generation = info.generation;
     return valid;
 }
@@ -45,6 +54,7 @@ bool store::initialize(const char* path) {
     for (profile* data : {&normal, &sandbox}) for (record& level : data->levels) {
         level.stars = std::min<std::uint32_t>(3, level.stars);
         level.score = std::min<std::uint32_t>(6000, level.score);
+        level.completed = level.completed != 0;
     }
     preferences.locale = std::min<std::uint32_t>(11, preferences.locale);
     const unsigned counts[] = {52, 9, 16, 11};
@@ -60,9 +70,10 @@ void store::clear() { active() = {}; dirty[unlocked ? 1 : 0] = true; }
 void store::complete(int level, unsigned score, unsigned stars) {
     if (level < 0 || level >= 425) return;
     record& value = active().levels[level];
-    if (score > value.score || stars > value.stars) {
+    if (score > value.score || stars > value.stars || !value.completed) {
         value.score = std::max<std::uint32_t>(value.score, std::min(6000u, score));
         value.stars = std::max<std::uint32_t>(value.stars, std::min(3u, stars));
+        value.completed = 1;
         dirty[unlocked ? 1 : 0] = true;
     }
 }
@@ -80,7 +91,7 @@ bool store::save() {
         std::snprintf(name, sizeof(name), "%s/%s-%c.sav", directory, names[kind], generation % 2 ? 'a' : 'b');
         FILE* file = std::fopen(name, "wb");
         if (!file) { failed = true; continue; }
-        const header info{0x58524443, 1, static_cast<unsigned>(kind), size, generation, hash(input, size)};
+        const header info{0x58524443, 2, static_cast<unsigned>(kind), size, generation, hash(input, size)};
         bool success = std::fwrite(&info, sizeof(info), 1, file) == 1 && std::fwrite(input, size, 1, file) == 1;
         success = std::fflush(file) == 0 && success;
         success = std::fclose(file) == 0 && success;

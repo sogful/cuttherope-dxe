@@ -46,5 +46,22 @@ int main(int argc, char** argv) {
     progress::store unavailable;
     unavailable.complete(0, 6000, 3);
     assert(!unavailable.save() && unavailable.active().levels[0].score == 6000);
+    std::uint32_t legacy[425][2]{};
+    legacy[5][0] = 5100; legacy[5][1] = 2;
+    unsigned checksum = 2166136261;
+    for (unsigned char byte : *reinterpret_cast<unsigned char(*)[sizeof(legacy)]>(legacy)) checksum = (checksum ^ byte) * 16777619;
+    const unsigned header[] = {0x58524443,1,0,sizeof(legacy),99,checksum};
+    FILE* oldsave = std::fopen((directory + "/normal-a.sav").c_str(), "wb");
+    assert(oldsave);
+    assert(std::fwrite(header, sizeof(header), 1, oldsave) == 1 && std::fwrite(legacy, sizeof(legacy), 1, oldsave) == 1);
+    std::fclose(oldsave);
+    const auto preserved = bytes("normal-a.sav");
+    progress::store migrated;
+    assert(migrated.initialize(argv[1]));
+    assert(migrated.active().levels[5].score == 5100 && migrated.active().levels[5].completed == 1);
+    migrated.complete(6, 0, 0);
+    assert(migrated.save() && bytes("normal-a.sav") == preserved);
+    progress::store zero;
+    assert(zero.initialize(argv[1]) && zero.active().levels[6].completed == 1 && zero.active().levels[6].score == 0);
     std::puts("PASS: isolated normal/unlocked files, profile switching, reset isolation, settings reload, interrupted-write recovery, no-storage fallback");
 }

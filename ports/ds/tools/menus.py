@@ -76,7 +76,7 @@ def quad(name, resource, index, factor=fit, restore=False, group=None, pixels=No
     image = crop.resize(size, Image.Resampling.LANCZOS)
     if smooth:
         image = image.filter(ImageFilter.GaussianBlur(.65))
-    return add(name, image, group or resource,
+    return add(name, image, group or resource, (image.width // 2, image.height // 2) if restore else None,
                source={"resource": resource, "quad": index, "restore": restore, "factor": factor, "pixels": pixels, "smooth": smooth})
 
 
@@ -206,6 +206,8 @@ def pack():
     for record in records:
         members[record["page"]].append(record)
     for number, page in enumerate(pages):
+        if number % 128 == 0:
+            print(f"Packing DS texture {number + 1}/{len(pages)}", flush=True)
         canvas, name = page["image"], page["name"]
         page.update(width=canvas.width, height=canvas.height)
         canvas.save(output / (name + ".png"))
@@ -267,12 +269,14 @@ def main():
     skininfo = skins.build(globals())
     import gameui
     gameinfo = gameui.build(globals())
+    import worldart
+    worldart.build(globals())
     keys = ["PLAY", "OPTIONS", "LANGUAGE", "RESET", "CREDITS", "YES", "NO", "RESET_TEXT", "DRAG_TO_CUT", "CLICK_TO_CUT",
             "CANDIES_BTN", "ROPE_SKINS_BTN", "OM_NOM_BTN", "TRACES_BTN", "unlockall", "unavailable"]
     keys += ["language" + str(i) for i in range(12)]
     keys += ["boxname" + str(i) for i in range(len(configs))]
     keys += ["hint" + str(i) for i in range(len(configs))]
-    keys += ["total" + str(i) for i in range(4)] + ["count" + str(i) for i in range(4)]
+    keys += ["total" + str(i) for i in range(151)] + ["count" + str(i) for i in range(76)]
     keys += ["required" + str(i) for i in range(len(configs))] + ["number" + str(i) for i in range(1, 26)] + ["HARDEST_LABEL"]
     labelids, creditids, creditheights = [], [], []
     for code in codes:
@@ -310,6 +314,8 @@ def main():
                 if key == "HARDEST_LABEL":
                     factor *= .35
             group = ("packtext" if key.startswith(("boxname", "hint", "required", "total", "count")) else "text") + code
+            if key.startswith(("total", "count")):
+                group += key[:5] + str(int(key[5:]) // 16)
             row.append(label(code + key, value, code, small, wrap, factor, horizontal, group))
         labelids.append(row)
         width = round(1300 * scale)
@@ -397,7 +403,7 @@ def main():
     count = max(map(len, creditids))
     header += [f'inline constexpr int credits[12][{count}] = {{']
     header += ['{' + ','.join(map(str, row + [-1] * (count - len(row)))) + '},' for row in creditids]
-    header += ['};', f'inline constexpr int boxcount = {len(configs)};', 'inline constexpr int boxes[] = {' + ','.join(str(ids["box" + str(i)]) for i in range(len(configs))) + '};',
+    header += ['};', f'inline constexpr int boxcount = {len(configs)};', 'inline constexpr int thresholds[] = {' + ','.join(str(c["unlockStars"]) for c in configs) + '};', 'inline constexpr int boxes[] = {' + ','.join(str(ids["box" + str(i)]) for i in range(len(configs))) + '};',
                'struct control { ui::view view; ui::action action; int x, y, w, h, up, down, label, argument; };', 'inline constexpr control controls[] = {']
     for item in controls:
         fields = ["ui::view::" + item["view"], "ui::action::" + item["action"]]

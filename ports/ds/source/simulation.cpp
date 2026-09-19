@@ -20,29 +20,46 @@ void simulation::reset(const level& data) {
     ropes = {};
     stars = {};
     collectedat = {};
+    expired = {};
+    bubblesused = {};
+    pumpages.fill(100);
+    bubble = -1;
+    bubbleevents = pumpevents = ropeevents = failreason = visuals = pops = 0;
+    popage = 100;
+    starpositions = data.stars;
     bodycount = ticks = count = resulttick = mouthtick = 0;
     mouth = false;
     state = outcome::playing;
     add(data.candy, 1, false);
     bodies[0].previous = data.candy;
     bodies[0].initialized = true;
+    introduction = data.height > 1440;
+    cameray = introduction && data.candy.y < data.height / 2 ? data.height - 1440 : 0;
+    cameraspeed = 20;
+    cameradistance = std::abs(cameray - std::clamp(data.candy.y - 720, 0.0f, data.height - 1440));
     for (int index = 0; index < data.hookcount; ++index) {
         const hook& source = data.hooks[index];
-        rope& item = ropes[index];
-        item.bodies[item.count++] = add(source.anchor, 50, true);
-        const int segments = static_cast<int>(std::ceil(source.length / 105.0f));
-        const point offset = (data.candy - source.anchor) / std::floor(source.length / 105.0f + 2);
-        for (int segment = 0; segment < segments; ++segment) {
-            const int previous = item.bodies[item.count - 1];
-            const int current = add(bodies[previous].pos + offset, 50, false);
-            bodies[current].links[0] = {previous, 105, true};
-            bodies[current].linkcount = 1;
-            item.bodies[item.count++] = current;
-        }
-        bodies[0].links[bodies[0].linkcount++] = {
-            item.bodies[item.count - 1], source.length + 105 - segments * 105, true};
-        item.bodies[item.count++] = 0;
+        ropes[index].spiderpos = source.anchor;
+        if (source.radius < 0) attach(index, source.length);
     }
+}
+
+void simulation::attach(int index, float length) {
+    const auto& source = definition.hooks[index];
+    rope& item = ropes[index];
+    item.attached = visuals;
+    item.bodies[item.count++] = add(source.anchor, 50, true);
+    const int segments = static_cast<int>(std::ceil(length / 105.0f));
+    const point offset = (candy().pos - source.anchor) / std::floor(length / 105.0f + 2);
+    for (int segment = 0; segment < segments; ++segment) {
+        const int previous = item.bodies[item.count - 1];
+        const int current = add(bodies[previous].pos + offset, 50, false);
+        bodies[current].links[0] = {previous, 105, true};
+        bodies[current].linkcount = 1;
+        item.bodies[item.count++] = current;
+    }
+    bodies[0].links[bodies[0].linkcount++] = {item.bodies[item.count - 1], length + 105 - segments * 105, true};
+    item.bodies[item.count++] = 0;
 }
 
 void simulation::integrate(body& item, float acceleration) {
@@ -97,12 +114,11 @@ void simulation::detach(rope& item) {
     }
 }
 
-void simulation::tick() {
-    if (state != outcome::playing) return;
-    ++ticks;
+void simulation::ropephysics() {
     const float step = delta * definition.speed;
     for (int index = 0; index < definition.hookcount; ++index) {
         rope& item = ropes[index];
+        if (item.count == 0) continue;
         if (item.cut && item.remaining <= 0) continue;
         if (item.cut) {
             item.remaining = std::max(0.0f, item.remaining - step);
@@ -116,32 +132,66 @@ void simulation::tick() {
             for (int part = 0; part < item.count; ++part) satisfy(bodies[item.bodies[part]]);
         }
     }
+}
+
+void simulation::tick() {
+    camera();
+    if (introduction) return;
+    animate();
+    ropephysics();
+    if (state != outcome::playing) return;
+    ++ticks;
+    const float step = delta * definition.speed;
+    for (int index = 0; index < definition.hookcount; ++index) {
+        const auto& hook = definition.hooks[index];
+        if (ropes[index].count == 0 && hook.radius >= 0 && (candy().pos - hook.anchor).length() <= hook.radius + 42) {
+            attach(index, hook.radius + 42);
+            ++ropeevents;
+        }
+    }
     integrate(bodies[0], 784.0f * (step * step));
+    bodies[0].velocity = (bodies[0].pos - bodies[0].previous) / step;
     const point pos = candy().pos;
     const point distance = pos - definition.target;
     if (!mouth && distance.length() < 200) { mouth = true; mouthtick = ticks; }
+    else if (mouth && distance.length() >= 220) mouth = false;
     for (int index = 0; index < 3; ++index) {
-        const point difference = pos - definition.stars[index];
-        if (!stars[index] && std::abs(difference.x) < 97 && std::abs(difference.y) < 93) {
+        const float timeout = definition.timeouts[index];
+        if (timeout > 0 && ticks * delta >= timeout) expired[index] = true;
+        const point difference = pos - starpositions[index];
+        if (!stars[index] && !expired[index] && std::abs(difference.x) < 97 && std::abs(difference.y) < 93) {
             stars[index] = true;
             collectedat[index] = ticks;
             ++count;
         }
     }
+    for (int i = 0; i < definition.bubblecount; ++i) {
+        const auto d = pos - definition.bubbles[i];
+        if (!bubblesused[i] && d.x >= -85 && d.x < 85 && d.y >= -85 && d.y < 85) {
+            if (bubble >= 0) burst();
+            bubble = i;
+            bubblesused[i] = true;
+            ++bubbleevents;
+            break;
+        }
+    }
+    hazards();
+    spiders();
+    if (state != outcome::playing) return;
+    if (bubble >= 0) bodies[0].pos = bodies[0].pos + (bodies[0].velocity * (-1.0f / 14) + point{0, -40}) * delta;
     if (mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
         state = outcome::won;
         resulttick = ticks;
-    } else if (pos.y > definition.height + 200 || pos.y < -400 ||
-               pos.x < definition.left - 200 || pos.x > definition.left + definition.width + 200) {
-        state = outcome::lost;
-        resulttick = ticks;
-    }
+        bodies[0].pin = bodies[0].pos;
+        bodies[0].pinned = true;
+        if (bubble >= 0) burst();
+    } else if (pos.y > definition.height + 400 || pos.y < -400 || pos.x < -2560 || pos.x > definition.width + 2560) fail(1);
 }
 
 bool simulation::sever(int index, int segment) {
     if (state != outcome::playing || index < 0 || index >= definition.hookcount) return false;
     rope& item = ropes[index];
-    if (item.cut || segment < 0 || segment >= item.count - 1) return false;
+    if (item.cut || segment < 0 || segment >= item.count - 1 || introduction) return false;
     item.cut = true;
     item.pending = segment;
     item.split = segment + 1;
@@ -201,14 +251,32 @@ void simulation::samples(int index, int first, int count, point* output, int& si
     if (count < 3) return;
     const rope& item = ropes[index];
     const int steps = (count - 1) * 4;
-    for (int sample = 0; sample <= steps; ++sample) {
-        std::array<point, 32> work{};
-        for (int part = 0; part < count; ++part) work[part] = bodies[item.bodies[first + part]].pos;
-        const float t = static_cast<float>(sample) / steps;
-        for (int level = count - 1; level > 0; --level) {
-            for (int part = 0; part < level; ++part) work[part] = work[part] * (1 - t) + work[part + 1] * t;
+    // Bezier weights depend only on the segment count, not on the moving rope.
+    // Cache the Bernstein basis instead of repeating de Casteljau's quadratic
+    // interpolation for every vertex on every frame on the ARM9 soft-float CPU.
+    static constexpr int capacity = [] { int total = 0; for (int n = 3; n <= 32; ++n) total += n * (4 * (n - 1) + 1); return total; }();
+    static std::array<float, capacity> basis{};
+    static bool ready[33]{};
+    int offset = 0;
+    for (int n = 3; n < count; ++n) offset += n * (4 * (n - 1) + 1);
+    float* weights = basis.data() + offset;
+    if (!ready[count]) {
+        for (int sample = 0; sample <= steps; ++sample) {
+            float* row = weights + sample * count;
+            row[0] = 1;
+            const float t = static_cast<float>(sample) / steps, u = 1 - t;
+            for (int degree = 1; degree < count; ++degree) {
+                row[degree] = row[degree - 1] * t;
+                for (int part = degree - 1; part > 0; --part) row[part] = row[part] * u + row[part - 1] * t;
+                row[0] *= u;
+            }
         }
-        output[size++] = work[0];
+        ready[count] = true;
+    }
+    for (int sample = 0; sample <= steps; ++sample) {
+        point position{};
+        for (int part = 0; part < count; ++part) position = position + bodies[item.bodies[first + part]].pos * weights[sample * count + part];
+        output[size++] = position;
     }
 }
 }

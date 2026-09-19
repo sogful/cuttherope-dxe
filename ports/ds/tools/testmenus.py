@@ -84,6 +84,9 @@ checked = 0
 previews = 0
 for item in manifest["sprites"]:
     source = item.get("source") or {}
+    if item["name"].startswith("classicpreview"):
+        assert all(v % 2 == 0 for v in item["canvas"]), "Classic preview needs an integer canvas pivot, not banker's rounding of half-pixel trim offsets"
+        assert item["oy"] == item["trim"][1] - item["canvas"][1] // 2
     if source.get("preview"):
         image = Image.open(repo / source["baked"]).convert("RGBA").resize(source["pixels"], Image.Resampling.LANCZOS)
         assert all(v % 2 == 0 for v in image.size), "Preview canvas must keep an integer shared origin"
@@ -112,7 +115,8 @@ for item in manifest["sprites"]:
         image = image.filter(ImageFilter.GaussianBlur(.65))
     box = image.getbbox() or (0, 0, 1, 1)
     assert item["canvas"] == list(size) and item["trim"] == list(box)
-    assert item["ox"] == round(box[0] - image.width / 2) and item["oy"] == round(box[1] - image.height / 2)
+    origin = (image.width // 2, image.height // 2) if source["restore"] else (image.width / 2, image.height / 2)
+    assert item["ox"] == round(box[0] - origin[0]) and item["oy"] == round(box[1] - origin[1])
     x, y, w, h = (item[key] for key in ("x", "y", "w", "h"))
     actual = atlases[item["page"]].crop((x, y, x + w, y + h))
     assert actual.tobytes() == image.crop(box).tobytes(), item["name"]

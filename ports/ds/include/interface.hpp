@@ -27,7 +27,7 @@ public:
     bool effects = true, music = true, reset = false, clicked = false, gameTouch = false;
     int focus = 0, pressed = -1, age = 0, score = 0, bestscore = 0, beststars = 0;
     int starage[3] = {-1, -1, -1};
-    int locale = 0, pack = 0;
+    int locale = 0, pack = 0, level = 0;
     float packposition = 0, creditoffset = 0;
     bool clickcut = false, keyboard = false, autoscroll = true;
     int settled = 100;
@@ -44,6 +44,12 @@ public:
     view destination = view::levels;
     bool blocked() const { return door != 0 || (mode == view::results && age < 32); }
     bool unlockall() const { return saves.unlocked; }
+    int levelid() const { return pack * 25 + level; }
+    int totalstars(int box = -1) const;
+    bool packopen(int box) const;
+    bool levelopen(int index) const;
+    bool hasnext() const { return levelid() < 49 && (level < 24 || packopen(pack + 1)); }
+    void best();
     void initialize(const char* directory);
     void persist();
     void suspend(input current);

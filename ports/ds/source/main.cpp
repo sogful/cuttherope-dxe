@@ -11,7 +11,7 @@
 #include <cstdio>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 5;
+    std::uint32_t magic = 0x44585250, version = 6;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -20,6 +20,7 @@ struct diagnostics {
     std::uint32_t locale = 0, pack = 0, clickcut = 0, scroll = 0, texturebytes = 0;
     std::uint32_t unlocked = 0, skintab = 0, candy = 0, rope = 0, costume = 0, trace = 0, skinoffset = 0, transition = 0, storage = 0;
     std::uint32_t door = 0, doorframe = 0, menuage = 0, improved = 0;
+    std::uint32_t level = 0, visuals = 0, bubble = 0, pumps = 0, ropes = 0, failure = 0, intro = 0, cameray = 0, hooks = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -45,6 +46,8 @@ int main() {
     int touchx = 0, touchy = 0;
     dx::point previous{};
     int frame = 0, shownstars = 0;
+    bool objecttouch = false;
+    int shownbubbles = 0, shownpops = 0, shownpumps = 0, shownropes = 0;
     bool shownmouth = false, shownresult = false;
     unsigned total = 0, peak = 0, late = 0;
     nocashMessage("CTRD DS: ready");
@@ -69,16 +72,18 @@ int main() {
         if (display::busy()) menu.suspend({touchx, touchy, 0, touching});
         else menu.update(game, {touchx, touchy, commands, touching});
         if (menu.reset) {
-            game.reset(dx::firstlevel);
+            game.reset(dx::levels[menu.levelid()]);
             frame = shownstars = 0;
             shownmouth = shownresult = held = false;
+            shownbubbles = shownpops = shownpumps = shownropes = 0;
             telemetry.resets = telemetry.resets + 1;
             trace::trail.reset();
         }
         audio::update(menu);
-        if (menu.mode == ui::view::playing && !menu.blocked() && !display::busy()) {
+        if (menu.mode == ui::view::playing && !display::busy()) {
             trace::trail.update(menu.gameTouch, pointer, menu.skins[3]);
-            if (menu.gameTouch && (held ? game.swipe(previous, pointer) : menu.clickcut && game.tap(pointer))) {
+            if (menu.gameTouch && !held) objecttouch = game.interact(pointer);
+            if (menu.gameTouch && !objecttouch && (held ? game.swipe(previous, pointer) : menu.clickcut && game.tap(pointer))) {
                 telemetry.cuts = telemetry.cuts + 1;
                 audio::effect(ropebleak1data, ropebleak1bytes);
             }
@@ -86,8 +91,15 @@ int main() {
             previous = pointer;
             held = menu.gameTouch;
             game.tick();
-            ++frame;
-        } else held = false;
+        } else {
+            held = false;
+            if (!menu.frontend() && (menu.mode != ui::view::paused || menu.door) && !display::busy()) game.tick();
+        }
+        frame = game.visuals;
+        if (game.bubbleevents != shownbubbles) { audio::effect(bubbledata, bubblebytes); shownbubbles = game.bubbleevents; }
+        if (game.pops != shownpops) { audio::effect(bubblebreakdata, bubblebreakbytes); shownpops = game.pops; }
+        if (game.pumpevents != shownpumps) { audio::effect(pump1data, pump1bytes); shownpumps = game.pumpevents; }
+        if (game.ropeevents != shownropes) { audio::effect(ropegetdata, ropegetbytes); shownropes = game.ropeevents; }
         if (game.count != shownstars) {
             if (game.count == 1) audio::effect(star1data, star1bytes);
             if (game.count == 2) audio::effect(star2data, star2bytes);
@@ -98,10 +110,16 @@ int main() {
             audio::effect(monsteropendata, monsteropenbytes);
             shownmouth = true;
         }
+        if (!game.mouth) shownmouth = false;
         if (game.state == dx::outcome::won && !shownresult) {
             audio::effect(monsterchewingdata, monsterchewingbytes);
             shownresult = true;
             nocashMessage("CTRD DS: level won");
+        }
+        if (game.state == dx::outcome::lost && !shownresult) {
+            if (game.failreason == 2) audio::effect(candybreakdata, candybreakbytes);
+            if (game.failreason == 3) audio::effect(spiderwindata, spiderwinbytes);
+            shownresult = true;
         }
         if (!display::busy()) menu.advance(game);
         if (menu.mode == ui::view::results && oldview != ui::view::results) audio::effect(windata, winbytes);
@@ -127,6 +145,9 @@ int main() {
         telemetry.doorframe = menu.doorframe;
         telemetry.menuage = menu.age;
         telemetry.improved = menu.improved;
+        telemetry.level = menu.levelid(); telemetry.visuals = game.visuals; telemetry.bubble = game.bubble + 1;
+        telemetry.pumps = game.pumpevents; telemetry.ropes = game.ropeevents; telemetry.failure = game.failreason;
+        telemetry.intro = game.introduction; telemetry.cameray = std::lround(game.cameray); telemetry.hooks = game.definition.hookcount;
         telemetry.view = static_cast<unsigned>(menu.mode);
         telemetry.effects = menu.effects;
         telemetry.music = menu.music;

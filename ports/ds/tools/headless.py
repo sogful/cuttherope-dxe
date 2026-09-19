@@ -39,6 +39,7 @@ def main():
     parser.add_argument("--menus", action="store_true", help="Check source-shaped title, packs, settings, languages and credits")
     parser.add_argument("--skins", action="store_true", help="Check fades, isolated unlock mode, picker scrolling, all cosmetic tabs and equipped gameplay")
     parser.add_argument("--flow", action="store_true", help="Capture box transitions and the complete animated result sequence")
+    parser.add_argument("--boxes", action="store_true", help="Launch every Cardboard/Fabric map and check camera/mechanic input")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
     args = parser.parse_args()
     core = c.CDLL(args.core)
@@ -186,21 +187,24 @@ def main():
                   "romSha256": hashlib.sha256(path.read_bytes()).hexdigest(), "console": "DS", "muted": True, "headless": True, "stages": {}}
         keys = ["magic", "version", "frames", "ticks", "state", "stars", "micros", "peak", "late", "vblanks", "x", "y", "cuts", "touches", "resets", "paused",
                 "view", "effects", "music", "score", "bestscore", "beststars", "locale", "pack", "clickcut", "scroll", "texturebytes",
-                "unlocked", "skintab", "candy", "rope", "costume", "trace", "skinoffset", "transition", "storage", "door", "doorframe", "menuage", "improved"]
+                "unlocked", "skintab", "candy", "rope", "costume", "trace", "skinoffset", "transition", "storage", "door", "doorframe", "menuage", "improved",
+                "level", "visuals", "bubble", "pumps", "ropes", "failure", "intro", "cameray", "hooks"]
         memory = core.retro_get_memory_data(2)
         size = core.retro_get_memory_size(2)
         offset = address - 0x02000000
-        if not memory or offset + 160 > size:
+        if not memory or offset + 196 > size:
             raise RuntimeError(f"Cannot read telemetry: RAM={size} address={address:x}")
         assert size == 4 * 1024 * 1024, f"Expected original DS main RAM, received {size} bytes"
         report["mainRamBytes"] = size
         references = json.loads((root.parent / "roblox/tests/desktop-trajectories.json").read_text())
         reference = {sample["tick"]: sample for trace in references if trace["level"] == 1 for sample in trace["samples"]}
         samples = {}
+        mapreferences = {trace["level"] - 1: {sample["tick"]: sample for sample in trace["samples"]} for trace in references}
+        maperrors = {}
         referenceattempt = 1
         lastframe, stalled = -1, 0
         def telemetry():
-            return dict(zip(keys, struct.unpack("<10I2f28I", c.string_at(memory + offset, 160))))
+            return dict(zip(keys, struct.unpack("<10I2f37I", c.string_at(memory + offset, 196))))
         def run(count):
             nonlocal lastframe, stalled
             for _ in range(count):
@@ -210,6 +214,12 @@ def main():
                 lastframe = current["frames"]
                 assert stalled < 120, "ROM main loop stalled (check emulator diagnostic output)"
                 tick = current["ticks"]
+                if args.boxes and current["view"] == 0 and current["level"] in mapreferences:
+                    expected = mapreferences[current["level"]].get(tick)
+                    if expected and (current["level"] != 5 or tick <= 60):
+                        error = math.hypot(current["x"] - expected["x"], current["y"] - expected["y"])
+                        assert error < .05, (current["level"], tick, error)
+                        maperrors[(current["level"], tick)] = error
                 if tick in reference and tick not in samples and current["resets"] == referenceattempt:
                     samples[tick] = current
                 if current["resets"] == referenceattempt and current["view"] == 0 and 10 <= tick < 124 and tick % 3 == 1:
@@ -231,19 +241,63 @@ def main():
             run(36)
         def key(ident):
             buttons.add(ident)
-            run(3)
+            before = telemetry()["frames"]
+            while telemetry()["frames"] < before + 2: run(1)
             buttons.clear()
             run(36)
         def settle():
-            for _ in range(100):
+            for _ in range(360):
                 current = telemetry()
                 if not current["door"] and not current["transition"]:
                     return
                 run(1)
-            raise AssertionError("Transition failed to finish")
+            raise AssertionError("Transition failed to finish: " + repr(telemetry()))
         run(60)
         title = snapshot("title")
         assert title["view"] == 5 and title["ticks"] == 0 and title["frames"] > 40, title
+        if args.boxes:
+            import xml.etree.ElementTree as xml
+            tap(128,170)
+            tap(131,185)
+            assert telemetry()["unlocked"]
+            key(0); key(8); key(8)
+            for box in range(2):
+                for level in range(25):
+                    assert telemetry()["view"] == 4 and telemetry()["pack"] == box
+                    tap(round(128 + (824 + (level % 5) * 228 - 1280) * 1.01846195 * 192 / 1440),
+                        round(96 + (203.5 + (level // 5) * 258 - 720) * 1.01846195 * 192 / 1440))
+                    settle()
+                    if level in (14,17):
+                        run(360)
+                    else:
+                        run(70)
+                    if box == 0 and level in (0,5,6,9):
+                        for _ in range(600):
+                            if telemetry()["ticks"] >= 120: break
+                            run(1)
+                    stage = snapshot(f"map-{box+1}-{level+1}")
+                    assert stage["level"] == box * 25 + level and stage["visuals"] > 0
+                    assert math.isfinite(stage["x"]) and math.isfinite(stage["y"])
+                    assert not stage["intro"], "Tall level introduction never handed control back"
+                    if box == 1 and level == 0:
+                        before = telemetry()["pumps"]
+                        pump = xml.parse(root.parents[1] / "content/maps/2_1.xml").find("./layer[@name='Objects']/pump")
+                        tap(64 + float(pump.get("x")) * .4, float(pump.get("y")) * .4)
+                        assert telemetry()["pumps"] > before, "Pump touch did not reach gameplay"
+                    if stage["view"] == 0: key(3)
+                    current = telemetry()["view"]
+                    if current == 1: tap(128,96)
+                    elif current in (2,3): key(0)
+                    settle()
+                    run(10)
+                    assert telemetry()["view"] == 4
+                if box == 0:
+                    key(0); key(7); run(180); key(8)
+            assert len(maperrors) >= 31, "Missing emulated multi-rope reference samples"
+            report.update(passed=True, maps=50, referenceSamples=len(maperrors), maximumDesktopError=max(maperrors.values()), seconds=time.monotonic()-start)
+            (directory / "boxreport.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+            print("PASS: 50 maps launched through real UI, both boxes, two scrolling intros, pump input")
+            return
         if args.skins:
             fades = []
             touch(128, 170)
@@ -263,9 +317,14 @@ def main():
             run(180)
             key(8)
             assert snapshot("unlocked-fabric-levels")["pack"] == 1 and telemetry()["view"] == 4
+            key(0)
+            key(7)
+            run(180)
+            key(8)
             tap(66, 26)
             assert telemetry()["view"] == 4 and telemetry()["resets"] == 0, "An unavailable map silently launched 1-1"
             key(0)
+            key(6)
             key(6)
             run(180)
             key(0)
@@ -291,6 +350,14 @@ def main():
             assert snapshot("picker-rope-last")["rope"] == 8
             tap(153, 16)
             assert snapshot("picker-costumes")["skintab"] == 2
+            classic = []
+            for _ in range(60):
+                run(1)
+                classic.append(framebuffer().crop((48, 226, 90, 277)))
+            classic[0].save(directory / "classic-preview.gif", save_all=True, append_images=classic[1:], duration=16, loop=0)
+            strip = Image.new("RGB", (42 * 20, 51))
+            for i, item in enumerate(classic[::3]): strip.paste(item, (42 * i, 0))
+            strip.save(directory / "classic-preview-strip.png")
             scrollbottom()
             tap(187, 149)
             assert snapshot("picker-costume-last")["costume"] == 15
@@ -430,15 +497,26 @@ def main():
                 run(1)
             assert telemetry()["view"] == 2 and telemetry()["stars"] == 3
             assert not telemetry()["improved"], "First completion must not show an improvement stamp"
+            resultvisuals = telemetry()["visuals"]
             for i in range(365):
                 run(1)
                 if i % 3 == 0:
                     sequence.append(framebuffer().crop((0, 192, 256, 384)))
                 if i in (0, 15, 31, 55, 94, 135, 181, 225, 270, 360):
                     capture("result-phase-" + str(i))
+            assert telemetry()["visuals"] > resultvisuals + 300, "Result transition froze world animation"
             sequence[0].save(directory / "result-sequence.gif", save_all=True, append_images=sequence[1:], duration=48, loop=0)
             snapshot("result-complete")
-            tap(98, 125)
+            replay = []
+            touch(98, 125)
+            touch(98, 125, False)
+            for i in range(60):
+                run(1)
+                replay.append(framebuffer().crop((0, 192, 256, 384)))
+            replay[0].save(directory / "result-replay.gif", save_all=True, append_images=replay[1:], duration=16, loop=0)
+            strip = Image.new("RGB", (256 * 10, 192 * 6))
+            for i, item in enumerate(replay): strip.paste(item, (i % 10 * 256, i // 10 * 192))
+            strip.save(directory / "replay-frames.png")
             settle()
             run(35)
             touch(100, 40)
@@ -469,6 +547,7 @@ def main():
                     capture("opening-" + str(_))
             opening[0].save(directory / "box-opening.gif", save_all=True, append_images=opening[1:], duration=16, loop=0)
             assert snapshot("opened-level")["view"] == 0
+            assert telemetry()["visuals"] > 65, "Opening flaps blocked world animation"
             report.update(passed=True, seconds=time.monotonic() - start)
             (directory / "flowreport.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
             print("PASS: complete result timeline, improvement-only stamp, replay, original pause, box close/open")
@@ -495,8 +574,6 @@ def main():
             won = snapshot("win")
             assert won["state"] == 1 and won["stars"] == 3 and won["cuts"] == 1 and won["view"] == 2, won
             assert won["beststars"] == 3 and won["bestscore"] == won["score"] >= 3000, won
-            tap(158, 125)
-            assert telemetry()["view"] == 2 and telemetry()["resets"] == 1, "Disabled next button changed the level"
             buttons.add(8)  # libretro joypad A
             run(3)
             buttons.clear()

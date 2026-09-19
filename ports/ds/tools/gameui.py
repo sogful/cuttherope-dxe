@@ -62,28 +62,9 @@ def build(menu):
         label(name, value, code, True, group="textpause" + code)
         face, _ = menu["font"](code, True)
         info["best"].append((name, sum(face.getlength(c) for c in value) * fit * scale))
-        label("levelname" + code, "1 - 1", code, factor=fit, group="texthud" + code)
+        for level in range(50):
+            label("levelname" + str(level) + code, f"{level // 25 + 1} - {level % 25 + 1}", code, factor=fit, group="textlevel" + code + str(level // 10))
         label("levelword" + code, strings["LEVEL"], code, factor=fit * .7, group="texthud" + code)
-        document = xml.parse(content / "maps/1_1.xml").getroot()
-        nodes = [node for node in document.iter() if node.get("locale") == code]
-        if not nodes:
-            nodes = [node for node in document.iter() if node.get("locale") == "en"]
-        tutorials = []
-        for i, node in enumerate(nodes):
-            px, py = 128 + (float(node.get("x")) * 3 - 480) * scale, float(node.get("y")) * 3 * scale
-            if node.tag == "tutorialText":
-                name = "tutorialtext" + code + str(i)
-                width = float(node.get("width")) * 3
-                image, origin, height = menu["textimage"](strings[node.get("text")].replace("*", "\n"), code, True, width, factor=1)
-                add(name, image, "texthud" + code, origin)
-                px += width * scale / 2
-                py += height * scale / 2
-            elif node.tag in ("tutorial01", "tutorial04"):
-                name = "tutorial" + str(int(node.tag[-2:]) - 1)
-            else:
-                continue
-            tutorials.append((name, round(px), round(py)))
-        info["tutorials"].append(tutorials)
     label("failuretitle", "TRY AGAIN!", "en", group="textfailure")
     label("failurehint", "Om Nom is still hungry!", "en", group="textfailure")
     face, height = menu["font"]("en")
@@ -105,6 +86,8 @@ def build(menu):
         rw, rh = (frames[0]["spriteSourceSize"][key] for key in ("w", "h"))
         info["hud"].append([round(256 - (8 + pw / 2) * fit * scale), round((8 + ph / 2) * fit * scale),
                             round(256 - (pw + 16 + rw / 2) * fit * scale), round((8 + rh / 2) * fit * scale)])
+    import tutorials
+    info["tutorials"] = tutorials.build(menu)
     return info
 
 
@@ -120,9 +103,10 @@ def header(info, ids):
         lines += ["inline constexpr int " + key + "[] = {" + ",".join(map(str, info[key])) + "};"]
     lines += ["inline constexpr int hudpositions[12][4] = {" + ",".join("{" + ",".join(map(str, p)) + "}" for p in info["hud"]) + "};"]
     lines += ["inline constexpr int pausepositions[6][2] = {" + ",".join("{" + ",".join(map(str, p)) + "}" for p in info["pause"]) + "};"]
-    lines += ["inline constexpr int levelnames[] = {" + ",".join(str(ids["levelname" + code]) for code in ("en","ru","de","fr","es","it","nl","pt_br","ko","ja","zh","zh_tw")) + "};"]
-    lines += ["inline constexpr int levelwords[] = {" + ",".join(str(ids["levelword" + code]) for code in ("en","ru","de","fr","es","it","nl","pt_br","ko","ja","zh","zh_tw")) + "};"]
-    lines += ["struct tutorial { int sprite, x, y; };", "inline constexpr tutorial tutorials[12][9] = {"]
-    lines += ["{" + ",".join("{" + f"{ids[name]},{px},{py}" + "}" for name, px, py in row) + ",{-1,0,0}}," for row in info["tutorials"]]
+    lines += ["inline constexpr int levelnames[50][12] = {"]
+    lines += ["{" + ",".join(str(ids["levelname" + str(level) + code]) for code in ("en","ru","de","fr","es","it","nl","pt_br","ko","ja","zh","zh_tw")) + "}," for level in range(50)]
     lines += ["};"]
+    lines += ["inline constexpr int levelwords[] = {" + ",".join(str(ids["levelword" + code]) for code in ("en","ru","de","fr","es","it","nl","pt_br","ko","ja","zh","zh_tw")) + "};"]
+    import tutorials
+    lines += tutorials.header(info["tutorials"], ids)
     return lines

@@ -3,7 +3,7 @@
 #include <cstdint>
 
 namespace progress {
-struct record { std::uint32_t score = 0, stars = 0; };
+struct record { std::uint32_t score = 0, stars = 0, completed = 0; };
 struct profile { std::array<record, 425> levels{}; };
 struct settings {
     std::uint32_t effects = 1, music = 1, locale = 0, clickcut = 0;
