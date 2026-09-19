@@ -3,27 +3,23 @@
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
-#include <cstdio>
 
 namespace display {
 static glImage sprites[art::spritecount];
 static glImage background;
-static u16* panel;
-static constexpr float scale = 256.0f / 1440;
+static constexpr float scale = 192.0f / 1440;
 
-static dx::point portrait(dx::point position) { return {96 + (position.x - 1280) * scale, position.y * scale}; }
-static dx::point physical(dx::point position) { return {position.y, 191 - position.x}; }
-dx::point world(int x, int y) { return {1280 + (191 - y - 96) / scale, x / scale}; }
-bool retry(int x, int y) { return x < 24 && y < 51; }
+static dx::point screen(dx::point position) { return {128 + (position.x - 1280) * scale, position.y * scale}; }
+dx::point world(int x, int y) { return {1280 + (x - 128) / scale, y / scale}; }
+bool retry(int x, int y) { return x >= 205 && y < 24; }
 
 static void image(int id, dx::point point, bool absolute = false, int alpha = 31) {
     const art::sprite& definition = art::sprites[id];
-    const dx::point origin = absolute ? point : portrait(point);
-    const dx::point center = physical(origin + dx::point{
-        static_cast<float>(definition.ox) + definition.w * .5f,
-        static_cast<float>(definition.oy) + definition.h * .5f});
+    const dx::point origin = absolute ? point : screen(point);
+    glColor(RGB15(31, 31, 31));
     glPolyFmt(POLY_ALPHA(alpha) | POLY_CULL_NONE | POLY_ID(1));
-    glSpriteRotate(static_cast<int>(center.x), static_cast<int>(center.y), -8192, GL_FLIP_NONE, &sprites[id]);
+    glSprite(static_cast<int>(std::round(origin.x)) + definition.ox,
+             static_cast<int>(std::round(origin.y)) + definition.oy, GL_FLIP_NONE, &sprites[id]);
 }
 
 static void text(int x, int y, const char* value) {
@@ -36,8 +32,8 @@ static void text(int x, int y, const char* value) {
 }
 
 static void line(dx::point a, dx::point b, u16 color) {
-    a = physical(portrait(a));
-    b = physical(portrait(b));
+    a = screen(a);
+    b = screen(b);
     glLine(static_cast<int>(a.x), static_cast<int>(a.y), static_cast<int>(b.x), static_cast<int>(b.y), color);
 }
 
@@ -62,29 +58,34 @@ void initialize() {
     lcdMainOnBottom();
     vramSetBankA(VRAM_A_TEXTURE_SLOT0);
     vramSetBankB(VRAM_B_TEXTURE_SLOT1);
+    vramSetBankC(VRAM_C_SUB_BG);
+    const int upper = bgInitSub(3, BgType_Bmp16, BgSize_B16_256x256, 0, 0);
+    dmaCopy(logodata, bgGetGfxPtr(upper), 256 * 256 * 2);
     // libnds allocates using LCD-bank addresses; preserve D's physical slot.
     vramSetBankD(VRAM_D_TEXTURE_SLOT3);
     vramSetBankE(VRAM_E_TEX_PALETTE);
-    vramSetBankC(VRAM_C_SUB_BG);
-    const int bg = bgInitSub(3, BgType_Bmp16, BgSize_B16_256x256, 0, 0);
-    panel = bgGetGfxPtr(bg);
-    dmaCopy(paneldata, panel, 256 * 256 * 2);
     glScreen2D();
     glClearColor(8, 5, 3, 31);
     glEnable(GL_ANTIALIAS);
-    int texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(0, texture);
-    const int height = art::atlasheight == 1024 ? TEXTURE_SIZE_1024 : TEXTURE_SIZE_512;
-    if (!glTexImage2D(0, 0, GL_RGB32_A3, TEXTURE_SIZE_256, height, 0, TEXGEN_OFF, atlasdata)) {
-        nocashMessage("CTRD DS: sprite texture allocation failed");
-        while (true) swiWaitForVBlank();
+    int textures[art::texturecount];
+    glGenTextures(art::texturecount, textures);
+    for (int index = 0; index < art::texturecount; ++index) {
+        const art::texture& source = art::textures[index];
+        glBindTexture(0, textures[index]);
+        int width = 0, height = 0;
+        for (int size = source.width; size > 8; size >>= 1) ++width;
+        for (int size = source.height; size > 8; size >>= 1) ++height;
+        if (!glTexImage2D(0, 0, GL_RGB32_A3, width, height, 0, TEXGEN_OFF, source.pixels)) {
+            nocashMessage("CTRD DS: sprite texture allocation failed");
+            while (true) swiWaitForVBlank();
+        }
+        glColorTableEXT(0, 0, 32, 0, 0, reinterpret_cast<const u16*>(source.palette));
     }
-    glColorTableEXT(0, 0, 32, 0, 0, reinterpret_cast<const u16*>(palettedata));
     for (int index = 0; index < art::spritecount; ++index) {
         const art::sprite& source = art::sprites[index];
-        sprites[index] = {source.w, source.h, source.x, source.y, texture};
+        sprites[index] = {source.w, source.h, source.x, source.y, textures[source.page]};
     }
+    int texture = 0;
     glGenTextures(1, &texture);
     glBindTexture(0, texture);
     if (!glTexImage2D(0, 0, GL_RGBA, TEXTURE_SIZE_256, TEXTURE_SIZE_256, 0, TEXGEN_OFF, backgrounddata)) {
@@ -128,47 +129,22 @@ void draw(const dx::simulation& game, int frame, bool paused, bool touching, dx:
         image(art::candy2, game.candy().pos);
     }
     if (touching) {
-        const dx::point position = physical(portrait(finger));
+        const dx::point position = screen(finger);
         glPolyFmt(POLY_ALPHA(20) | POLY_CULL_NONE | POLY_ID(3));
         glBoxFilled(position.x - 1, position.y - 1, position.x + 1, position.y + 1, RGB15(31, 30, 26));
     }
     text(7, 4, "1-1");
-    text(144, 4, "RETRY");
-    if (paused) text(71, 120, "PAUSED");
+    text(208, 4, "RETRY");
+    if (paused) text(103, 86, "PAUSED");
     else if (game.state == dx::outcome::won) {
-        text(58, 112, "WELL DONE!");
-        text(52, 130, "Touch to retry");
+        text(90, 82, "WELL DONE!");
+        text(84, 100, "Touch to retry");
     } else if (game.state == dx::outcome::lost) {
-        text(64, 112, "TRY AGAIN");
-        text(52, 130, "Touch to retry");
-    } else if (!game.ropes[0].cut) text(47, 57, "Cut the rope!");
+        text(96, 82, "TRY AGAIN");
+        text(84, 100, "Touch to retry");
+    } else if (!game.ropes[0].cut) text(156, 35, "Cut the rope!");
     glEnd2D();
     glFlush(0);
 }
 
-static void paneltext(int x, int y, const char* text, u16 color) {
-    for (; *text; ++text, x += 6) {
-        if (*text < 32 || *text > 127) continue;
-        for (int row = 0; row < 9; ++row) for (int column = 0; column < 6; ++column) {
-            if (fontdata[row * 576 + (*text - 32) * 6 + column]) {
-                const int px = y + row, py = 191 - x - column;
-                if (px >= 0 && px < 256 && py >= 0 && py < 192) panel[py * 256 + px] = color | BIT(15);
-            }
-        }
-    }
-}
-
-void status(const dx::simulation& game, bool paused, unsigned micros, unsigned peak, int frames, int misses) {
-    for (int y = 95; y < 137; ++y) for (int x = 15; x < 180; ++x) {
-        const int offset = (191 - x) * 256 + y;
-        panel[offset] = reinterpret_cast<const u16*>(paneldata)[offset];
-    }
-    char text[40];
-    std::snprintf(text, sizeof(text), "%s  STARS %d/3", paused ? "PAUSED" : game.state == dx::outcome::won ? "WON" : game.state == dx::outcome::lost ? "LOST" : "PLAY", game.count);
-    paneltext(17, 97, text, RGB15(31, 29, 24));
-    std::snprintf(text, sizeof(text), "CPU %lu us max %lu", static_cast<unsigned long>(micros), static_cast<unsigned long>(peak));
-    paneltext(17, 110, text, RGB15(22, 25, 12));
-    std::snprintf(text, sizeof(text), "FRAMES %d LATE %d", frames, misses);
-    paneltext(17, 123, text, RGB15(22, 25, 12));
-}
 }

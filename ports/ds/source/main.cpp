@@ -80,7 +80,6 @@ int main() {
             nocashMessage("CTRD DS: level won");
         }
         display::draw(game, frame, paused, touching && !paused, pointer);
-        if ((total + 1) % 15 == 0) display::status(game, paused, telemetry.micros, peak, total + 1, late);
         const unsigned micros = timerTicks2usec(cpuEndTiming());
         if (micros > peak) peak = micros;
         const unsigned elapsed = vblanks - beginblank;

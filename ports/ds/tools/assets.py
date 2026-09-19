@@ -8,12 +8,12 @@ from functools import lru_cache
 import xml.etree.ElementTree as xml
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 root = Path(__file__).resolve().parents[1]
 content = root.parents[1] / "content"
 output = root / "generated"
-scale = 256 / 1440
+scale = 192 / 1440
 images = content / "images"
 records = []
 sources = set()
@@ -38,15 +38,67 @@ def readframe(resource, index):
     return crop, frame
 
 
-def sprite(name, resource, index, factor=1):
+def sprite(name, resource, index, factor=1, restore=True):
     crop, frame = readframe(resource, index)
     bounds, canvas = frame["spriteSourceSize"], frame["sourceSize"]
     ratio = scale * factor
-    crop = crop.resize((max(1, round(crop.width * ratio)), max(1, round(crop.height * ratio))), Image.Resampling.LANCZOS)
-    records.append({"name": name, "image": crop,
-                    "ox": round((bounds["x"] - canvas["w"] / 2) * ratio),
-                    "oy": round((bounds["y"] - canvas["h"] / 2) * ratio),
+    restored = Image.new("RGBA", (canvas["w"], canvas["h"])) if restore else Image.new("RGBA", crop.size)
+    restored.paste(crop, (bounds["x"], bounds["y"]) if restore else (0, 0))
+    restored = restored.resize((max(1, round(restored.width * ratio)), max(1, round(restored.height * ratio))), Image.Resampling.LANCZOS)
+    trim = restored.getbbox()
+    records.append({"name": name, "image": restored.crop(trim),
+                    "ox": trim[0] - restored.width // 2, "oy": trim[1] - restored.height // 2,
+                    "canvas": list(restored.size), "trim": list(trim), "factor": factor, "restore": restore,
                     "source": resource, "quad": index})
+
+
+def layout(items, width):
+    x, y, row = 1, 1, 0
+    positions = []
+    for record in items:
+        image = record["image"]
+        if image.width + 2 > width:
+            return None
+        if x + image.width + 1 > width:
+            x, y, row = 1, y + row + 2, 0
+        positions.append((x, y))
+        x += image.width + 2
+        row = max(row, image.height)
+    height = max(8, 1 << math.ceil(math.log2(y + row + 1)))
+    return (width * height, width, height, positions) if height <= 1024 else None
+
+
+def atlases():
+    pages = []
+    for resource in dict.fromkeys(record.get("source", "font") for record in records):
+        items = [record for record in records if record.get("source", "font") == resource]
+        _, width, height, positions = min(result for width in (32, 64, 128, 256) if (result := layout(items, width)))
+        atlas = Image.new("RGBA", (width, height))
+        page = len(pages)
+        for record, (x, y) in zip(items, positions):
+            image = record["image"]
+            record.update(page=page, x=x, y=y, w=image.width, h=image.height)
+            atlas.paste(image, (x, y))
+        visible = [pixel[:3] for pixel in atlas.getdata() if pixel[3] >= 18]
+        training = Image.new("RGB", (len(visible), 1))
+        training.putdata(visible)
+        palette = training.quantize(colors=32, method=Image.Quantize.MEDIANCUT).getpalette()[:96]
+        palette += palette[:3] * ((96 - len(palette)) // 3)
+        lookup = Image.new("P", (1, 1))
+        lookup.putpalette(palette * 8)
+        quantized = atlas.convert("RGB").quantize(palette=lookup, dither=Image.Dither.NONE)
+        packed = bytes((round(alpha * 7 / 255) << 5) | (color & 31)
+                       for alpha, color in zip(atlas.getchannel("A").getdata(), quantized.getdata()))
+        stem = "atlas" + str(page)
+        atlas.save(output / (stem + ".png"))
+        (output / (stem + ".bin")).write_bytes(packed)
+        colors = [(palette[i] >> 3) | ((palette[i + 1] >> 3) << 5) | ((palette[i + 2] >> 3) << 10) for i in range(0, 96, 3)]
+        (output / (stem + "palette.bin")).write_bytes(struct.pack("<32H", *colors))
+        preview = Image.new("RGBA", atlas.size)
+        preview.putdata([tuple(((colors[pixel & 31] >> shift) & 31) * 255 // 31 for shift in (0, 5, 10)) + ((pixel >> 5) * 255 // 7,) for pixel in packed])
+        preview.save(output / (stem + "preview.png"))
+        pages.append({"name": stem, "source": resource, "width": width, "height": height, "bytes": len(packed)})
+    return pages
 
 
 def rgb15(image):
@@ -61,7 +113,7 @@ def main():
     for index in range(13):
         sprite("sad" + str(index), "char_animations3", index)
     for index in range(19):
-        sprite("star" + str(index), "obj_star_idle", index)
+        sprite("star" + str(index), "obj_star_idle", index, restore=index != 0)
     for index in range(3):
         sprite("candy" + str(index), "candies/obj_candy_01_new", index, .71)
     sprite("hookback", "obj_hook", 0)
@@ -77,67 +129,25 @@ def main():
         records.append({"name": "glyph" + str(character), "image": glyph, "ox": 0, "oy": 0,
                         "advance": max(3, round(draw.textlength(chr(character), font=font)))})
 
-    atlas = Image.new("RGBA", (256, 1024))
-    x, y, row = 1, 1, 0
-    for record in records:
-        image = record["image"]
-        if x + image.width + 1 > atlas.width:
-            x, y, row = 1, y + row + 2, 0
-        if y + image.height + 1 > atlas.height:
-            raise ValueError("Sprite atlas exceeded the DS texture limit")
-        record.update(x=x, y=y, w=image.width, h=image.height)
-        atlas.paste(image, (x, y))
-        x += image.width + 2
-        row = max(row, image.height)
-    atlasheight = 1 << math.ceil(math.log2(y + row + 1))
-    atlas = atlas.crop((0, 0, 256, atlasheight))
-    atlas.save(output / "atlas.png")
-    quantized = atlas.convert("RGB").quantize(colors=32, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
-    palette = quantized.getpalette()[:96]
-    packed = bytes((int(round(alpha * 7 / 255)) << 5) | color
-                   for alpha, color in zip(atlas.getchannel("A").getdata(), quantized.getdata()))
-    (output / "atlas.bin").write_bytes(packed)
-    (output / "palette.bin").write_bytes(b"".join(struct.pack("<H", (palette[i] >> 3) | ((palette[i + 1] >> 3) << 5) |
-                                                                         ((palette[i + 2] >> 3) << 10)) for i in range(0, 96, 3)))
-    preview = quantized.convert("RGBA")
-    preview.putalpha(atlas.getchannel("A").point(lambda value: round(value * 7 / 255) * 255 // 7))
-    preview.save(output / "atlaspreview.png")
+    pages = atlases()
 
     backgroundpath = images / "backgrounds/bgr_01_p1.png"
     sources.add(backgroundpath)
     background = Image.open(backgroundpath).convert("RGB")
-    width = round(background.height * 192 / 256)
+    width = round(background.height * 256 / 192)
     left = (background.width - width) // 2
-    portrait = background.crop((left, 0, left + width, background.height)).resize((192, 256), Image.Resampling.LANCZOS)
+    landscape = background.crop((left, 0, left + width, background.height)).resize((256, 192), Image.Resampling.LANCZOS)
     backdrop = Image.new("RGB", (256, 256))
-    backdrop.paste(portrait.transpose(Image.Transpose.ROTATE_90), (0, 0))
+    backdrop.paste(landscape, (0, 0))
     (output / "background.bin").write_bytes(rgb15(backdrop))
     backdrop.save(output / "background.png")
 
-    panel = Image.blend(portrait, Image.new("RGB", portrait.size, "#251a13"), .83)
-    draw = ImageDraw.Draw(panel)
-    titlefont = ImageFont.truetype(str(fontpath), 28)
-    bodyfont = ImageFont.truetype(str(fontpath), 16)
-    draw.text((17, 9), "Cut the Rope", font=titlefont, fill="#f7e8c3")
-    draw.text((17, 40), "DX / Nintendo DS", font=bodyfont, fill="#b2ce5c")
-    draw.line((16, 66, 175, 66), fill="#6b5037")
-    draw.text((17, 77), "Cardboard Box 1-1", font=bodyfont, fill="#f7e8c3")
-    draw.text((17, 138), "Swipe across the rope", font=bodyfont, fill="#f7e8c3")
-    draw.text((17, 158), "Collect all three stars", font=bodyfont, fill="#f7e8c3")
-    draw.text((17, 181), "A / touch: retry", font=bodyfont, fill="#b2ce5c")
-    draw.text((17, 200), "START: pause", font=bodyfont, fill="#b2ce5c")
-    draw.text((17, 232), "DS feasibility build", font=bodyfont, fill="#9c8c74")
-    sub = Image.new("RGB", (256, 256))
-    sub.paste(panel.transpose(Image.Transpose.ROTATE_90), (0, 0))
-    (output / "panel.bin").write_bytes(rgb15(sub))
-    panel.save(output / "panelpreview.png")
-
-    mask = Image.new("L", (96 * 6, 9))
-    maskdraw = ImageDraw.Draw(mask)
-    smallfont = ImageFont.load_default()
-    for index in range(96):
-        maskdraw.text((index * 6, -2), chr(32 + index), font=smallfont, fill=255)
-    (output / "font.bin").write_bytes(bytes(1 if pixel >= 96 else 0 for pixel in mask.getdata()))
+    logopath = root / "assets/logods.png"
+    logo = ImageOps.contain(Image.open(logopath).convert("RGBA"), (256, 192), Image.Resampling.LANCZOS)
+    upper = Image.new("RGB", (256, 256))
+    upper.paste(logo, ((256 - logo.width) // 2, (192 - logo.height) // 2), logo)
+    (output / "logo.bin").write_bytes(rgb15(upper))
+    upper.crop((0, 0, 256, 192)).save(output / "logo.png")
 
     sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "monster_open", "monster_chewing", "win"]
     audio = []
@@ -176,22 +186,27 @@ def main():
     leveltext += f"}}}},\n{len(hooks)}, {speed}f, {float(offset)}f, {float(width)}f, {float(height)}f\n}};\n}}\n"
     (output / "level.hpp").write_text(leveltext, encoding="utf-8")
 
-    header = ["#pragma once", "#include <cstdint>", "namespace art {", "struct sprite { int x, y, w, h, ox, oy, advance; };",
-              f"inline constexpr int atlasheight = {atlasheight};", "enum id {"]
+    blobs = [name for page in pages for name in (page["name"], page["name"] + "palette")] + ["background", "logo"] + [name for name, _ in audio]
+    header = ["#pragma once", "#include <cstdint>", 'extern "C" {']
+    header += [f"extern const unsigned char {name}data[];" for name in blobs]
+    header += ["}", "namespace art {", "struct sprite { int x, y, w, h, ox, oy, advance, page; };",
+               "struct texture { int width, height; const unsigned char* pixels; const unsigned char* palette; };",
+               "inline constexpr texture textures[] = {"]
+    header += [f"{{{page['width']},{page['height']},{page['name']}data,{page['name']}palettedata}}," for page in pages]
+    header += ["};", f"inline constexpr int texturecount = {len(pages)};", "enum id {"]
     header += [record["name"] + "," for record in records]
     header += ["spritecount };", "inline constexpr sprite sprites[] = {"]
-    header += ["{" + ",".join(str(record.get(key, 0)) for key in ("x", "y", "w", "h", "ox", "oy", "advance")) + "}," for record in records]
-    header += ["};", "}", 'extern "C" {']
-    blobs = ["atlas", "palette", "background", "panel", "font"] + [name for name, _ in audio]
-    header += [f"extern const unsigned char {name}data[];" for name in blobs]
-    header += ["}"]
+    header += ["{" + ",".join(str(record.get(key, 0)) for key in ("x", "y", "w", "h", "ox", "oy", "advance", "page")) + "}," for record in records]
+    header += ["};", "}"]
     header += [f"inline constexpr int {name}bytes = {size};" for name, size in audio]
     (output / "assets.hpp").write_text("\n".join(header) + "\n", encoding="utf-8")
     assembly = ['.section .rodata', '.balign 4']
     for name in blobs:
         assembly += [".balign 4", f".global {name}data", f"{name}data:", f'.incbin "generated/{name}.bin"']
     (output / "assets.s").write_text("\n".join(assembly) + "\n", encoding="utf-8")
-    manifest = {"level": "1_1", "atlas": [256, atlasheight], "texturebytes": len(packed) + 131072,
+    manifest = {"level": "1_1", "viewport": [256, 192], "scale": scale, "atlases": pages,
+                "texturebytes": sum(page["bytes"] for page in pages) + 131072,
+                "upperbytes": 131072, "logo": {"source": "assets/logods.png", "sha256": hashlib.sha256(logopath.read_bytes()).hexdigest()},
                 "audiobytes": sum(size for _, size in audio),
                 "sources": {str(path.relative_to(content)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)},
                 "sprites": [{key: value for key, value in record.items() if key != "image"} for record in records]}

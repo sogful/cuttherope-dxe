@@ -8,7 +8,7 @@ from pathlib import Path
 import struct
 import time
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 root = Path(__file__).resolve().parents[1]
 
@@ -51,6 +51,8 @@ def main():
     audiononzero = 0
     messages = []
     callbacks = []
+    animation = []
+    logo = Image.open(root / "generated/logo.png").convert("RGB")
 
     def callback(name, restype, types, function):
         instance = c.CFUNCTYPE(restype, *types)(function)
@@ -160,13 +162,18 @@ def main():
         loaded = core.retro_load_game(c.byref(info))
         if not loaded:
             raise RuntimeError("melonDS rejected the ROM: " + repr(messages))
-        def capture(label):
+        def framebuffer():
             if not frame:
                 raise RuntimeError("No video frames")
             data, width, height, pitch = frame
-            image = Image.frombytes("RGB", (width, height), data, "raw", "BGRX", pitch)
+            return Image.frombytes("RGB", (width, height), data, "raw", "BGRX", pitch)
+        def capture(label):
+            image = framebuffer()
+            assert image.size == (256, 384), image.size
+            difference = ImageChops.difference(image.crop((0, 0, 256, 192)), logo)
+            assert max(high for low, high in difference.getextrema()) <= 8, "Upper display does not match the logo within RGB15 precision"
             image.save(directory / (label + ".png"))
-            image.transpose(Image.Transpose.ROTATE_270).save(directory / (label + "-portrait.png"))
+            image.crop((0, 192, 256, 384)).save(directory / (label + "-game.png"))
         symbols = (root / "build/symbols.txt").read_text().splitlines()
         address = int(next(line.split()[0] for line in symbols if line.endswith(" telemetry")), 16)
         report = {"core": str(Path(args.core).resolve()), "coreSha256": hashlib.sha256(Path(args.core).read_bytes()).hexdigest(),
@@ -191,6 +198,8 @@ def main():
                 tick = current["ticks"]
                 if tick in reference and tick not in samples and current["resets"] == 0:
                     samples[tick] = current
+                if current["resets"] == 0 and 10 <= tick < 124 and tick % 3 == 1:
+                    animation.append(framebuffer().crop((0, 192, 256, 384)))
         def snapshot(label):
             result = telemetry()
             report["stages"][label] = result
@@ -205,6 +214,12 @@ def main():
         errors = [math.hypot(samples[tick]["x"] - point["x"], samples[tick]["y"] - point["y"]) for tick, point in reference.items()]
         report["maximumDesktopError"] = max(errors)
         assert max(errors) < .05, errors
+        animation[0].save(directory / "animation.gif", save_all=True, append_images=animation[1:], duration=50, loop=0)
+        strip = Image.new("RGB", (48 * 19, 64))
+        for index, image in enumerate(animation[:19]):
+            strip.paste(image.crop((104, 148, 152, 192)), (index * 48, 20))
+            strip.paste(image.crop((104, 81, 152, 101)), (index * 48, 0))
+        strip.save(directory / "animation-strip.png")
         if not args.inspect:
             run(args.soak)
             soak = snapshot("soak")
@@ -217,10 +232,10 @@ def main():
             touch(180, 130)
             touch(180, 130, False)
             assert telemetry()["cuts"] == 0, "A non-intersecting gesture cut the rope"
-            touch(52, 125)
-            for y in range(120, 49, -5):
-                touch(52, y)
-            touch(52, 50, False)
+            touch(100, 40)
+            for x in range(105, 156, 5):
+                touch(x, 40)
+            touch(155, 40, False)
             run(180)
             won = snapshot("win")
             assert won["state"] == 1 and won["stars"] == 3 and won["cuts"] == 1, won
@@ -243,8 +258,8 @@ def main():
             run(30)
             resumed = snapshot("resumed")
             assert resumed["paused"] == 0 and resumed["ticks"] > paused["ticks"], resumed
-            touch(10, 25)
-            touch(10, 25, False)
+            touch(225, 10)
+            touch(225, 10, False)
             touchretry = snapshot("touchretry")
             assert touchretry["resets"] == 2 and touchretry["ticks"] < resumed["ticks"], touchretry
             assert touchretry["late"] == 0, touchretry
