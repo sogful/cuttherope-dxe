@@ -56,6 +56,55 @@ namespace CutTheRopeDX.GameMain
             }
         }
 
+        /// <summary>Cancels belt dragging before synthetic touch releases can create inertia.</summary>
+        public void CancelConveyorDrags()
+        {
+            conveyors?.CancelAllDrags();
+        }
+
+        /// <summary>Cancels held rocket taps so a synthetic release cannot turn them.</summary>
+        public void CancelPendingRocketTaps()
+        {
+            if (rockets == null)
+            {
+                return;
+            }
+
+            foreach (Rocket rocket in rockets)
+            {
+                // Actual rotation drags still finish through the normal snap-to-angle path.
+                if (rocket != null && !rocket.rotateHandled)
+                {
+                    rocket.isOperating = -1;
+                }
+            }
+        }
+
+        /// <summary>Releases captured controls when play ends without firing their release actions.</summary>
+        private void CancelTouchesForLevelEnd()
+        {
+            EndActiveFingerTraces();
+            CancelConveyorDrags();
+
+            foreach (Spikes spike in spikes)
+            {
+                spike.touchIndex = -1;
+                spike.rotateButton?.SetState(Button.BUTTON_STATE.BUTTON_UP);
+            }
+
+            foreach (Grab grab in bungees)
+            {
+                if (grab.Wheel is WheelControl wheel)
+                {
+                    wheel.EndOperating(wheel.OperatingTouch);
+                }
+                if (grab.Rail is RailMotion rail)
+                {
+                    rail.EndDrag(rail.DraggingTouch);
+                }
+            }
+        }
+
         /// <summary>Resolves a supported pointer index before any gesture state is accessed.</summary>
         private bool TryGetPointerGesture(int pointerIndex, out PointerGestureState gesture)
         {
