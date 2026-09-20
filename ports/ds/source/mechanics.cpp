@@ -1,22 +1,55 @@
 #include "simulation.hpp"
+#include "geometry.hpp"
 #include <algorithm>
 
 namespace dx {
 static constexpr float delta = .016f, radians = 3.14159265f / 180;
-static point rotate(point p, float angle) {
+point rotate(point p, float angle) {
     const float s = std::sin(angle * radians), c = std::cos(angle * radians);
     return {p.x * c - p.y * s, p.x * s + p.y * c};
 }
 point motion::at(float time) const {
+    if (circle != 0) {
+        const float radius = std::abs(circle);
+        const int count = static_cast<int>(radius) / 2;
+        if (count < 2) return {};
+        const float turn = 6.2831853f / count * (circle < 0 ? -1 : 1);
+        const float chord = 2 * radius * std::sin(std::abs(turn) / 2);
+        const float phase = time * speed / chord;
+        const int index = static_cast<int>(std::floor(phase));
+        const float amount = phase - index;
+        const point a{std::cos((index % count) * turn),std::sin((index % count) * turn)};
+        const point b{std::cos(((index + 1) % count) * turn),std::sin(((index + 1) % count) * turn)};
+        return (a * (1 - amount) + b * amount) * radius;
+    }
     const float length = offset.length();
     if (length == 0 || speed <= 0) return {};
     const float phase = std::fmod(time * speed / length, 2.0f);
     return offset * (phase <= 1 ? phase : 2 - phase);
 }
+float motion::angle(float base, float time, bool reset) const {
+    if (reset && circle && speed > 0) {
+        const float radius = std::abs(circle);
+        const int count = static_cast<int>(radius) / 2;
+        const float segmenttime = 2 * radius * std::sin(3.14159265f / count) / speed;
+        time = std::fmod(time, segmenttime * count);
+        if (time >= segmenttime * (count - 1)) time = 0;
+    }
+    return base + rotation * time;
+}
 void simulation::animate() {
     ++visuals;
     ++popage;
     for (int& age : pumpages) age = std::min(100, age + 1);
+    for (int& age : bounceages) age = std::min(100, age + 1);
+    for (int& age : hatages) age = std::min(100, age + 1);
+    ++mergeage;
+    for (float& time : hattimers) time = std::max(0.0f, time - delta);
+    for (int i = 0; i < definition.spikecount; ++i) if (definition.spikes[i].size == 5) {
+        float& time = electrotimers[i];
+        time += std::clamp(-time, -delta, delta);
+        if (time == 0) { electric[i] = !electric[i]; time = electric[i] ? definition.spikes[i].on : definition.spikes[i].off; }
+    }
     for (int i = 0; i < 3; ++i) starpositions[i] = definition.stars[i] + definition.starmotions[i].at(visuals * delta);
 }
 void simulation::camera() {
@@ -28,19 +61,31 @@ void simulation::camera() {
         if (std::abs(target - cameray) < 1) { cameray = target; introduction = false; }
     } else cameray += difference * 14 * delta;
 }
-void simulation::burst() {
-    if (bubble < 0) return;
-    bubble = -1;
-    popposition = candy().pos;
+void simulation::burst(int id) {
+    int& active = id ? halfbubbles[id - 1] : bubble;
+    if (active < 0) return;
+    active = -1;
+    popposition = bodies[id].pos;
     popage = 0;
     ++pops;
 }
 bool simulation::interact(point position) {
     if (state != outcome::playing || introduction) return false;
-    const auto difference = position - candy().pos;
-    if (bubble >= 0 && difference.x >= -60 && difference.x < 60 && difference.y >= -60 && difference.y < 60) {
-        burst();
-        return true;
+    draghook = -1;
+    for (int part = 0; part < activecount() && !hidden(); ++part) {
+        const int id = activeid(part);
+        const auto difference = position - bodies[id].pos;
+        if (bubblefor(id) >= 0 && difference.x >= -60 && difference.x < 60 && difference.y >= -60 && difference.y < 60) {
+            burst(id);
+            return true;
+        }
+    }
+    for (int i = 0; i < definition.hookcount; ++i) {
+        const auto difference = position - anchors[i];
+        if (definition.hooks[i].rail > 0 && std::abs(difference.x) <= 65 && std::abs(difference.y) <= 65) {
+            draghook = i;
+            return true;
+        }
     }
     for (int i = 0; i < definition.pumpcount; ++i) {
         const auto& pump = definition.pumps[i];
@@ -48,9 +93,11 @@ bool simulation::interact(point position) {
         if (std::abs(local.x) > 87.5f || std::abs(local.y) > 87.5f) continue;
         pumpages[i] = 0;
         ++pumpevents;
-        const auto target = rotate(candy().pos - pump.position, -pump.angle);
-        if (target.y < 0 && target.y > -711.5f && std::abs(target.x) < 175) {
-            bodies[0].pos = bodies[0].pos + rotate({0, -2 * (624 + target.y)}, pump.angle) * delta;
+        for (int part = 0; part < activecount() && !hidden(); ++part) {
+            auto& body = bodies[activeid(part)];
+            const auto target = rotate(body.pos - pump.position, -pump.angle);
+            if (target.y < 0 && target.y > -711.5f && std::abs(target.x) < 175)
+                body.pos = body.pos + rotate({0, -2 * (624 + target.y)}, pump.angle) * delta;
         }
         return true;
     }
@@ -61,11 +108,12 @@ void simulation::fail(int reason) {
     state = outcome::lost;
     failreason = reason;
     resulttick = ticks;
-    bodies[0].pin = bodies[0].pos;
-    bodies[0].pinned = true;
-    burst();
+    for (int part = 0; part < activecount(); ++part) {
+        const int id = activeid(part);
+        bodies[id].pin = bodies[id].pos; bodies[id].pinned = true; burst(id);
+    }
 }
-static bool segment(point a, point b, point c, point d) {
+bool segment(point a, point b, point c, point d) {
     auto cross = [](point p, point q) { return p.x * q.y - p.y * q.x; };
     const auto v = b - a, w = d - c;
     const float denominator = cross(v, w);
@@ -73,24 +121,29 @@ static bool segment(point a, point b, point c, point d) {
     const float t = cross(c - a, w) / denominator, u = cross(c - a, v) / denominator;
     return t >= 0 && t <= 1 && u >= 0 && u <= 1;
 }
-static bool linebox(point a, point b, point center) {
+bool linebox(point a, point b, point center, float radius) {
     a = a - center; b = b - center;
-    if (std::abs(a.x) <= 15 && std::abs(a.y) <= 15) return true;
-    if (std::abs(b.x) <= 15 && std::abs(b.y) <= 15) return true;
-    const point corners[] = {{-15,-15},{15,-15},{15,15},{-15,15}};
+    if (std::abs(a.x) <= radius && std::abs(a.y) <= radius) return true;
+    if (std::abs(b.x) <= radius && std::abs(b.y) <= radius) return true;
+    const point corners[] = {{-radius,-radius},{radius,-radius},{radius,radius},{-radius,radius}};
     for (int i = 0; i < 4; ++i) if (segment(a, b, corners[i], corners[(i + 1) % 4])) return true;
     return false;
 }
 void simulation::hazards() {
-    static constexpr float widths[] = {212,333,453,566};
+    if (hidden()) return;
+    static constexpr float widths[] = {212,333,453,566,433};
     for (int i = 0; i < definition.spikecount; ++i) {
         const auto& spike = definition.spikes[i];
+        if (spike.size == 5 && !electric[i]) continue;
         const auto center = spike.anchor + spike.path.at(visuals * delta);
         const float angle = spike.angle + spike.path.rotation * visuals * delta;
         for (int side : {-1, 1}) {
             const auto a = center + rotate({-widths[spike.size - 1] / 2, side * 5.0f}, angle);
             const auto b = center + rotate({widths[spike.size - 1] / 2, side * 5.0f}, angle);
-            if (linebox(a, b, candy().pos) || segment(a, b, candy().previous, candy().pos)) { fail(2); return; }
+            for (int part = 0; part < activecount(); ++part) {
+                const auto& body = bodies[activeid(part)];
+                if (linebox(a, b, body.pos) || segment(a, b, body.previous, body.pos)) { fail(2); return; }
+            }
         }
     }
 }

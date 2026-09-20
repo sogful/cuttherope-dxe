@@ -69,7 +69,7 @@ int controller::buttons(button* out) const {
             for (int i = 0; i < 25; ++i) {
                 const int px = std::lround(128 + (824 + (i % 5) * 228 - 1280) * menuart::fit * (192.0f / 1440));
                 const int py = std::lround(96 + (203.5f + (i / 5) * 258 - 720) * menuart::fit * (192.0f / 1440));
-                out[count++] = {pack < 2 ? action::play : action::unavailable, px, py, 29, 29, "", levelopen(i), i};
+                out[count++] = {pack < 6 ? action::play : action::unavailable, px, py, 29, 29, "", levelopen(i), i};
             }
         }
         for (const auto& item : menuart::controls) {

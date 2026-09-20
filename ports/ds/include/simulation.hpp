@@ -21,10 +21,12 @@ struct point {
 #endif
     }
 };
-struct motion { point offset{}; float speed = 0, rotation = 0; point at(float time) const; };
-struct hook { point anchor; float length; float radius = -1; bool spider = false; };
-struct spike { point anchor{}; motion path{}; float angle = 0; int size = 1; };
+struct motion { point offset{}; float speed = 0, rotation = 0, circle = 0; point at(float time) const; float angle(float base, float time, bool reset = false) const; };
+struct hook { point anchor; float length; float radius = -1; bool spider = false; float rail = 0, offset = 0; bool vertical = false; int part = 0; };
+struct spike { point anchor{}; motion path{}; float angle = 0; int size = 1; float on = 0, off = 0, delay = 0; };
 struct pump { point position{}; float angle = 0; };
+struct hat { point position{}; motion path{}; float angle = 0; int group = 0; bool resetangle = false; };
+struct bouncer { point position{}; motion path{}; float angle = 0; int size = 1; };
 struct level {
     point candy, target;
     std::array<point, 3> stars;
@@ -35,17 +37,23 @@ struct level {
     int box = 0, index = 0;
     std::array<float, 3> timeouts{{-1, -1, -1}};
     std::array<motion, 3> starmotions{};
-    std::array<point, 24> bubbles{};
-    std::array<spike, 8> spikes{};
+    std::array<point, 32> bubbles{};
+    std::array<spike, 16> spikes{};
     std::array<pump, 8> pumps{};
     int bubblecount = 0, spikecount = 0, pumpcount = 0;
+    bool split = false;
+    std::array<point, 2> halves{};
+    std::array<hat, 8> hats{};
+    std::array<bouncer, 16> bouncers{};
+    int hatcount = 0, bouncercount = 0;
 };
-struct constraint { int other = 0; float length = 0; bool active = false; };
+const level& loadlevel(int index);
+struct constraint { int other = 0; float length = 0; bool active = false, maximum = false; };
 struct body {
     point pos, previous, pin, velocity;
     float inverse = 50;
     bool initialized = false, pinned = false;
-    std::array<constraint, 8> links{};
+    std::array<constraint, 10> links{};
     int linkcount = 0;
 };
 struct rope {
@@ -56,6 +64,7 @@ struct rope {
     int attached = -1;
     float spiderdistance = 0, spiderangle = 0;
     point spiderpos{};
+    int candy = 0;
 };
 enum class outcome { playing, won, lost };
 class simulation {
@@ -66,10 +75,15 @@ public:
     bool tap(point position);
     bool sever(int index, int segment);
     bool interact(point position);
+    bool drag(point position, bool held);
     void animate();
     void camera();
     void samples(int index, int first, int count, point* output, int& size) const;
     const body& candy() const { return bodies[0]; }
+    int activecount() const { return split ? 2 : 1; }
+    int activeid(int index) const { return split ? index + 1 : 0; }
+    int bubblefor(int id) const { return id ? halfbubbles[id - 1] : bubble; }
+    bool hidden() const { return transit >= 0; }
     level definition{};
     std::array<body, 256> bodies{};
     std::array<rope, 8> ropes{};
@@ -77,7 +91,7 @@ public:
     std::array<int, 3> collectedat{};
     std::array<point, 3> starpositions{};
     std::array<bool, 3> expired{};
-    std::array<bool, 24> bubblesused{};
+    std::array<bool, 32> bubblesused{};
     std::array<int, 8> pumpages{};
     int bubble = -1, bubbleevents = 0, pumpevents = 0, ropeevents = 0, failreason = 0;
     int visuals = 0, pops = 0, popage = 100;
@@ -88,16 +102,32 @@ public:
     bool mouth = false;
     int mouthtick = 0;
     outcome state = outcome::playing;
+    std::array<point, 8> anchors{};
+    std::array<float, 16> electrotimers{};
+    std::array<bool, 16> electric{};
+    std::array<int, 16> bounceages{};
+    std::array<float, 8> hattimers{};
+    std::array<int, 8> hatages{};
+    std::array<int, 2> halfbubbles{{-1,-1}};
+    std::array<point, 2> halfdraw{};
+    bool split = false, merging = false;
+    float mergedistance = 0, exitspeed = 0;
+    int draghook = -1, transit = -1, transitage = 0, mergeage = 100;
+    int bounceevents = 0, teleportevents = 0, mergeevents = 0;
 private:
     int add(point position, float inverse, bool pinned);
     void integrate(body& item, float acceleration);
     void satisfy(body& item);
     void detach(rope& item);
-    void attach(int index, float length);
+    void attach(int index, float length, int candy = 0);
     void ropephysics();
     void hazards();
     void spiders();
     void fail(int reason);
-    void burst();
+    void burst(int id = 0);
+    void merge(bool touching);
+    void transports();
+    void bounce();
+    void cutattached(int id);
 };
 }

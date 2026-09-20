@@ -11,7 +11,7 @@
 #include <cstdio>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 6;
+    std::uint32_t magic = 0x44585250, version = 7;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -21,6 +21,7 @@ struct diagnostics {
     std::uint32_t unlocked = 0, skintab = 0, candy = 0, rope = 0, costume = 0, trace = 0, skinoffset = 0, transition = 0, storage = 0;
     std::uint32_t door = 0, doorframe = 0, menuage = 0, improved = 0;
     std::uint32_t level = 0, visuals = 0, bubble = 0, pumps = 0, ropes = 0, failure = 0, intro = 0, cameray = 0, hooks = 0;
+    std::uint32_t split = 0, merges = 0, teleports = 0, bounces = 0, rail = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -35,7 +36,7 @@ int main() {
     irqEnable(IRQ_VBLANK);
     display::initialize();
     audio::initialize();
-    game.reset(dx::firstlevel);
+    game.reset(dx::loadlevel(0));
     if (fatInitDefault()) {
         char directory[192];
         std::snprintf(directory, sizeof(directory), "%sctrdx", fatGetDefaultDrive());
@@ -48,6 +49,7 @@ int main() {
     int frame = 0, shownstars = 0;
     bool objecttouch = false;
     int shownbubbles = 0, shownpops = 0, shownpumps = 0, shownropes = 0;
+    int shownbounces = 0, shownteleports = 0, shownmerges = 0;
     bool shownmouth = false, shownresult = false;
     unsigned total = 0, peak = 0, late = 0;
     nocashMessage("CTRD DS: ready");
@@ -72,10 +74,11 @@ int main() {
         if (display::busy()) menu.suspend({touchx, touchy, 0, touching});
         else menu.update(game, {touchx, touchy, commands, touching});
         if (menu.reset) {
-            game.reset(dx::levels[menu.levelid()]);
+            game.reset(dx::loadlevel(menu.levelid()));
             frame = shownstars = 0;
             shownmouth = shownresult = held = false;
             shownbubbles = shownpops = shownpumps = shownropes = 0;
+            shownbounces = shownteleports = shownmerges = 0;
             telemetry.resets = telemetry.resets + 1;
             trace::trail.reset();
         }
@@ -83,6 +86,7 @@ int main() {
         if (menu.mode == ui::view::playing && !display::busy()) {
             trace::trail.update(menu.gameTouch, pointer, menu.skins[3]);
             if (menu.gameTouch && !held) objecttouch = game.interact(pointer);
+            game.drag(pointer, menu.gameTouch && objecttouch);
             if (menu.gameTouch && !objecttouch && (held ? game.swipe(previous, pointer) : menu.clickcut && game.tap(pointer))) {
                 telemetry.cuts = telemetry.cuts + 1;
                 audio::effect(ropebleak1data, ropebleak1bytes);
@@ -93,13 +97,18 @@ int main() {
             game.tick();
         } else {
             held = false;
+            game.drag(pointer, false);
             if (!menu.frontend() && (menu.mode != ui::view::paused || menu.door) && !display::busy()) game.tick();
         }
         frame = game.visuals;
+        audio::world(menu, game);
         if (game.bubbleevents != shownbubbles) { audio::effect(bubbledata, bubblebytes); shownbubbles = game.bubbleevents; }
         if (game.pops != shownpops) { audio::effect(bubblebreakdata, bubblebreakbytes); shownpops = game.pops; }
         if (game.pumpevents != shownpumps) { audio::effect(pump1data, pump1bytes); shownpumps = game.pumpevents; }
         if (game.ropeevents != shownropes) { audio::effect(ropegetdata, ropegetbytes); shownropes = game.ropeevents; }
+        if (game.bounceevents != shownbounces) { audio::effect(bouncerdata, bouncerbytes); shownbounces = game.bounceevents; }
+        if (game.teleportevents != shownteleports) { audio::effect(teleportdata, teleportbytes); shownteleports = game.teleportevents; }
+        if (game.mergeevents != shownmerges) { audio::effect(candylinkdata, candylinkbytes); shownmerges = game.mergeevents; }
         if (game.count != shownstars) {
             if (game.count == 1) audio::effect(star1data, star1bytes);
             if (game.count == 2) audio::effect(star2data, star2bytes);
@@ -148,6 +157,8 @@ int main() {
         telemetry.level = menu.levelid(); telemetry.visuals = game.visuals; telemetry.bubble = game.bubble + 1;
         telemetry.pumps = game.pumpevents; telemetry.ropes = game.ropeevents; telemetry.failure = game.failreason;
         telemetry.intro = game.introduction; telemetry.cameray = std::lround(game.cameray); telemetry.hooks = game.definition.hookcount;
+        telemetry.split = game.split; telemetry.merges = game.mergeevents; telemetry.teleports = game.teleportevents;
+        telemetry.bounces = game.bounceevents; telemetry.rail = game.draghook + 1;
         telemetry.view = static_cast<unsigned>(menu.mode);
         telemetry.effects = menu.effects;
         telemetry.music = menu.music;

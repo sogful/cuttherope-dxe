@@ -153,6 +153,9 @@ int main() {
     assert(progression.level == 1 && progression.levelid() == 26 && progression.reset);
     progression.pack = 1; progression.level = 24;
     assert(!progression.hasnext());
+    progression.saves.toggle();
+    assert(progression.hasnext());
+    progression.pack = 5; progression.level = 24; assert(!progression.hasnext());
     int previous = 0;
     for (int i = 0; i < 360; ++i) {
         const auto state = ui::resultat(i * .016f, 3, 5200, 500);

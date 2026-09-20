@@ -23,6 +23,12 @@ void simulation::reset(const level& data) {
     expired = {};
     bubblesused = {};
     pumpages.fill(100);
+    bounceages.fill(100); hatages.fill(100); hattimers.fill(0); electric.fill(false);
+    halfbubbles.fill(-1); halfdraw = data.halves;
+    split = data.split; merging = false; mergedistance = exitspeed = 0;
+    draghook = transit = -1; transitage = 0; mergeage = 100;
+    bounceevents = teleportevents = mergeevents = 0;
+    for (int i = 0; i < data.spikecount; ++i) electrotimers[i] = data.spikes[i].off + data.spikes[i].delay;
     bubble = -1;
     bubbleevents = pumpevents = ropeevents = failreason = visuals = pops = 0;
     popage = 100;
@@ -33,24 +39,29 @@ void simulation::reset(const level& data) {
     add(data.candy, 1, false);
     bodies[0].previous = data.candy;
     bodies[0].initialized = true;
+    if (split) for (const point position : data.halves) {
+        const int id = add(position, 1, false);
+        bodies[id].previous = position; bodies[id].initialized = true;
+    }
     introduction = data.height > 1440;
     cameray = introduction && data.candy.y < data.height / 2 ? data.height - 1440 : 0;
     cameraspeed = 20;
     cameradistance = std::abs(cameray - std::clamp(data.candy.y - 720, 0.0f, data.height - 1440));
     for (int index = 0; index < data.hookcount; ++index) {
         const hook& source = data.hooks[index];
+        anchors[index] = source.anchor;
         ropes[index].spiderpos = source.anchor;
-        if (source.radius < 0) attach(index, source.length);
+        if (source.radius < 0) attach(index, source.length, split ? 1 + source.part : 0);
     }
 }
 
-void simulation::attach(int index, float length) {
-    const auto& source = definition.hooks[index];
+void simulation::attach(int index, float length, int candy) {
     rope& item = ropes[index];
+    item.candy = candy;
     item.attached = visuals;
-    item.bodies[item.count++] = add(source.anchor, 50, true);
+    item.bodies[item.count++] = add(anchors[index], 50, true);
     const int segments = static_cast<int>(std::ceil(length / 105.0f));
-    const point offset = (candy().pos - source.anchor) / std::floor(length / 105.0f + 2);
+    const point offset = (bodies[candy].pos - anchors[index]) / std::floor(length / 105.0f + 2);
     for (int segment = 0; segment < segments; ++segment) {
         const int previous = item.bodies[item.count - 1];
         const int current = add(bodies[previous].pos + offset, 50, false);
@@ -58,8 +69,8 @@ void simulation::attach(int index, float length) {
         bodies[current].linkcount = 1;
         item.bodies[item.count++] = current;
     }
-    bodies[0].links[bodies[0].linkcount++] = {item.bodies[item.count - 1], length + 105 - segments * 105, true};
-    item.bodies[item.count++] = 0;
+    bodies[candy].links[bodies[candy].linkcount++] = {item.bodies[item.count - 1], length + 105 - segments * 105, true};
+    item.bodies[item.count++] = candy;
 }
 
 void simulation::integrate(body& item, float acceleration) {
@@ -84,6 +95,7 @@ void simulation::satisfy(body& item) {
             difference = {1, 1};
         }
         const float length = difference.length();
+        if (link.maximum && length <= link.length) continue;
         const float factor = (length - link.length) / (std::max(length, 1.0f) * (item.inverse + other.inverse));
         item.pos = item.pos + difference * (item.inverse * factor);
         if (!other.pinned) other.pos = other.pos - difference * (other.inverse * factor);
@@ -110,7 +122,7 @@ void simulation::detach(rope& item) {
         break;
     }
     for (int index = 0; index < item.count; ++index) {
-        if (item.bodies[index] != 0) bodies[item.bodies[index]].inverse = 100000;
+        if (item.bodies[index] >= (definition.split ? 3 : 1)) bodies[item.bodies[index]].inverse = 100000;
     }
 }
 
@@ -126,7 +138,7 @@ void simulation::ropephysics() {
         }
         for (int part = 0; part < item.count; ++part) {
             const int id = item.bodies[part];
-            if (id != 0) integrate(bodies[id], 784.0f * (step * delta));
+            if (id >= (definition.split ? 3 : 1)) integrate(bodies[id], 784.0f * (step * delta));
         }
         for (int iteration = 0; iteration < 30; ++iteration) {
             for (int part = 0; part < item.count; ++part) satisfy(bodies[item.bodies[part]]);
@@ -144,48 +156,71 @@ void simulation::tick() {
     const float step = delta * definition.speed;
     for (int index = 0; index < definition.hookcount; ++index) {
         const auto& hook = definition.hooks[index];
-        if (ropes[index].count == 0 && hook.radius >= 0 && (candy().pos - hook.anchor).length() <= hook.radius + 42) {
-            attach(index, hook.radius + 42);
-            ++ropeevents;
+        for (int part = 0; part < activecount() && !hidden(); ++part) {
+            const int id = activeid(part);
+            if (ropes[index].count == 0 && hook.radius >= 0 && (bodies[id].pos - anchors[index]).length() <= hook.radius + 42) {
+                attach(index, hook.radius + 42, id);
+                ++ropeevents;
+            }
         }
     }
-    integrate(bodies[0], 784.0f * (step * step));
-    bodies[0].velocity = (bodies[0].pos - bodies[0].previous) / step;
+    const point halfgap = halfdraw[0] - halfdraw[1];
+    const bool touching = std::abs(halfgap.x) < 88 && std::abs(halfgap.y) < 76;
+    for (int part = 0; part < activecount() && !hidden(); ++part) {
+        auto& item = bodies[activeid(part)];
+        integrate(item, 784.0f * (step * step));
+        item.velocity = (item.pos - item.previous) / step;
+        if (split) halfdraw[part] = item.pos;
+    }
+    if (split) merge(touching);
     const point pos = candy().pos;
     const point distance = pos - definition.target;
-    if (!mouth && distance.length() < 200) { mouth = true; mouthtick = ticks; }
+    if (!split && !hidden() && !mouth && distance.length() < 200) { mouth = true; mouthtick = ticks; }
     else if (mouth && distance.length() >= 220) mouth = false;
     for (int index = 0; index < 3; ++index) {
         const float timeout = definition.timeouts[index];
         if (timeout > 0 && ticks * delta >= timeout) expired[index] = true;
-        const point difference = pos - starpositions[index];
-        if (!stars[index] && !expired[index] && std::abs(difference.x) < 97 && std::abs(difference.y) < 93) {
-            stars[index] = true;
-            collectedat[index] = ticks;
-            ++count;
+        for (int part = 0; part < activecount() && !hidden(); ++part) {
+            const point difference = bodies[activeid(part)].pos + (split ? point{-1,14} : point{}) - starpositions[index];
+            if (!stars[index] && !expired[index] && std::abs(difference.x) < (split ? 98 : 97) && std::abs(difference.y) < (split ? 89 : 93)) {
+                stars[index] = true;
+                collectedat[index] = ticks;
+                ++count;
+            }
         }
     }
     for (int i = 0; i < definition.bubblecount; ++i) {
-        const auto d = pos - definition.bubbles[i];
-        if (!bubblesused[i] && d.x >= -85 && d.x < 85 && d.y >= -85 && d.y < 85) {
-            if (bubble >= 0) burst();
-            bubble = i;
-            bubblesused[i] = true;
-            ++bubbleevents;
-            break;
+        for (int part = 0; part < activecount() && !hidden(); ++part) {
+            const int id = activeid(part);
+            const auto d = bodies[id].pos - definition.bubbles[i];
+            if (!bubblesused[i] && d.x >= -85 && d.x < 85 && d.y >= -85 && d.y < 85) {
+                if (bubblefor(id) >= 0) burst(id);
+                (id ? halfbubbles[id-1] : bubble) = i;
+                bubblesused[i] = true;
+                ++bubbleevents;
+                break;
+            }
         }
     }
+    transports();
     hazards();
+    bounce();
     spiders();
     if (state != outcome::playing) return;
-    if (bubble >= 0) bodies[0].pos = bodies[0].pos + (bodies[0].velocity * (-1.0f / 14) + point{0, -40}) * delta;
-    if (mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
+    for (int part = 0; part < activecount() && !hidden(); ++part) {
+        const int id = activeid(part);
+        if (bubblefor(id) >= 0) bodies[id].pos = bodies[id].pos + (bodies[id].velocity * (-1.0f / 14) + point{0, -40}) * delta;
+    }
+    if (!split && !hidden() && mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
         state = outcome::won;
         resulttick = ticks;
         bodies[0].pin = bodies[0].pos;
         bodies[0].pinned = true;
         if (bubble >= 0) burst();
-    } else if (pos.y > definition.height + 400 || pos.y < -400 || pos.x < -2560 || pos.x > definition.width + 2560) fail(1);
+    } else if (!hidden()) for (int part = 0; part < activecount(); ++part) {
+        const auto position = bodies[activeid(part)].pos;
+        if (position.y > definition.height + 400 || position.y < -400 || position.x < -2560 || position.x > definition.width + 2560) fail(1);
+    }
 }
 
 bool simulation::sever(int index, int segment) {

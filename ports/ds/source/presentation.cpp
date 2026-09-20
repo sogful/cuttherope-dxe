@@ -100,14 +100,7 @@ static void loadgame(const ui::controller& menu) {
         const art::sprite& source = art::sprites[index];
         sprites[index] = {source.w, source.h, source.x, source.y, textures[source.page]};
     }
-    int texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(0, texture);
-    if (!glTexImage2D(0, 0, GL_RGBA, TEXTURE_SIZE_256, TEXTURE_SIZE_256, 0, TEXGEN_OFF, menu.pack == 1 ? fabricbackgrounddata : backgrounddata)) {
-        nocashMessage("CTRD DS: background texture allocation failed");
-        while (true) swiWaitForVBlank();
-    }
-    background = {256, 192, 0, 0, texture};
+    background = {256, 192, 0, 0, frontend::background(menu.pack)};
     frontend::reserve(occupied);
     gamecached = true;
     gamebox = menu.pack;
@@ -129,7 +122,8 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
     const int backgroundy = -static_cast<int>(std::round(cameray * scale)) % 192;
     glSprite(0, backgroundy, GL_FLIP_NONE, &background);
     if (backgroundy) glSprite(0, backgroundy + 192, GL_FLIP_NONE, &background);
-    for (int index = 0; index < game.definition.hookcount; ++index) image(art::hookback, game.definition.hooks[index].anchor);
+    frontend::render(false, true);
+    for (int index = 0; index < game.definition.hookcount; ++index) if (!game.definition.hooks[index].rail) image(art::hookback, game.anchors[index]);
     for (int index = 0; index < game.definition.hookcount; ++index) {
         const dx::rope& item = game.ropes[index];
         const auto& hook = game.definition.hooks[index];
@@ -138,8 +132,8 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
             glPolyFmt(POLY_ALPHA(std::max(1, static_cast<int>(opacity * 18))) | POLY_CULL_NONE | POLY_ID(51));
             for (int edge = 0; edge < 48; edge += 2) {
                 const float a = edge * 6.2831853f / 48, b = (edge + 1) * 6.2831853f / 48;
-                line(hook.anchor + dx::point{std::cos(a), std::sin(a)} * hook.radius,
-                     hook.anchor + dx::point{std::cos(b), std::sin(b)} * hook.radius, RGB15(31,31,31));
+                line(game.anchors[index] + dx::point{std::cos(a), std::sin(a)} * hook.radius,
+                     game.anchors[index] + dx::point{std::cos(b), std::sin(b)} * hook.radius, RGB15(31,31,31));
             }
         }
         if (item.count && !item.cut) strand(game, index, 0, item.count, menu.skins[1]);
@@ -147,14 +141,14 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
             strand(game, index, 0, item.split, menu.skins[1]);
             strand(game, index, item.split, item.count - item.split, menu.skins[1]);
         }
-        image(art::hookfront, game.definition.hooks[index].anchor);
+        if (!hook.rail) image(art::hookfront, game.anchors[index]);
     }
     for (int index = 0; index < 3; ++index) {
         if (game.stars[index] || game.expired[index]) continue;
         image(art::star0, game.starpositions[index], false, 12);
         image(art::star1 + (frame / 3 + index * 5) % 18, game.starpositions[index]);
     }
-    if (menu.skins[0] == 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
+    if (!game.split && !game.hidden() && menu.skins[0] == 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
         image(art::candy0, game.candy().pos);
         image(art::candy1, game.candy().pos);
         image(art::candy2, game.candy().pos);
@@ -180,7 +174,7 @@ void draw(const dx::simulation& game, int frame, const ui::controller& menu, boo
     }
     if (transition == 13) {
         setBrightness(1, -16);
-        if (menu.frontend()) { if (loaded < 2) frontend::reset(); }
+        if (menu.frontend()) { if (!previous.frontend()) { frontend::reset(); gamecached = false; } }
         else loadgame(menu);
         loaded = desired;
     }

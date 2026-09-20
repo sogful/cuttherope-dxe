@@ -64,7 +64,7 @@ def add(name, image, group, origin=None, source=None):
     return len(records) - 1
 
 
-def quad(name, resource, index, factor=fit, restore=False, group=None, pixels=None, smooth=False):
+def quad(name, resource, index, factor=fit, restore=False, group=None, pixels=None, smooth=False, pivot=None):
     crop, frame = assets.readframe(resource, index)
     sources.update((content / "images" / (resource + ".json"), content / "images" / (resource + ".png")))
     if restore:
@@ -76,8 +76,9 @@ def quad(name, resource, index, factor=fit, restore=False, group=None, pixels=No
     image = crop.resize(size, Image.Resampling.LANCZOS)
     if smooth:
         image = image.filter(ImageFilter.GaussianBlur(.65))
-    return add(name, image, group or resource, (image.width // 2, image.height // 2) if restore else None,
-               source={"resource": resource, "quad": index, "restore": restore, "factor": factor, "pixels": pixels, "smooth": smooth})
+    origin = tuple(v * scale * factor for v in pivot) if pivot else (image.width // 2, image.height // 2) if restore else None
+    return add(name, image, group or resource, origin,
+               source={"resource": resource, "quad": index, "restore": restore, "factor": factor, "pixels": pixels, "smooth": smooth, "pivot": pivot})
 
 
 @lru_cache(maxsize=None)
@@ -270,13 +271,13 @@ def main():
     import gameui
     gameinfo = gameui.build(globals())
     import worldart
-    worldart.build(globals())
+    rails = worldart.build(globals())
     keys = ["PLAY", "OPTIONS", "LANGUAGE", "RESET", "CREDITS", "YES", "NO", "RESET_TEXT", "DRAG_TO_CUT", "CLICK_TO_CUT",
             "CANDIES_BTN", "ROPE_SKINS_BTN", "OM_NOM_BTN", "TRACES_BTN", "unlockall", "unavailable"]
     keys += ["language" + str(i) for i in range(12)]
     keys += ["boxname" + str(i) for i in range(len(configs))]
     keys += ["hint" + str(i) for i in range(len(configs))]
-    keys += ["total" + str(i) for i in range(151)] + ["count" + str(i) for i in range(76)]
+    keys += ["total" + str(i) for i in range(451)] + ["count" + str(i) for i in range(76)]
     keys += ["required" + str(i) for i in range(len(configs))] + ["number" + str(i) for i in range(1, 26)] + ["HARDEST_LABEL"]
     labelids, creditids, creditheights = [], [], []
     for code in codes:
@@ -414,6 +415,7 @@ def main():
     header += ['};', f'inline constexpr float fit = {fit:.8f}f;', f'inline constexpr float mainfit = {mainfit:.8f}f;']
     header += skins.header(skininfo, ids, fit, scale)
     header += gameui.header(gameinfo, ids)
+    header += worldart.header(rails, ids)
     header += ['inline constexpr int levelbacks[] = {' + ','.join(str(ids['levelback' + str(i)]) for i in range(17)) + '};', '}']
     (output / "menuassets.hpp").write_text('\n'.join(header) + '\n', encoding="utf-8")
     (output / "menuassets.s").write_text('\n'.join(assembly) + '\n', encoding="utf-8")

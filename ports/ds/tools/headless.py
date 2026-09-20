@@ -39,7 +39,8 @@ def main():
     parser.add_argument("--menus", action="store_true", help="Check source-shaped title, packs, settings, languages and credits")
     parser.add_argument("--skins", action="store_true", help="Check fades, isolated unlock mode, picker scrolling, all cosmetic tabs and equipped gameplay")
     parser.add_argument("--flow", action="store_true", help="Capture box transitions and the complete animated result sequence")
-    parser.add_argument("--boxes", action="store_true", help="Launch every Cardboard/Fabric map and check camera/mechanic input")
+    parser.add_argument("--boxes", action="store_true", help="Launch all 150 maps across the first six boxes")
+    parser.add_argument("--startup", action="store_true", help="Capture consecutive frames through early level texture paging")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
     args = parser.parse_args()
     core = c.CDLL(args.core)
@@ -188,11 +189,11 @@ def main():
         keys = ["magic", "version", "frames", "ticks", "state", "stars", "micros", "peak", "late", "vblanks", "x", "y", "cuts", "touches", "resets", "paused",
                 "view", "effects", "music", "score", "bestscore", "beststars", "locale", "pack", "clickcut", "scroll", "texturebytes",
                 "unlocked", "skintab", "candy", "rope", "costume", "trace", "skinoffset", "transition", "storage", "door", "doorframe", "menuage", "improved",
-                "level", "visuals", "bubble", "pumps", "ropes", "failure", "intro", "cameray", "hooks"]
+                "level", "visuals", "bubble", "pumps", "ropes", "failure", "intro", "cameray", "hooks", "split", "merges", "teleports", "bounces", "rail"]
         memory = core.retro_get_memory_data(2)
         size = core.retro_get_memory_size(2)
         offset = address - 0x02000000
-        if not memory or offset + 196 > size:
+        if not memory or offset + 216 > size:
             raise RuntimeError(f"Cannot read telemetry: RAM={size} address={address:x}")
         assert size == 4 * 1024 * 1024, f"Expected original DS main RAM, received {size} bytes"
         report["mainRamBytes"] = size
@@ -204,7 +205,7 @@ def main():
         referenceattempt = 1
         lastframe, stalled = -1, 0
         def telemetry():
-            return dict(zip(keys, struct.unpack("<10I2f37I", c.string_at(memory + offset, 196))))
+            return dict(zip(keys, struct.unpack("<10I2f42I", c.string_at(memory + offset, 216))))
         def run(count):
             nonlocal lastframe, stalled
             for _ in range(count):
@@ -261,16 +262,16 @@ def main():
             tap(131,185)
             assert telemetry()["unlocked"]
             key(0); key(8); key(8)
-            for box in range(2):
+            for box in range(6):
                 for level in range(25):
                     assert telemetry()["view"] == 4 and telemetry()["pack"] == box
                     tap(round(128 + (824 + (level % 5) * 228 - 1280) * 1.01846195 * 192 / 1440),
                         round(96 + (203.5 + (level // 5) * 258 - 720) * 1.01846195 * 192 / 1440))
                     settle()
-                    if level in (14,17):
-                        run(360)
-                    else:
-                        run(70)
+                    for _ in range(1200):
+                        if not telemetry()["intro"]: break
+                        run(1)
+                    run(70)
                     if box == 0 and level in (0,5,6,9):
                         for _ in range(600):
                             if telemetry()["ticks"] >= 120: break
@@ -284,6 +285,13 @@ def main():
                         pump = xml.parse(root.parents[1] / "content/maps/2_1.xml").find("./layer[@name='Objects']/pump")
                         tap(64 + float(pump.get("x")) * .4, float(pump.get("y")) * .4)
                         assert telemetry()["pumps"] > before, "Pump touch did not reach gameplay"
+                    if box == 2 and level == 0:
+                        touch(90,96)
+                        assert telemetry()["rail"] == 1, "Rail handle did not capture the stylus"
+                        for px in range(90,155,4): touch(px,96)
+                        snapshot("foil-dragged-rail")
+                        touch(154,96,False)
+                        assert telemetry()["rail"] == 0, "Rail did not release the stylus"
                     if stage["view"] == 0: key(3)
                     current = telemetry()["view"]
                     if current == 1: tap(128,96)
@@ -291,12 +299,12 @@ def main():
                     settle()
                     run(10)
                     assert telemetry()["view"] == 4
-                if box == 0:
+                if box < 5:
                     key(0); key(7); run(180); key(8)
             assert len(maperrors) >= 31, "Missing emulated multi-rope reference samples"
-            report.update(passed=True, maps=50, referenceSamples=len(maperrors), maximumDesktopError=max(maperrors.values()), seconds=time.monotonic()-start)
+            report.update(passed=True, maps=150, referenceSamples=len(maperrors), maximumDesktopError=max(maperrors.values()), seconds=time.monotonic()-start)
             (directory / "boxreport.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-            print("PASS: 50 maps launched through real UI, both boxes, two scrolling intros, pump input")
+            print("PASS: 150 maps launched through real UI, six boxes, scrolling intros, pump and rail input")
             return
         if args.skins:
             fades = []
@@ -318,14 +326,13 @@ def main():
             key(8)
             assert snapshot("unlocked-fabric-levels")["pack"] == 1 and telemetry()["view"] == 4
             key(0)
-            key(7)
+            for _ in range(5): key(7)
             run(180)
             key(8)
             tap(66, 26)
             assert telemetry()["view"] == 4 and telemetry()["resets"] == 0, "An unavailable map silently launched 1-1"
             key(0)
-            key(6)
-            key(6)
+            for _ in range(6): key(6)
             run(180)
             key(0)
             tap(128, 170)
@@ -475,6 +482,27 @@ def main():
         key(8)
         key(8)
         key(8)
+        if args.startup:
+            sequence, clocks, strips = [], [], []
+            for _ in range(240):
+                run(1)
+                state = telemetry()
+                screen = framebuffer().crop((0,192,256,384))
+                sequence.append(screen)
+                clocks.append(state)
+                if not state["transition"] and not state["door"] and state["ticks"] > 40:
+                    strips.append((len(sequence)-1,screen.crop((0,25,30,150))))
+            assert len(strips) > 120
+            reference_strip = strips[-1][1]
+            differences = [(index,sum(sum(p) for p in ImageChops.difference(strip,reference_strip).getdata()) / (30*125*3)) for index,strip in strips]
+            worst = max(differences,key=lambda item:item[1])
+            sequence[0].save(directory / "level-startup.gif",save_all=True,append_images=sequence[1:],duration=17,loop=0)
+            sequence[worst[0]].save(directory / "startup-worst-game.png")
+            report.update(passed=worst[1] < 1,startupFrames=len(sequence),backgroundChange=worst[1],clocks=clocks,seconds=time.monotonic()-start)
+            (directory / "startupreport.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
+            assert worst[1] < 1, ("Texture upload corrupted the unchanged background",worst)
+            print("PASS: 240 consecutive startup frames; no background flash during texture paging")
+            return
         run(180)
         idle = snapshot("idle")
         assert idle["magic"] == 0x44585250 and idle["state"] == 0 and idle["frames"] > 150, idle

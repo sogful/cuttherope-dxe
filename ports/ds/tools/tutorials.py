@@ -4,13 +4,15 @@ import xml.etree.ElementTree as xml
 def build(menu):
     info = {"items": [], "spans": []}
     names = set()
-    for box in range(1, 3):
+    for box in range(1, 7):
         for level in range(1, 26):
             path = menu["content"] / "maps" / f"{box}_{level}.xml"
             menu["sources"].add(path)
             document = xml.parse(path).getroot()
             width = float(document.find("./layer[@name='settings']/map").get("width")) * 3
-            left = (2560 - width) / 2
+            design = document.find("./layer[@name='settings']/gameDesign")
+            left = (2560 - width) / 2 + float(design.get("mapOffsetX", 0))
+            top = float(design.get("mapOffsetY", 0))
             rows = []
             for code in menu["codes"]:
                 strings = {**menu["locale"]("en")["TUTORIAL_TEXTS"], **menu["locale"](code).get("TUTORIAL_TEXTS", {})}
@@ -21,7 +23,7 @@ def build(menu):
                 for node in nodes:
                     if not node.tag.startswith("tutorial"):
                         continue
-                    x, y = float(node.get("x")) * 3 + left, float(node.get("y")) * 3
+                    x, y = float(node.get("x")) * 3 + left, float(node.get("y")) * 3 + top
                     if node.tag == "tutorialText":
                         name = f"hint{box}x{level}x{code}x{len(info['items'])}"
                         wrap = float(node.get("width")) * 3
@@ -37,7 +39,7 @@ def build(menu):
                             names.add(name)
                     area = [float(v) for v in node.get("inArea", "0,0,0,0").split(",")]
                     if node.get("inArea"):
-                        area = [area[0] * 3 + left, area[1] * 3, area[2] * 3, area[3] * 3]
+                        area = [area[0] * 3 + left, area[1] * 3 + top, area[2] * 3, area[3] * 3]
                     pathvalues = [float(v) for v in node.get("path", "0,0,0,0").split(",")]
                     assert len(pathvalues) == 4
                     info["items"].append([name, x, y, float(node.get("angle", 0)), float(node.get("fadeIn", 1)),
@@ -54,6 +56,6 @@ def header(info, ids):
     lines = ['struct tutorial { int sprite; float x,y,angle,fadein,hold,fadeout,repeat,delay,speed,trigger; float left,top,width,height,firstx,firsty,lastx,lasty; };',
              'inline constexpr tutorial tutorials[] = {']
     lines += ['{' + str(ids[row[0]]) + ',' + ','.join(str(float(v)) + 'f' for v in row[1:]) + '},' for row in info['items']]
-    lines += ['};', 'inline constexpr int tutorialspans[50][12][2] = {']
+    lines += ['};', 'inline constexpr int tutorialspans[150][12][2] = {']
     lines += ['{' + ','.join('{' + ','.join(map(str, span)) + '}' for span in row) + '},' for row in info['spans']]
     return lines + ['};']

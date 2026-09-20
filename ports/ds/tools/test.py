@@ -14,7 +14,7 @@ if not compiler:
 binary = build / "simulationtest.exe"
 subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", "-msse2", "-mfpmath=sse", "-ffp-contract=off",
                 "-I" + str(root / "include"), "-I" + str(root / "generated"),
-                str(root / "source/simulation.cpp"), str(root / "source/mechanics.cpp"), str(root / "tests/simulation.cpp"), "-o", str(binary)], check=True)
+                str(root / "source/simulation.cpp"), str(root / "source/mechanics.cpp"), str(root / "source/advanced.cpp"), str(root / "tests/simulation.cpp"), "-o", str(binary)], check=True)
 result = json.loads(subprocess.check_output([str(binary)], text=True))
 traces = json.loads((root.parent / "roblox/tests/desktop-trajectories.json").read_text())
 reference = next(trace for trace in traces if trace["level"] == 1)["samples"]
@@ -32,18 +32,18 @@ print("PASS:", result["checks"])
 binary = build / "leveltest.exe"
 subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", "-msse2", "-mfpmath=sse", "-ffp-contract=off",
                 "-I" + str(root / "include"), "-I" + str(root / "generated"), str(root / "source/simulation.cpp"),
-                str(root / "source/mechanics.cpp"), str(root / "tests/levels.cpp"), "-o", str(binary)], check=True)
+                str(root / "source/mechanics.cpp"), str(root / "source/advanced.cpp"), str(root / "source/levelstore.cpp"), str(root / "tests/levels.cpp"), "-o", str(binary)], check=True)
 result = json.loads(subprocess.check_output([str(binary)], text=True))
 for actual in result["traces"]:
     expected = next(trace for trace in traces if trace["level"] == actual["level"])
     for a, b in zip(actual["samples"], expected["samples"]):
         assert a["tick"] == b["tick"] and math.hypot(a["x"] - b["x"], a["y"] - b["y"]) < .05, (actual["level"], a, b)
 (build / "leveltest.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-print("PASS: four DX trajectories, 50 XML maps, 60,000 finite-coordinate frames, bubble/pop, pump, spikes, catch ropes, timers, camera")
+print("PASS: four DX trajectories, 150 XML maps, 180,000 finite-coordinate frames, original and advanced mechanics")
 binary = build / "interfacetest.exe"
 subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror",
                 "-I" + str(root / "include"), "-I" + str(root / "generated"),
-                str(root / "source/simulation.cpp"), str(root / "source/mechanics.cpp"), str(root / "source/interface.cpp"), str(root / "source/progress.cpp"),
+                str(root / "source/simulation.cpp"), str(root / "source/mechanics.cpp"), str(root / "source/advanced.cpp"), str(root / "source/interface.cpp"), str(root / "source/progress.cpp"),
                 str(root / "tests/interface.cpp"), "-o", str(binary)], check=True)
 subprocess.run([str(binary)], check=True)
 binary = build / "progresstest.exe"

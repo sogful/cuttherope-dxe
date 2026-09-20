@@ -82,6 +82,9 @@ for page, path, result in zip(manifest["pages"], files, native):
 
 checked = 0
 previews = 0
+spriteids = {item["name"]:i for i,item in enumerate(manifest["sprites"])}
+for stem, count, step in (("electro",5,1),("hat",5,1),("rail",5,1),("merge",5,1),("bouncer",10,1),("seat",6,1),("pump",4,2),("spike",4,2)):
+    assert all(spriteids[stem+str(i)] == spriteids[stem+"0"] + i*step for i in range(count)), (stem,"Renderer animation IDs must match the atlas registration")
 for item in manifest["sprites"]:
     source = item.get("source") or {}
     if item["name"].startswith("classicpreview"):
@@ -116,6 +119,8 @@ for item in manifest["sprites"]:
     box = image.getbbox() or (0, 0, 1, 1)
     assert item["canvas"] == list(size) and item["trim"] == list(box)
     origin = (image.width // 2, image.height // 2) if source["restore"] else (image.width / 2, image.height / 2)
+    if source.get("pivot"):
+        origin = tuple(v * 192 / 1440 * source["factor"] for v in source["pivot"])
     assert item["ox"] == round(box[0] - origin[0]) and item["oy"] == round(box[1] - origin[1])
     x, y, w, h = (item[key] for key in ("x", "y", "w", "h"))
     actual = atlases[item["page"]].crop((x, y, x + w, y + h))

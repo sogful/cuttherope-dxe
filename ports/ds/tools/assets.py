@@ -151,25 +151,20 @@ def main():
 
     pages = atlases()
 
-    backgroundpath = images / "backgrounds/bgr_01_p1.png"
-    sources.add(backgroundpath)
-    background = Image.open(backgroundpath).convert("RGB")
-    width = round(background.height * 256 / 192)
-    left = (background.width - width) // 2
-    landscape = background.crop((left, 0, left + width, background.height)).resize((256, 192), Image.Resampling.LANCZOS)
-    backdrop = Image.new("RGB", (256, 256))
-    backdrop.paste(landscape, (0, 0))
-    (output / "background.bin").write_bytes(colors.direct(backdrop))
-    backdrop.save(output / "background.png")
-    fabricpath = images / "backgrounds/bgr_02_p1.png"
-    sources.add(fabricpath)
-    fabric = Image.open(fabricpath).convert("RGB")
-    fabricwidth = round(fabric.height * 256 / 192)
-    fabricleft = (fabric.width - fabricwidth) // 2
-    fabric = fabric.crop((fabricleft, 0, fabricleft + fabricwidth, fabric.height)).resize((256, 192), Image.Resampling.LANCZOS)
-    fabricbackdrop = Image.new("RGB", (256, 256))
-    fabricbackdrop.paste(fabric, (0, 0))
-    (output / "fabricbackground.bin").write_bytes(colors.direct(fabricbackdrop))
+    (output / "nitro").mkdir(exist_ok=True)
+    backgrounds = bytearray()
+    for box in range(1, 7):
+        path = images / f"backgrounds/bgr_{box:02}_p1.png"
+        sources.add(path)
+        background = Image.open(path).convert("RGB")
+        width = round(background.height * 256 / 192)
+        left = (background.width - width) // 2
+        landscape = background.crop((left, 0, left + width, background.height)).resize((256, 192), Image.Resampling.LANCZOS)
+        backdrop = Image.new("RGB", (256, 256))
+        backdrop.paste(landscape, (0, 0))
+        backgrounds.extend(colors.direct(backdrop))
+        backdrop.save(output / ("background.png" if box == 1 else f"background{box}.png"))
+    (output / "nitro/world.bin").write_bytes(backgrounds)
 
     logopath = root / "assets/logods.png"
     logo = ImageOps.contain(Image.open(logopath).convert("RGBA"), (256, 192), Image.Resampling.LANCZOS)
@@ -179,7 +174,8 @@ def main():
     upper.crop((0, 0, 256, 192)).save(output / "logo.png")
 
     sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "monster_open", "monster_chewing", "win", "tap",
-           "bubble", "bubble_break", "pump_1", "rope_get", "spider_activate", "spider_fall", "spider_win", "candy_break"]
+           "bubble", "bubble_break", "pump_1", "rope_get", "spider_activate", "spider_fall", "spider_win", "candy_break",
+           "bouncer", "teleport", "candy_link", "electric"]
     audio = []
     for name in sfx + ["game_music", "menu_music"]:
         music = name.endswith("_music")
@@ -200,7 +196,7 @@ def main():
     import levels
     levels.build(content, output, sources)
 
-    blobs = [name for page in pages for name in (page["name"], page["name"] + "palette")] + ["background", "fabricbackground", "logo"] + [name for name, _ in audio]
+    blobs = [name for page in pages for name in (page["name"], page["name"] + "palette")] + ["logo"] + [name for name, _ in audio]
     header = ["#pragma once", "#include <cstdint>", 'extern "C" {']
     header += [f"extern const unsigned char {name}data[];" for name in blobs]
     header += ["}", "namespace art {", "struct sprite { int x, y, w, h, ox, oy, advance, page; };",
@@ -218,7 +214,7 @@ def main():
     for name in blobs:
         assembly += [".balign 4", f".global {name}data", f"{name}data:", f'.incbin "generated/{name}.bin"']
     (output / "assets.s").write_text("\n".join(assembly) + "\n", encoding="utf-8")
-    manifest = {"level": "1_1", "levelCount": 50, "viewport": [256, 192], "scale": scale, "atlases": pages,
+    manifest = {"level": "1_1", "levelCount": 150, "viewport": [256, 192], "scale": scale, "atlases": pages,
                 "texturebytes": sum(page["bytes"] for page in pages) + 131072,
                 "upperbytes": 131072, "logo": {"source": "assets/logods.png", "sha256": hashlib.sha256(logopath.read_bytes()).hexdigest()},
                 "audiobytes": sum(size for _, size in audio),
@@ -226,7 +222,7 @@ def main():
                 "sprites": [{key: value for key, value in record.items() if key != "image"} for record in records]}
     assert manifest["texturebytes"] <= 384 * 1024, "Main-engine textures exceed VRAM A+B+D"
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(f"Converted 50 original Cardboard/Fabric maps, {len(records)} base sprites, {manifest['texturebytes']} base texture bytes, {manifest['audiobytes']} audio bytes")
+    print(f"Converted 150 original maps, {len(records)} base sprites, {manifest['texturebytes']} base texture bytes, {manifest['audiobytes']} audio bytes")
     import menus
     menus.main()
 

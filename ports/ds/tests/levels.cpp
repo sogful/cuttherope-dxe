@@ -3,6 +3,34 @@
 #include <cassert>
 #include <cstdio>
 
+static void same(dx::point a, dx::point b) { assert(a.x == b.x && a.y == b.y); }
+static void same(dx::motion a, dx::motion b) { same(a.offset,b.offset); assert(a.speed == b.speed && a.rotation == b.rotation && a.circle == b.circle); }
+static void decoded(const dx::level& a, const dx::level& b) {
+    same(a.candy,b.candy); same(a.target,b.target);
+    assert(a.box == b.box && a.index == b.index && a.split == b.split && a.speed == b.speed && a.left == b.left && a.width == b.width && a.height == b.height);
+    for (int i = 0; i < 2; ++i) same(a.halves[i],b.halves[i]);
+    for (int i = 0; i < 3; ++i) { same(a.stars[i],b.stars[i]); same(a.starmotions[i],b.starmotions[i]); assert(a.timeouts[i] == b.timeouts[i]); }
+    assert(a.hookcount == b.hookcount && a.bubblecount == b.bubblecount && a.spikecount == b.spikecount && a.pumpcount == b.pumpcount && a.hatcount == b.hatcount && a.bouncercount == b.bouncercount);
+    for (int i = 0; i < a.hookcount; ++i) {
+        const auto& x = a.hooks[i]; const auto& y = b.hooks[i]; same(x.anchor,y.anchor);
+        assert(x.length == y.length && x.radius == y.radius && x.spider == y.spider && x.rail == y.rail && x.offset == y.offset && x.vertical == y.vertical && x.part == y.part);
+    }
+    for (int i = 0; i < a.bubblecount; ++i) same(a.bubbles[i],b.bubbles[i]);
+    for (int i = 0; i < a.spikecount; ++i) {
+        const auto& x = a.spikes[i]; const auto& y = b.spikes[i]; same(x.anchor,y.anchor); same(x.path,y.path);
+        assert(x.angle == y.angle && x.size == y.size && x.on == y.on && x.off == y.off && x.delay == y.delay);
+    }
+    for (int i = 0; i < a.pumpcount; ++i) { same(a.pumps[i].position,b.pumps[i].position); assert(a.pumps[i].angle == b.pumps[i].angle); }
+    for (int i = 0; i < a.hatcount; ++i) {
+        const auto& x = a.hats[i]; const auto& y = b.hats[i]; same(x.position,y.position); same(x.path,y.path);
+        assert(x.angle == y.angle && x.group == y.group && x.resetangle == y.resetangle);
+    }
+    for (int i = 0; i < a.bouncercount; ++i) {
+        const auto& x = a.bouncers[i]; const auto& y = b.bouncers[i]; same(x.position,y.position); same(x.path,y.path);
+        assert(x.angle == y.angle && x.size == y.size);
+    }
+}
+
 int main() {
     dx::simulation game;
     std::printf("{\"traces\":[");
@@ -25,7 +53,8 @@ int main() {
     }
     assert(game.count == 3); // The original route test checks stars, not feeding Om Nom.
     for (const auto& level : dx::levels) {
-        game.reset(level);
+        decoded(level,dx::loadlevel(level.box * 25 + level.index));
+        game.reset(dx::loadlevel(level.box * 25 + level.index));
         for (int index = 0; index < level.hookcount; ++index) {
             const auto& rope = game.ropes[index];
             if (rope.count < 3) continue;
@@ -45,7 +74,11 @@ int main() {
             if (frame % 30 == 0 && !game.introduction) for (int i = 0; i < level.pumpcount; ++i) game.interact(level.pumps[i].position);
             game.tick();
             assert(std::isfinite(game.candy().pos.x) && std::isfinite(game.candy().pos.y));
-            assert(game.bodycount <= 256 && game.candy().linkcount <= 8);
+            assert(game.bodycount <= 256 && game.candy().linkcount <= 10);
+            for (int part = 0; part < game.activecount(); ++part) {
+                const auto& body = game.bodies[game.activeid(part)];
+                assert(std::isfinite(body.pos.x) && std::isfinite(body.pos.y) && body.linkcount <= 10);
+            }
             assert(game.cameray >= 0 && game.cameray <= level.height - 1440);
         }
     }
@@ -93,5 +126,66 @@ int main() {
     assert(game.introduction);
     for (int i = 0; i < 500 && game.introduction; ++i) game.tick();
     assert(!game.introduction && game.ticks <= 1);
-    std::printf("],\"maps\":50,\"frames\":60000,\"passed\":true}\n");
+    // Foil: source rail range is anchor-offset .. anchor-offset+length.
+    empty.hookcount = 1; empty.hooks[0] = {{1280,500},210,-1,false,400,100,false,0};
+    game.reset(empty);
+    assert(game.interact({1280,500}) && game.draghook == 0);
+    assert(game.drag({900,900},true)); same(game.anchors[0],{1180,500});
+    game.drag({2000,0},true); same(game.anchors[0],{1580,500});
+    game.drag({},false); assert(game.draghook == -1);
+    empty.hooks[0].vertical = true;
+    game.reset(empty); game.interact({1280,500}); game.drag({0,2000},true); same(game.anchors[0],{1280,800});
+    empty.hookcount = 0;
+    empty.spikecount = 1; empty.spikes[0] = {{100,100},{},0,5,.032f,.032f,0};
+    game.reset(empty); game.tick(); assert(!game.electric[0]);
+    game.tick(); assert(game.electric[0]); game.tick(); game.tick(); assert(!game.electric[0]);
+    empty.spikes[0].delay = -.064f;
+    game.reset(empty); game.tick(); assert(!game.electric[0]); game.tick(); assert(game.electric[0]);
+    empty.spikecount = 0;
+    dx::motion circle{{},40,0,20};
+    same(circle.at(0),{20,0});
+    const float chord = 40 * std::sin(3.14159265f / 10);
+    const auto vertex = circle.at(chord / 40);
+    assert(std::abs(vertex.x - 20 * std::cos(6.2831853f / 10)) < .001f);
+    assert(std::abs(vertex.y - 20 * std::sin(6.2831853f / 10)) < .001f);
+    // Magic: only the front mouth catches; delayed exit follows the moving partner.
+    empty.candy = {1280,700}; empty.hatcount = 2;
+    empty.hats[0] = {{1280,720},{},0,0,false};
+    empty.hats[1] = {{1600,800},{{100,0},50,0},90,0,false};
+    game.reset(empty); game.bodies[0].previous.y = 690; game.tick();
+    assert(game.hidden() && game.teleportevents == 1);
+    for (int i = 0; i < 6; ++i) { game.tick(); assert(game.hidden()); }
+    game.tick(); assert(!game.hidden());
+    assert(game.candy().pos.x > 1616 && std::abs(game.candy().pos.y - 800) < .001f && game.candy().velocity.x > 0);
+    assert(game.hattimers[1] > 0);
+    game.reset(empty); game.bodies[0].previous.y = 710; game.tick(); assert(!game.hidden());
+    // Valentine: merging inherits both active ropes and the surviving bubble.
+    empty.hatcount = 0; empty.split = true; empty.halves = {{{1250,700},{1310,700}}};
+    empty.hookcount = 2; empty.hooks[0] = {{1250,490},210,-1,false,0,0,false,0}; empty.hooks[1] = {{1310,490},210,-1,false,0,0,false,1};
+    game.reset(empty); game.halfbubbles[1] = 0;
+    assert(game.ropes[0].candy == 1 && game.ropes[1].candy == 2);
+    for (int i = 0; i < 120 && game.split; ++i) game.tick();
+    assert(!game.split && game.mergeevents == 1 && game.bubble == 0);
+    assert(game.ropes[0].candy == 0 && game.ropes[1].candy == 0 && game.candy().linkcount == 2);
+    assert(game.interact(game.candy().pos) && game.bubble == -1);
+    // Toy: the bouncer removes normal-axis history and applies the source impulse.
+    empty.split = false; empty.hookcount = 0; empty.bouncercount = 1;
+    empty.candy = {1280,700}; empty.bouncers[0] = {{1280,720},{},0,1};
+    game.reset(empty); game.bodies[0].previous.y = 690; game.tick();
+    assert(game.bounceevents == 1 && game.bounceages[0] == 0);
+    assert(std::abs((game.candy().pos.y - game.candy().previous.y) + 840 * .016f) < .001f);
+    game.reset(dx::levels[75]);
+    for (int i = 0; i < 120; ++i) game.tick();
+    assert(game.swipe({900,330},{1040,330}));
+    for (int i = 0; i < 600 && game.state == dx::outcome::playing; ++i) game.tick();
+    assert(game.teleportevents == 1 && game.state == dx::outcome::won && game.count == 3);
+    game.reset(dx::levels[100]);
+    for (int i = 0; i < 120; ++i) game.tick();
+    assert(game.swipe({1050,260},{1550,260}));
+    for (int i = 0; i < 600 && game.split; ++i) game.tick();
+    assert(game.mergeevents == 1 && !game.split && game.state == dx::outcome::playing);
+    for (int i = 0; i < game.definition.hookcount; ++i) game.sever(i,0);
+    for (int i = 0; i < 600 && game.state == dx::outcome::playing; ++i) game.tick();
+    assert(game.state == dx::outcome::won && game.count == 3);
+    std::printf("],\"maps\":150,\"frames\":180000,\"passed\":true}\n");
 }
