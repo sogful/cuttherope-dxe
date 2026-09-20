@@ -80,11 +80,15 @@ function PackSelection.new(parent,selected,onSelected,onOpen,canInput)
 			lock.Position,lock.Size=UDim2.fromScale(58/660,280/660),UDim2.fromScale(544/660,253/660)
 			local count=Instance.new("TextLabel")
 			count.Name,count.BackgroundTransparency="RequiredStars",1
-			count.Position,count.Size=UDim2.fromScale(240/660,403/660),UDim2.fromScale(140/660,100/660)
+			local value=tostring(Session.thresholds[index])
+			local measured=Font.measure(value)
+			local width=math.floor(math.ceil(measured*em)*.7)
+			local left=330-(width+60)/2
+			count.Position,count.Size=UDim2.fromScale(left/660,405/660),UDim2.fromScale(width/660,70/660)
 			count.ZIndex,count.Parent=9,card
-			Font.render(count,tostring(Session.thresholds[index]),nil,{scale=em*.7,y=0,referenceSize=Vector2.new(140,100)})
-			local star=sprite(card,"RequiredStar",3,380,430,9)
-			star.Position,star.Size=UDim2.fromScale(380/660,430/660),UDim2.fromScale(60/660,60/660)
+			Font.render(count,value,nil,{scale=em*.7,referenceSize=Vector2.new(width,70)})
+			local star=sprite(card,"RequiredStar",3,left+width,410,9)
+			star.Position,star.Size=UDim2.fromScale((left+width)/660,410/660),UDim2.fromScale(60/660,60/660)
 		end
 		if Session.total(index)==75 then
 			local perfect=sprite(card,"PerfectPack",8,100,422,8)
