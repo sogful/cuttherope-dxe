@@ -51,7 +51,7 @@ public:
     int totalstars(int box = -1) const;
     bool packopen(int box) const;
     bool levelopen(int index) const;
-    bool hasnext() const { return levelid() < 149 && (level < 24 || packopen(pack + 1)); }
+    bool hasnext() const;
     void best();
     void initialize(const char* directory);
     void persist();

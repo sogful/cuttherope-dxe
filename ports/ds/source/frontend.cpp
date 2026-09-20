@@ -371,7 +371,7 @@ static void packs(const ui::controller& menu) {
     }
     add(menuart::pack5, 38, 96);
     add(menuart::pack5, 218, 96, {}, GL_FLIP_H | GL_FLIP_V);
-    const int text = menuart::labels[menu.locale][menuart::total0 + std::min(450, menu.totalstars())];
+    const int text = menuart::labels[menu.locale][menuart::total0 + std::min(menuart::playableboxes * 75, menu.totalstars())];
     const auto& definition = menuart::sprites[text];
     add(text, 243 - definition.w / 2, 10);
     add(menuart::pack3, 248, 9);
@@ -438,7 +438,7 @@ static void doors(float progress, bool opening, bool loading, int box) {
     piece(menuart::doorshade, (opening ? -t : t - 1) * 891 * 4 * pixels + base, 0, 891 * 4 * pixels, 400 * 4 * pixels);
     const float leftside = opening ? (1280 - 12) * (1 - t) - 25 * t : -13 * (1 - t) + (1293 - 16) * t;
     const float rightside = opening ? (1280 + 14) * (1 - t) + 2560 * t : (2560 - 40) * (1 - t) + (1280 + 20) * t;
-    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0};
+    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0, menuart::boxcover7x0, menuart::boxcover8x0};
     const int cover = covers[box];
     piece(cover + 1, base + leftside * pixels, 0, side, 192 * (1 + .3f * closed));
     piece(cover + 1, base + rightside * pixels, 0, side, 192 * (1 + .3f * closed));
@@ -500,7 +500,7 @@ static void results(const ui::controller& menu, bool hiding = false) {
 
 void prepareoverlay(const ui::controller& menu, const dx::simulation& game) {
     overlaystart = count;
-    if ((menu.mode == ui::view::playing || menu.mode == ui::view::paused) && menu.door != 2 && !(menu.door == 1 && menu.replaypanel)) {
+    if (menu.mode == ui::view::playing || menu.mode == ui::view::paused || (menu.mode == ui::view::results && menu.age < 32)) {
         for (int i = 0; i < 3; ++i) {
             const int frame = menu.starage[i] < 0 ? 0 : std::min(10, 1 + menu.starage[i] / 3);
             add(menuart::hud1 + frame, std::lround((86 * i + 43) * menuart::fit * pixels), std::lround(43.5f * menuart::fit * pixels));
@@ -589,6 +589,15 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     auto world = [&](int sprite, dx::point position, int alpha = 31, float angle = 0) {
         add(sprite, wx(position.x), wy(position.y), {}, GL_FLIP_NONE, 1, static_cast<int>(angle * 32768 / 360), alpha);
     };
+    if (menu.pack == 7) {
+        const float turn = std::min(1.0f, game.gravityage * .016f / .3f);
+        const float angle = game.inverted ? 180 * turn : 180 * (1 - turn);
+        for (int row = -1; row <= 3; ++row) world(menuart::gravity2, {1284,724.0f + row * 1440}, 31, angle);
+    }
+    for (int i = 0; i < game.definition.switchcount; ++i)
+        world(menuart::gravity0 + game.inverted, game.definition.switches[i]);
+    for (int i = 0; i < game.definition.hookcount; ++i)
+        if (game.definition.hooks[i].wheel) world(menuart::wheel0, game.anchors[i]);
     for (int i = 0; i < game.definition.hookcount; ++i) {
         const auto& hook = game.definition.hooks[i];
         if (hook.rail <= 0) continue;
@@ -628,6 +637,11 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         if (game.hatages[i] * .016f < .2f) world(menuart::hat2 + std::min(2, static_cast<int>(game.hatages[i] * .016f / .05f)), position, 31, angle);
     }
     groundend = count;
+    for (int i = 0; i < game.definition.hookcount; ++i) if (game.definition.hooks[i].wheel) {
+        const int angle = static_cast<int>(game.wheelangles[i] * 32768 / 360);
+        add(menuart::wheel1, wx(game.anchors[i].x), wy(game.anchors[i].y), {}, GL_FLIP_NONE, game.wheelscale(i), angle);
+        world(menuart::wheel0 + (game.dragwheel == i ? 2 : 3), game.anchors[i], 31, game.wheelangles[i]);
+    }
     for (int i = 0; i < game.definition.hookcount; ++i) if (game.definition.hooks[i].rail > 0) {
         world(menuart::rail4, game.anchors[i], 31, game.definition.hooks[i].vertical ? 90 : 0);
         if (game.draghook == i) world(menuart::rail3, game.anchors[i], 31, game.definition.hooks[i].vertical ? 90 : 0);
@@ -884,11 +898,12 @@ void render(bool overlay, bool ground) {
         glColor(item.color);
         glPolyFmt(POLY_ALPHA(item.alpha) | POLY_CULL_NONE | POLY_ID(i % 48 + 1));
         if (item.angle) {
-            const float angle = item.angle * (6.2831853f / 32768);
-            const float dx = (source.ox + source.w / 2.0f) * item.scale, dy = (source.oy + source.h / 2.0f) * item.vertical;
-            glSpriteRotateScaleXY(item.x + std::lround(dx * std::cos(angle) - dy * std::sin(angle)),
-                item.y + std::lround(dx * std::sin(angle) + dy * std::cos(angle)), item.angle,
+            glPushMatrix();
+            glTranslatef32(item.x, item.y, 0);
+            glRotateZi(item.angle);
+            glSpriteScaleXY(std::lround(source.ox * item.scale), std::lround(source.oy * item.vertical),
                 floattof32(item.scale), floattof32(item.vertical), item.flip, &image);
+            glPopMatrix(1);
         } else {
             int px = item.x + std::lround(source.ox * item.scale), py = item.y + std::lround(source.oy * item.vertical);
             {

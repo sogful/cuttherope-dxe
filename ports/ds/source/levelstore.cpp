@@ -13,11 +13,12 @@ const level& loadlevel(int index) {
     data.left = scalar(); data.width = scalar(); data.height = scalar(); data.speed = scalar();
     data.box = scalar(); data.index = scalar(); data.candy = vector(); data.target = vector(); data.split = scalar();
     for (auto& half : data.halves) half = vector();
+    data.gravity = vector();
     for (int i = 0; i < 3; ++i) { data.stars[i] = vector(); data.timeouts[i] = scalar(); data.starmotions[i] = mover(); }
     data.hookcount = scalar();
     for (int i = 0; i < data.hookcount; ++i) {
         auto& item = data.hooks[i]; item.anchor = vector(); item.length = scalar(); item.radius = scalar(); item.spider = scalar();
-        item.rail = scalar(); item.offset = scalar(); item.vertical = scalar(); item.part = scalar();
+        item.rail = scalar(); item.offset = scalar(); item.vertical = scalar(); item.part = scalar(); item.wheel = scalar();
     }
     data.bubblecount = scalar();
     for (int i = 0; i < data.bubblecount; ++i) data.bubbles[i] = vector();
@@ -36,6 +37,8 @@ const level& loadlevel(int index) {
     for (int i = 0; i < data.bouncercount; ++i) {
         auto& item = data.bouncers[i]; item.position = vector(); item.path = mover(); item.angle = scalar(); item.size = scalar();
     }
+    data.switchcount = scalar();
+    for (int i = 0; i < data.switchcount; ++i) data.switches[i] = vector();
     return data;
 }
 }

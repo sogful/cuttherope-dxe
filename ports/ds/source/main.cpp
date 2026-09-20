@@ -13,7 +13,7 @@
 #include <cstdio>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 9;
+    std::uint32_t magic = 0x44585250, version = 10;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -26,6 +26,7 @@ struct diagnostics {
     std::uint32_t split = 0, merges = 0, teleports = 0, bounces = 0, rail = 0;
     std::uint32_t flash = 0, flashframe = 0, voices = 0, voice = 0;
     std::uint32_t repacks = 0, renderfault = 0;
+    std::uint32_t gravity = 0, gravityevents = 0, wheel = 0, wheelevents = 0, wheelparts = 0, wheellength = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -58,6 +59,7 @@ int main() {
     bool objecttouch = false;
     int shownbubbles = 0, shownpops = 0, shownpumps = 0, shownropes = 0;
     int shownbounces = 0, shownteleports = 0, shownmerges = 0;
+    int showngravity = 0, shownwheel = 0;
     bool shownmouth = false, shownresult = false;
     bool greeting = false;
     unsigned total = 0, peak = 0, late = 0;
@@ -67,6 +69,7 @@ int main() {
         shownmouth = shownresult = held = objecttouch = false;
         shownbubbles = shownpops = shownpumps = shownropes = 0;
         shownbounces = shownteleports = shownmerges = 0;
+        showngravity = shownwheel = 0;
         telemetry.resets = telemetry.resets + 1;
         trace::trail.reset();
         greeting = menu.door == 1 && !menu.replaypanel;
@@ -110,6 +113,7 @@ int main() {
             game.tick(menu.flash == 1);
         } else {
             held = false;
+            game.dragswitch = -1;
             game.drag(pointer, false);
             if (!menu.frontend() && (menu.mode != ui::view::paused || menu.door) && !display::busy()) {
                 if (menu.mode == ui::view::results && menu.age >= 32) game.animate();
@@ -125,6 +129,11 @@ int main() {
         });
         frame = game.visuals;
         audio::world(menu, game);
+        if (game.gravityevents != showngravity) {
+            audio::effect(game.inverted ? gravityondata : gravityoffdata, game.inverted ? gravityonbytes : gravityoffbytes);
+            showngravity = game.gravityevents;
+        }
+        if (game.wheelevents != shownwheel) { audio::effect(wheeldata, wheelbytes); shownwheel = game.wheelevents; }
         if (game.bubbleevents != shownbubbles) { audio::effect(bubbledata, bubblebytes); shownbubbles = game.bubbleevents; }
         if (game.pops != shownpops) { audio::effect(bubblebreakdata, bubblebreakbytes); shownpops = game.pops; }
         if (game.pumpevents != shownpumps) { audio::effect(pump1data, pump1bytes); shownpumps = game.pumpevents; }
@@ -219,6 +228,12 @@ int main() {
         telemetry.skinoffset = menu.skinoffsets[menu.skintab];
         telemetry.transition = display::busy();
         telemetry.storage = !menu.saves.writable ? 0 : menu.saves.failed ? 2 : 1;
+        telemetry.gravity = game.inverted; telemetry.gravityevents = game.gravityevents;
+        telemetry.wheel = game.dragwheel + 1; telemetry.wheelevents = game.wheelevents;
+        telemetry.wheelparts = telemetry.wheellength = 0;
+        for (int i = 0; i < game.definition.hookcount; ++i) if (game.definition.hooks[i].wheel) {
+            telemetry.wheelparts = game.ropes[i].count; telemetry.wheellength = game.ropelength(i); break;
+        }
         DS_PROFILE_DO(profiling::finish(total));
     }
 }

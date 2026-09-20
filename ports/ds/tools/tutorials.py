@@ -1,10 +1,11 @@
 import xml.etree.ElementTree as xml
+from levels import boxes
 
 
 def build(menu):
     info = {"items": [], "spans": []}
     names = set()
-    for box in range(1, 7):
+    for box in range(1, boxes + 1):
         for level in range(1, 26):
             path = menu["content"] / "maps" / f"{box}_{level}.xml"
             menu["sources"].add(path)
@@ -56,6 +57,6 @@ def header(info, ids):
     lines = ['struct tutorial { int sprite; float x,y,angle,fadein,hold,fadeout,repeat,delay,speed,trigger; float left,top,width,height,firstx,firsty,lastx,lasty; };',
              'inline constexpr tutorial tutorials[] = {']
     lines += ['{' + str(ids[row[0]]) + ',' + ','.join(str(float(v)) + 'f' for v in row[1:]) + '},' for row in info['items']]
-    lines += ['};', 'inline constexpr int tutorialspans[150][12][2] = {']
+    lines += ['};', f'inline constexpr int tutorialspans[{boxes * 25}][12][2] = {{']
     lines += ['{' + ','.join('{' + ','.join(map(str, span)) + '}' for span in row) + '},' for row in info['spans']]
     return lines + ['};']

@@ -14,7 +14,20 @@ int main(int argc, char** argv) {
     constexpr unsigned reserved = 144384;
 
     frontend::reserve(reserved);
-    for(int locale=0; locale<12; ++locale) for(int level=0; level<150; ++level) {
+    game.reset(dx::levels[0]);
+    for (int mode = 0; mode < 3; ++mode) for (int door = 0; door < 3; ++door) {
+        menu.mode = mode == 0 ? ui::view::playing : mode == 1 ? ui::view::paused : ui::view::results;
+        menu.door = door; menu.doorframe = menu.age = 12; menu.replaypanel = true;
+        frontend::preparegame(menu,game,0); frontend::prepareoverlay(menu,game);
+        int hud = 0;
+        for (int i = frontend::overlaystart; i < frontend::count; ++i) {
+            const int sprite = frontend::commands[i].id;
+            hud += sprite == menuart::hud0 || sprite == menuart::hud0 + menuart::hudquads[menu.locale];
+        }
+        assert(hud == 2);
+    }
+    std::puts("PASS: HUD retained through opening, replay, quit and result closing flaps");
+    for(int locale=0; locale<12; ++locale) for(int level=0; level<static_cast<int>(dx::levels.size()); ++level) {
         menu.locale=locale;
         game.reset(dx::levels[level]); game.state=dx::outcome::won;
         game.resulttick=200; game.resultvisual=200; game.ticks=200;

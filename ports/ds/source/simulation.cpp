@@ -22,7 +22,8 @@ static float distancefloor(float value) { return floatbits(value) < 0x3f800000u 
 #endif
 
 int simulation::add(point position, float inverse, bool pinned) {
-    const int index = bodycount++;
+    assert(freecount || bodycount < static_cast<int>(bodies.size()));
+    const int index = freecount ? freebodies[--freecount] : bodycount++;
     body& item = bodies[index];
     item = {};
     item.pos = item.pin = position;
@@ -33,6 +34,9 @@ int simulation::add(point position, float inverse, bool pinned) {
 
 void simulation::reset(const level& data) {
     definition = data;
+    freecount = 0;
+    inverted = false; gravityevents = wheelevents = 0; gravityage = 100;
+    dragwheel = dragswitch = -1; wheelangles.fill(0); wheeltouch = {};
     bodies = {};
     ropes = {};
     stars = {};
@@ -92,12 +96,15 @@ void simulation::attach(int index, float length, int candy) {
     item.bodies[item.count++] = candy;
 }
 
-DS_HOT void simulation::integrate(body& item, float acceleration) {
+DS_HOT void simulation::integrate(body& item, float acceleration, float inverse) {
     if (!item.initialized) {
         item.previous = item.pos;
         item.initialized = true;
     }
-    const point displacement = item.pos - item.previous + point{0, acceleration};
+    const float vertical = definition.gravity.y == 784 ? acceleration : definition.gravity.y * (acceleration / 784.0f);
+    const point force{definition.gravity.x == 0 ? 0 : definition.gravity.x * (acceleration / 784.0f), inverted ? -vertical : vertical};
+    const point displacement = item.pos - item.previous + force;
+    if (inverse != 0) item.velocity = displacement * inverse;
     item.previous = item.pos;
     item.pos = item.pos + displacement;
 }
@@ -129,7 +136,7 @@ struct operation {
 };
 #ifndef DS_REFERENCE_PHYSICS
 static DS_DATA point positions[256];
-static DS_DATA operation operations[48];
+static DS_DATA operation operations[64];
 #endif
 
 DS_HOT void simulation::solve(const rope& item) {
@@ -220,8 +227,9 @@ DS_HOT void simulation::ropephysics() {
 
 void simulation::tick(bool suppress) {
     suppressoutcome = suppress;
+    const bool panning = introduction;
     camera();
-    if (introduction) return;
+    if (panning) return;
     animate();
     ropephysics();
     if (state != outcome::playing) return;
@@ -241,8 +249,7 @@ void simulation::tick(bool suppress) {
     const bool touching = std::abs(halfgap.x) < 88 && std::abs(halfgap.y) < 76;
     for (int part = 0; part < activecount() && !hidden(); ++part) {
         auto& item = bodies[activeid(part)];
-        integrate(item, 784.0f * (step * step));
-        item.velocity = (item.pos - item.previous) / step;
+        integrate(item, 784.0f * (step * step), 1.0f / step);
         if (split) halfdraw[part] = item.pos;
     }
     if (split) merge(touching);
@@ -282,7 +289,8 @@ void simulation::tick(bool suppress) {
     if (state != outcome::playing) return;
     for (int part = 0; part < activecount() && !hidden(); ++part) {
         const int id = activeid(part);
-        if (bubblefor(id) >= 0) bodies[id].pos = bodies[id].pos + (bodies[id].velocity * (-1.0f / 14) + point{0, -40}) * delta;
+        if (bubblefor(id) >= 0) bodies[id].pos = bodies[id].pos + point{-bodies[id].velocity.x / 14,
+            -bodies[id].velocity.y / 14 + (inverted ? 40.0f : -40.0f)} * delta;
     }
     if (!suppressoutcome && !split && !hidden() && mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
         state = outcome::won;
@@ -322,6 +330,8 @@ bool simulation::swipe(point start, point end) {
             const float t = cross(p - start, edge) / denominator;
             const float u = cross(p - start, direction) / denominator;
             if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+                const auto hit = start + direction * t - anchors[index];
+                if (definition.hooks[index].wheel && hit.x >= -110 && hit.x < 110 && hit.y >= -110 && hit.y < 110) continue;
                 changed = sever(index, part) || changed;
                 break;
             }
@@ -332,6 +342,10 @@ bool simulation::swipe(point start, point end) {
 
 bool simulation::tap(point position) {
     if (state != outcome::playing) return false;
+    for (int i = 0; i < definition.hookcount; ++i) {
+        const auto d = position - anchors[i];
+        if (definition.hooks[i].wheel && d.x >= -110 && d.x < 110 && d.y >= -110 && d.y < 110) return false;
+    }
     float nearest = 60;
     int chosen = -1;
     point sample{};

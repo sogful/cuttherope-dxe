@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
 import assets
 import colors
+from levels import boxes
 
 root, content, output = assets.root, assets.content, assets.output
 scale = 192 / 1440
@@ -189,6 +190,9 @@ def pack():
             width, height, positions = 256, 256, [(0, 0)]
         elif group == "pauseplate":
             width, height, positions = 256, max(8, 1 << math.ceil(math.log2(items[0]["image"].height))), [(0, 0)]
+        elif len(items) == 1:
+            width, height = (max(8, 1 << math.ceil(math.log2(size))) for size in items[0]["image"].size)
+            positions = [(0, 0)]
         else:
             widths = (32,64,128,256,512) if group.startswith("rails") else (32,64,128,256)
             layouts = [result for width in widths if (result := assets.layout(items, width))]
@@ -278,7 +282,7 @@ def main():
     keys += ["language" + str(i) for i in range(12)]
     keys += ["boxname" + str(i) for i in range(len(configs))]
     keys += ["hint" + str(i) for i in range(len(configs))]
-    keys += ["total" + str(i) for i in range(451)] + ["count" + str(i) for i in range(76)]
+    keys += ["total" + str(i) for i in range(boxes * 75 + 1)] + ["count" + str(i) for i in range(76)]
     keys += ["required" + str(i) for i in range(len(configs))] + ["number" + str(i) for i in range(1, 26)] + ["HARDEST_LABEL"]
     labelids, creditids, creditheights = [], [], []
     for code in codes:
@@ -375,7 +379,7 @@ def main():
         control(view, "back", 14, 178, 29, 29, "backup", "backdown", absolute=True)
     pack()
     ids = {record["name"]: i for i, record in enumerate(records)}
-    header = ['#pragma once', '#include "interface.hpp"', 'extern "C" {']
+    header = ['#pragma once', '#include "interface.hpp"', '#include <cstdint>', 'extern "C" {']
     assembly = ['.section .rodata']
     nitro = output / "nitro"
     nitro.mkdir(exist_ok=True)
@@ -389,7 +393,8 @@ def main():
             assembly.extend([".balign 4", f".global {symbol}", symbol + ":", f'.incbin "generated/{page["name"]}{extension}"'])
     (nitro / "menu.bin").write_bytes(blob)
     header += ['}', 'namespace menuart {', 'struct page { int width, height; bool direct; unsigned offset, packed; const unsigned char* palette; int alphabits; };',
-               'struct sprite { int x, y, w, h, ox, oy, page; };', 'enum id {']
+               'struct sprite { std::int16_t x, y, w, h, ox, oy, page; };', 'static_assert(sizeof(sprite) == 14);', 'enum id {']
+    assert all(-32768 <= record[key] <= 32767 for record in records for key in ("x", "y", "w", "h", "ox", "oy", "page"))
     header += [record["name"] + "," for record in records]
     header += ['spritecount };', 'inline constexpr sprite sprites[] = {']
     header += ['{' + ','.join(str(record[key]) for key in ("x", "y", "w", "h", "ox", "oy", "page")) + '},' for record in records]
@@ -413,7 +418,7 @@ def main():
         fields += [str(ids.get(item[key], -1)) for key in ("up", "down")]
         fields += [str(keys.index(item["label"]) if item["label"] else -1), str(item["argument"])]
         header.append('{' + ','.join(fields) + '},')
-    header += ['};', f'inline constexpr float fit = {fit:.8f}f;', f'inline constexpr float mainfit = {mainfit:.8f}f;']
+    header += ['};', f'inline constexpr int playableboxes = {boxes};', f'inline constexpr float fit = {fit:.8f}f;', f'inline constexpr float mainfit = {mainfit:.8f}f;']
     lockwidths = [[int(math.ceil(sum(font(code)[0].getlength(c) for c in str(config["unlockStars"]))) * .7) for config in configs] for code in codes]
     header += ['inline constexpr int lockwidths[12][17] = {'] + ['{' + ','.join(map(str,row)) + '},' for row in lockwidths] + ['};']
     header += skins.header(skininfo, ids, fit, scale)

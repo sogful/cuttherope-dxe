@@ -3,7 +3,7 @@ import hashlib
 import json
 import xml.etree.ElementTree as xml
 
-boxes = 6
+boxes = 8
 
 
 def build(content, output, sources):
@@ -29,7 +29,7 @@ def build(content, output, sources):
     lines = ['#pragma once', '#include "simulation.hpp"', '#ifndef __NDS__', 'namespace dx {',
              f'inline constexpr std::array<level, {total}> levels = [] {{ std::array<level, {total}> items{{}};']
     audit, packed, offsets = [], [], []
-    limits = dict(hooks=8, bubbles=32, spikes=16, pumps=8, hats=8, bouncers=16)
+    limits = dict(hooks=16, bubbles=32, spikes=16, pumps=8, hats=8, bouncers=16, switches=4)
     for box in range(1, boxes + 1):
         for index in range(1, 26):
             path = content / "maps" / f"{box}_{index}.xml"
@@ -74,12 +74,12 @@ def build(content, output, sources):
                 elif node.tag in ("candyL", "candyR"):
                     halves[node.tag == "candyR"] = position(node)
                 elif node.tag == "grab":
-                    assert node.get("wheel", "false") == node.get("gun", "false") == "false" and not node.get("path"), (path,node.attrib)
+                    assert node.get("gun", "false") == "false" and not node.get("path"), (path,node.attrib)
                     radius = float(node.get("radius", -1))
                     radius = radius * 3 if radius != -1 else -1.0
                     records["hooks"].append([position(node), float(node.get("length", 0)) * 3, radius, node.get("spider") == "true",
                         max(0.0, float(node.get("moveLength", -1)) * 3), float(node.get("moveOffset", 0)) * 3,
-                        node.get("moveVertical") == "true", int(node.get("part") != "L")])
+                        node.get("moveVertical") == "true", int(node.get("part") != "L"), node.get("wheel") == "true"])
                 elif node.tag == "star":
                     stars.append(position(node)); timeouts.append(float(node.get("timeout", -1))); motions.append(motion(node))
                 elif node.tag == "bubble":
@@ -95,6 +95,8 @@ def build(content, output, sources):
                         int(node.get("group",0)), box == 4 and index == 25])
                 elif node.tag in ("bouncer1", "bouncer2"):
                     records["bouncers"].append([position(node), motion(node), number(node.get("angle",0)), int(node.get("size"))])
+                elif node.tag == "gravitySwitch":
+                    records["switches"].append(position(node))
                 elif node.tag == "hidden03":
                     pass  # The C# LoadObjects switch also ignores this legacy map tag.
                 else:
@@ -105,15 +107,17 @@ def build(content, output, sources):
                 candy = [(halves[0][axis] + halves[1][axis]) / 2 for axis in (0,1)]
             lines.append(f"{{ auto& value = items[{(box-1)*25+index-1}];")
             for key, value in dict(left=left, width=width, height=height, speed=speed, box=box-1, index=index-1,
-                                   candy=candy, target=target, split=split).items():
+                                   candy=candy, target=target, split=split,
+                                   gravity=[float(design.get("globalGravityX", 0)), float(design.get("globalGravityY", 784))]).items():
                 lines.append(f"value.{key} = {literal(value)};")
             for i in range(2): lines.append(f"value.halves[{i}] = {literal(halves[i])};")
             for i in range(3):
                 lines.append(f"value.stars[{i}] = {literal(stars[i])}; value.timeouts[{i}] = {literal(timeouts[i])}; value.starmotions[{i}] = {literal(motions[i])};")
             offsets.append(len(packed))
-            packed += flatten([left,width,height,speed,box-1,index-1,candy,target,split,halves])
+            packed += flatten([left,width,height,speed,box-1,index-1,candy,target,split,halves,
+                float(design.get("globalGravityX", 0)),float(design.get("globalGravityY", 784))])
             for i in range(3): packed += flatten([stars[i], timeouts[i], motions[i]])
-            countnames = dict(hooks="hookcount",bubbles="bubblecount",spikes="spikecount",pumps="pumpcount",hats="hatcount",bouncers="bouncercount")
+            countnames = dict(hooks="hookcount",bubbles="bubblecount",spikes="spikecount",pumps="pumpcount",hats="hatcount",bouncers="bouncercount",switches="switchcount")
             for key, capacity in limits.items():
                 assert len(records[key]) <= capacity, (path,key,len(records[key]),capacity)
                 lines.append(f"value.{countnames[key]} = {len(records[key])};")

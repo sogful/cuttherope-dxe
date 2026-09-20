@@ -39,13 +39,13 @@ def main():
     parser.add_argument("--menus", action="store_true", help="Check source-shaped title, packs, settings, languages and credits")
     parser.add_argument("--skins", action="store_true", help="Check fades, isolated unlock mode, picker scrolling, all cosmetic tabs and equipped gameplay")
     parser.add_argument("--flow", action="store_true", help="Capture box transitions and the complete animated result sequence")
-    parser.add_argument("--boxes", action="store_true", help="Launch all 150 maps across the first six boxes")
+    parser.add_argument("--boxes", action="store_true", help="Launch all 200 maps across the first eight boxes")
     parser.add_argument("--startup", action="store_true", help="Capture consecutive frames through early level texture paging")
     parser.add_argument("--regressions", action="store_true", help="Exercise outcome input races, flashes, costume voices, carousel and tall backgrounds")
     parser.add_argument("--profile", action="store_true", help="Read optional profiling build and capture framebuffer changes during stalled main updates")
     parser.add_argument("--pagingstress", action="store_true", help="Profile-only synthetic heavy completion and captured-frame recovery test")
-    parser.add_argument("--first-box", type=int, default=1, choices=range(1,7))
-    parser.add_argument("--last-box", type=int, default=6, choices=range(1,7))
+    parser.add_argument("--first-box", type=int, default=1, choices=range(1,9))
+    parser.add_argument("--last-box", type=int, default=8, choices=range(1,9))
     parser.add_argument("--level-only", type=int, choices=range(1,26), help="Limit box checks to one level number")
     parser.add_argument("--costume", type=int, default=0, choices=range(16), help="Equip a costume through the real picker before a test")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
@@ -57,7 +57,7 @@ def main():
     core = c.CDLL(args.core)
     directory = root / "build/headless" / "profile" if args.profile else root / "build/headless"
     if args.profile:
-        label = "pagingstress" if args.pagingstress else f"boxes-{args.first_box}-{args.last_box}-{args.level_only or 'all'}" if args.boxes else "regressions" if args.regressions else "flow" if args.flow else "inspect"
+        label = f"pagingstress-{args.first_box}-{args.level_only or 23}" if args.pagingstress else f"boxes-{args.first_box}-{args.last_box}-{args.level_only or 'all'}" if args.boxes else "regressions" if args.regressions else "flow" if args.flow else "inspect"
         directory /= label + f"-costume-{args.costume}"
     directory.mkdir(parents=True, exist_ok=True)
     folder = str(directory).encode()
@@ -208,7 +208,7 @@ def main():
         memory = core.retro_get_memory_data(2)
         size = core.retro_get_memory_size(2)
         offset = address - 0x02000000
-        if not memory or offset + 216 > size:
+        if not memory or offset + 264 > size:
             raise RuntimeError(f"Cannot read telemetry: RAM={size} address={address:x}")
         assert size == 4 * 1024 * 1024, f"Expected original DS main RAM, received {size} bytes"
         if args.profile:
@@ -225,11 +225,12 @@ def main():
         maperrors = {}
         referenceattempt = 1
         lastframe, stalled = -1, 0
+        keys += ["gravity", "gravityevents", "wheel", "wheelevents", "wheelparts", "wheellength"]
         faultsymbol = next((line for line in symbols if line.endswith(" renderfault")), None)
         faultaddress = memory + int(faultsymbol.split()[0], 16) - 0x02000000 if faultsymbol else None
         def telemetry():
             version = struct.unpack("<I", c.string_at(memory + offset + 4, 4))[0]
-            fields = 48 if version >= 9 else 46 if version >= 8 else 42
+            fields = 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
             result = dict(zip(keys, struct.unpack(f"<10I2f{fields}I", c.string_at(memory + offset, 48 + fields * 4))))
             for key in keys: result.setdefault(key, 0)
             return result
@@ -241,6 +242,15 @@ def main():
                 stalled = stalled + 1 if current["frames"] == lastframe else 0
                 lastframe = current["frames"]
                 fault = struct.unpack("<I", c.string_at(faultaddress, 4))[0] if faultaddress else 0
+                if fault:
+                    values = {}
+                    for symbol in symbols:
+                        name = symbol.split()[-1]
+                        if not any(part in name for part in ("frontendL", "displayL")): continue
+                        if any(part in name for part in ("stagedbytes", "transfercount", "reserved", "occupied", "backgroundtop", "backgroundsections")):
+                            location = memory + int(symbol.split()[0], 16) - 0x02000000
+                            values[name] = struct.unpack("<I", c.string_at(location, 4))[0]
+                    (directory / "renderfault.json").write_text(json.dumps(dict(fault=fault, state=current, values=values), indent=2))
                 assert not fault and stalled < 120, f"ROM main loop stalled/cache fault={fault:#x}: {current}"
                 if profiler:
                     profiler.observe(current)
@@ -310,7 +320,8 @@ def main():
             control = memory + int(next(line.split()[0] for line in symbols if line.endswith(" profilestress")), 16) - 0x02000000
             def stress(value):
                 c.cast(control, c.POINTER(c.c_uint))[0] = value
-            pagingstress.check(run, tap, key, telemetry, framebuffer, settle, stress, profiler, report, directory)
+            pagingstress.check(run, tap, key, telemetry, framebuffer, settle, stress, profiler, report, directory,
+                               args.first_box, args.level_only or 23)
             return
         if args.regressions:
             import regressions
@@ -345,6 +356,36 @@ def main():
                     assert stage["level"] == box * 25 + level and stage["visuals"] > 0
                     assert math.isfinite(stage["x"]) and math.isfinite(stage["y"])
                     assert not stage["intro"], "Tall level introduction never handed control back"
+                    if box == 6 and level == 11:
+                        rotations = []
+                        for _ in range(120):
+                            run(1)
+                            rotations.append(framebuffer().crop((0,192,256,384)))
+                        rotations[0].save(directory / "gift-rotating-spikes.gif", save_all=True,
+                                          append_images=rotations[1:], duration=17, loop=0)
+                        strip = Image.new("RGB", (256 * 6, 192))
+                        for column, index in enumerate(range(0,120,20)): strip.paste(rotations[index], (column * 256,0))
+                        strip.save(directory / "gift-rotating-spikes.png")
+                    if box == 6 and level == 0:
+                        before = telemetry()["cuts"]
+                        center = (131,164)
+                        touch(center[0]+10,center[1])
+                        assert telemetry()["wheel"] == 1
+                        original = telemetry()["wheelparts"]
+                        for step in range(180):
+                            angle = -step * math.pi / 8
+                            touch(center[0]+10*math.cos(angle),center[1]+10*math.sin(angle))
+                        touch(center[0]+10,center[1],False)
+                        result = snapshot("gift-wheel-retracted")
+                        assert result["wheelevents"] > 100 and result["wheelparts"] < original and result["cuts"] == before and not result["wheel"], result
+                    if box == 7 and level == 0:
+                        before = telemetry()["cuts"]
+                        tap(60,157)
+                        result = snapshot("cosmic-gravity-inverted")
+                        assert result["gravity"] and result["gravityevents"] == 1 and result["cuts"] == before, result
+                        run(30)
+                        tap(60,157)
+                        assert not telemetry()["gravity"] and telemetry()["gravityevents"] == 2
                     if box == 1 and level == 0:
                         before = telemetry()["pumps"]
                         pump = xml.parse(root.parents[1] / "content/maps/2_1.xml").find("./layer[@name='Objects']/pump")
@@ -401,7 +442,7 @@ def main():
                 assert any(item["bounces"] for item in report["stages"].values()), "No bouncer contact observed"
             maps = (args.last_box - args.first_box + 1) * (1 if args.level_only else 25)
             report.update(passed=True, maps=maps, referenceSamples=len(maperrors), maximumDesktopError=max(maperrors.values(),default=0), seconds=time.monotonic()-start)
-            filename = "boxreport" + ("" if maps == 150 else f"-{args.first_box}-{args.last_box}-{args.level_only or 'all'}") + ".json"
+            filename = "boxreport" + ("" if maps == 200 else f"-{args.first_box}-{args.last_box}-{args.level_only or 'all'}") + ".json"
             (directory / filename).write_text(json.dumps(report, indent=2), encoding="utf-8")
             print(f"PASS: {maps} maps launched through real UI, boxes {args.first_box}-{args.last_box}")
             return

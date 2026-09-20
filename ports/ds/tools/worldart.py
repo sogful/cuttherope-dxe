@@ -1,5 +1,6 @@
 from PIL import Image, ImageDraw
 import xml.etree.ElementTree as xml
+from levels import boxes
 
 
 def build(menu):
@@ -8,7 +9,7 @@ def build(menu):
         quad("body" + str(index), "char_animations", index, factor=1, restore=True, group="body" + str(index // 6))
     for index in range(13):
         quad("bodysad" + str(index), "char_animations3", index, factor=1, restore=True, group="bodysad" + str(index // 6))
-    for index in range(6):
+    for index in range(boxes):
         quad("seat" + str(index), "char_supports", index, factor=1, restore=True, group="seat" + str(index))
     for index in range(30):
         quad("bubble" + str(index), "obj_bubble", index, factor=1, restore=True, group="bubble" + str(index // 6))
@@ -29,7 +30,7 @@ def build(menu):
         menu["add"]("ring" + str(phase), canvas, "timer" + str((phase - 1) // 8))
     for index in range(2):
         quad("fabriccover" + str(index), "bgr_02_cover", index, factor=1, group="fabriccover" + str(index))
-    for box in range(3, 7):
+    for box in range(3, boxes + 1):
         for index in range(2):
             name = "boxcover" + str(box) + "x" + str(index)
             quad(name, f"bgr_{box:02}_cover", index, factor=1, group=name)
@@ -46,10 +47,14 @@ def build(menu):
         quad("bouncer" + str(index), "obj_bouncer", index, factor=1, group="bouncer" + str(index // 5))
     for index in range(13):
         quad("starburst" + str(index), "obj_star_disappear", index, factor=1, restore=True, group="starburst" + str(index // 5))
+    for index in range(4):
+        quad("wheel" + str(index), "obj_hook", 11 + index, factor=1, group="wheel")
+    for index in range(3):
+        quad("gravity" + str(index), "obj_star_idle", 21 + index, factor=1, group="gravity" + str(index))
     # Rasterize HorizontallyTiledImage at source resolution, then downsample once.
     # This retains the native 44-pixel repeat and clipped final tile at DS scale.
     lengths = set()
-    for box in range(1, 7):
+    for box in range(1, boxes + 1):
         for level in range(1, 26):
             for node in xml.parse(menu["content"] / f"maps/{box}_{level}.xml").iter("grab"):
                 length = float(node.get("moveLength", 0)) * 3

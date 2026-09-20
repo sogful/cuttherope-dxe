@@ -11,6 +11,7 @@ import xml.etree.ElementTree as xml
 from PIL import Image
 
 import colors
+from levels import boxes
 
 root = Path(__file__).resolve().parents[1]
 repo, generated = root.parents[1], root / "generated"
@@ -77,7 +78,8 @@ for entry in backgrounds:
         assert (
             image.crop((0, 0, 256, 256)).tobytes() != ordinary.tobytes()
         ), "Missing authored seam overlay"
-for box in range(1, 7):
+assert len(backgrounds) == boxes * 3
+for box in range(1, boxes + 1):
     for level in range(1, 26):
         node = xml.parse(content / f"maps/{box}_{level}.xml").find("./layer/map")
         height = float(node.get("height")) * 3
@@ -98,5 +100,5 @@ assert len(menus["lockwidths"]) == 12 and all(
     len(row) == 17 for row in menus["lockwidths"]
 )
 print(
-    f"PASS: {len(records)} exact source voice clips/fallbacks, 18 seam composites, 150 background windows, 13 restored sparkle frames and 12 lock-width tables"
+    f"PASS: {len(records)} exact source voice clips/fallbacks, {len(backgrounds)} seam composites, {boxes * 25} background windows, 13 restored sparkle frames and 12 lock-width tables"
 )

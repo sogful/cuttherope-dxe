@@ -22,7 +22,7 @@ struct point {
     }
 };
 struct motion { point offset{}; float speed = 0, rotation = 0, circle = 0; point at(float time) const; float angle(float base, float time, bool reset = false) const; };
-struct hook { point anchor; float length; float radius = -1; bool spider = false; float rail = 0, offset = 0; bool vertical = false; int part = 0; };
+struct hook { point anchor; float length; float radius = -1; bool spider = false; float rail = 0, offset = 0; bool vertical = false; int part = 0; bool wheel = false; };
 struct spike { point anchor{}; motion path{}; float angle = 0; int size = 1; float on = 0, off = 0, delay = 0; };
 struct pump { point position{}; float angle = 0; };
 struct hat { point position{}; motion path{}; float angle = 0; int group = 0; bool resetangle = false; };
@@ -30,7 +30,7 @@ struct bouncer { point position{}; motion path{}; float angle = 0; int size = 1;
 struct level {
     point candy, target;
     std::array<point, 3> stars;
-    std::array<hook, 8> hooks;
+    std::array<hook, 16> hooks;
     int hookcount;
     float speed;
     float left, width, height;
@@ -46,6 +46,9 @@ struct level {
     std::array<hat, 8> hats{};
     std::array<bouncer, 16> bouncers{};
     int hatcount = 0, bouncercount = 0;
+    point gravity{0,784};
+    std::array<point, 4> switches{};
+    int switchcount = 0;
 };
 const level& loadlevel(int index);
 struct constraint { int other = 0; float length = 0; bool active = false, maximum = false; };
@@ -53,7 +56,7 @@ struct body {
     point pos, previous, pin, velocity;
     float inverse = 50;
     bool initialized = false, pinned = false;
-    std::array<constraint, 10> links{};
+    std::array<constraint, 20> links{};
     int linkcount = 0;
 };
 struct rope {
@@ -77,6 +80,10 @@ public:
     bool interact(point position);
     bool drag(point position, bool held);
     void animate();
+    void togglegravity();
+    void rotatewheel(int index, point position);
+    int ropelength(int index) const;
+    float wheelscale(int index) const;
     void camera();
     void samples(int index, int first, int count, point* output, int& size) const;
     const body& candy() const { return bodies[0]; }
@@ -86,7 +93,7 @@ public:
     bool hidden() const { return transit >= 0; }
     level definition{};
     std::array<body, 256> bodies{};
-    std::array<rope, 8> ropes{};
+    std::array<rope, 16> ropes{};
     std::array<bool, 3> stars{};
     std::array<int, 3> collectedat{};
     int excitement = -1000, greeting = -1000;
@@ -103,7 +110,7 @@ public:
     bool mouth = false;
     int mouthtick = 0;
     outcome state = outcome::playing;
-    std::array<point, 8> anchors{};
+    std::array<point, 16> anchors{};
     std::array<float, 16> electrotimers{};
     std::array<bool, 16> electric{};
     std::array<int, 16> bounceages{};
@@ -115,9 +122,13 @@ public:
     float mergedistance = 0, exitspeed = 0;
     int draghook = -1, transit = -1, transitage = 0, mergeage = 100;
     int bounceevents = 0, teleportevents = 0, mergeevents = 0;
+    bool inverted = false;
+    int gravityevents = 0, wheelevents = 0, gravityage = 100, dragswitch = -1, dragwheel = -1;
+    std::array<float, 16> wheelangles{};
+    point wheeltouch{};
 private:
     int add(point position, float inverse, bool pinned);
-    void integrate(body& item, float acceleration);
+    void integrate(body& item, float acceleration, float inverse = 0);
     void satisfy(body& item);
     void solve(const rope& item);
     void detach(rope& item);
@@ -132,5 +143,8 @@ private:
     void transports();
     void bounce();
     void cutattached(int id);
+    void reel(int index, float amount);
+    std::array<int, 256> freebodies{};
+    int freecount = 0;
 };
 }

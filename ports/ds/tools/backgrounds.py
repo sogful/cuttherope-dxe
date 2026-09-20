@@ -1,12 +1,13 @@
 import json
 from PIL import Image
 import colors
+from levels import boxes
 
 
 def build(content, output, sources):
     path = content / "ctroriginal_packs.json"
     sources.add(path)
-    configs = json.loads(path.read_text())[:6]
+    configs = json.loads(path.read_text())[:boxes]
     data, offsets, records = bytearray(), [], []
     for box, config in enumerate(configs):
         images = []
@@ -54,7 +55,7 @@ def build(content, output, sources):
     (output / "nitro/world.bin").write_bytes(data)
     (output / "backgroundmanifest.json").write_text(json.dumps(records, indent=2))
     return (
-        ["inline constexpr unsigned backgrounds[6][3] = {"]
+        [f"inline constexpr unsigned backgrounds[{boxes}][3] = {{"]
         + ["{" + ",".join(map(str, row)) + "}," for row in offsets]
         + ["};"]
     )

@@ -40,7 +40,7 @@ for actual in result["traces"]:
     for a, b in zip(actual["samples"], expected["samples"]):
         assert a["tick"] == b["tick"] and math.hypot(a["x"] - b["x"], a["y"] - b["y"]) < .05, (actual["level"], a, b)
 (build / "leveltest.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-print("PASS: four DX trajectories, 150 XML maps, 180,000 finite-coordinate frames, original and advanced mechanics")
+print(f"PASS: four DX trajectories, {result['maps']} XML maps, {result['frames']:,} finite-coordinate frames, original and advanced mechanics")
 subprocess.run([sys.executable, str(root / "tools/testmovers.py")], check=True)
 binary = build / "interfacetest.exe"
 subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror",
@@ -54,3 +54,4 @@ subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", "-
 directory = build / ("savetest" + uuid.uuid4().hex)
 directory.mkdir()
 subprocess.run([str(binary), str(directory)], check=True)
+subprocess.run([sys.executable, str(root / "tools/testwheels.py")], check=True)

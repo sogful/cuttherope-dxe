@@ -7,13 +7,15 @@ static void same(dx::point a, dx::point b) { assert(a.x == b.x && a.y == b.y); }
 static void same(dx::motion a, dx::motion b) { same(a.offset,b.offset); assert(a.speed == b.speed && a.rotation == b.rotation && a.circle == b.circle); }
 static void decoded(const dx::level& a, const dx::level& b) {
     same(a.candy,b.candy); same(a.target,b.target);
+    same(a.gravity,b.gravity); assert(a.switchcount == b.switchcount);
+    for (int i = 0; i < a.switchcount; ++i) same(a.switches[i],b.switches[i]);
     assert(a.box == b.box && a.index == b.index && a.split == b.split && a.speed == b.speed && a.left == b.left && a.width == b.width && a.height == b.height);
     for (int i = 0; i < 2; ++i) same(a.halves[i],b.halves[i]);
     for (int i = 0; i < 3; ++i) { same(a.stars[i],b.stars[i]); same(a.starmotions[i],b.starmotions[i]); assert(a.timeouts[i] == b.timeouts[i]); }
     assert(a.hookcount == b.hookcount && a.bubblecount == b.bubblecount && a.spikecount == b.spikecount && a.pumpcount == b.pumpcount && a.hatcount == b.hatcount && a.bouncercount == b.bouncercount);
     for (int i = 0; i < a.hookcount; ++i) {
         const auto& x = a.hooks[i]; const auto& y = b.hooks[i]; same(x.anchor,y.anchor);
-        assert(x.length == y.length && x.radius == y.radius && x.spider == y.spider && x.rail == y.rail && x.offset == y.offset && x.vertical == y.vertical && x.part == y.part);
+        assert(x.length == y.length && x.radius == y.radius && x.spider == y.spider && x.rail == y.rail && x.offset == y.offset && x.vertical == y.vertical && x.part == y.part && x.wheel == y.wheel);
     }
     for (int i = 0; i < a.bubblecount; ++i) same(a.bubbles[i],b.bubbles[i]);
     for (int i = 0; i < a.spikecount; ++i) {
@@ -74,10 +76,10 @@ int main() {
             if (frame % 30 == 0 && !game.introduction) for (int i = 0; i < level.pumpcount; ++i) game.interact(level.pumps[i].position);
             game.tick();
             assert(std::isfinite(game.candy().pos.x) && std::isfinite(game.candy().pos.y));
-            assert(game.bodycount <= 256 && game.candy().linkcount <= 10);
+            assert(game.bodycount <= 256 && game.candy().linkcount <= 20);
             for (int part = 0; part < game.activecount(); ++part) {
                 const auto& body = game.bodies[game.activeid(part)];
-                assert(std::isfinite(body.pos.x) && std::isfinite(body.pos.y) && body.linkcount <= 10);
+                assert(std::isfinite(body.pos.x) && std::isfinite(body.pos.y) && body.linkcount <= 20);
             }
             assert(game.cameray >= 0 && game.cameray <= level.height - 1440);
         }
@@ -206,5 +208,5 @@ int main() {
         for (int i = 0; i < level.hatcount; ++i) { const auto& x = level.hats[i]; mover("sock",i,x.position,x.path,x.angle,x.resetangle); }
         for (int i = 0; i < level.bouncercount; ++i) { const auto& x = level.bouncers[i]; mover("bouncer",i,x.position,x.path,x.angle); }
     }
-    std::printf("],\"maps\":150,\"frames\":180000,\"passed\":true}\n");
+    std::printf("],\"maps\":%zu,\"frames\":%zu,\"passed\":true}\n", dx::levels.size(), dx::levels.size() * 1200);
 }

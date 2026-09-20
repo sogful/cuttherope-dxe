@@ -4,7 +4,7 @@ import json
 from PIL import ImageStat
 
 
-def check(run, tap, key, state, framebuffer, settle, stress, profiler, report, directory):
+def check(run, tap, key, state, framebuffer, settle, stress, profiler, report, directory, box=1, level=23):
     def wait(predicate, limit=2400):
         for _ in range(limit):
             if predicate(state()):
@@ -16,16 +16,19 @@ def check(run, tap, key, state, framebuffer, settle, stress, profiler, report, d
     tap(131, 185)
     key(0)
     key(8)
+    for _ in range(box - 1): key(7)
+    run(180)
     key(8)
-    level = 22
+    level -= 1
     tap(round(128 + (824 + level % 5 * 228 - 1280) * 1.01846195 * 192 / 1440),
         round(96 + (203.5 + level // 5 * 258 - 720) * 1.01846195 * 192 / 1440))
     settle()
     wait(lambda s: s["ticks"] >= 40)
-    assert state()["level"] == 22 and state()["hooks"] == 6
+    assert state()["level"] == (box - 1) * 25 + level
+    hooks = state()["hooks"]
     start = len(profiler.records)
     firstchange = len(profiler.anomalies)
-    stress(7)  # Keep all six ropes active, trigger the real result controller, repack and force capture.
+    stress(7)  # Keep ropes active, trigger the real result controller, repack and force capture.
     frames = []
     repeated = False
     for _ in range(2000):
@@ -57,9 +60,9 @@ def check(run, tap, key, state, framebuffer, settle, stress, profiler, report, d
     assert min(brightness) > 30 and max(brightness) < 250
     frames[0].save(directory / "heavy-completion.gif", save_all=True,
                    append_images=frames[1:], duration=17, loop=0)
-    report.update(passed=True, synthetic=True, simulatedCompletion="Cardboard 1-23 with six intact ropes",
+    report.update(passed=True, synthetic=True, simulatedCompletion=f"{box}-{level + 1} with {hooks} hooks",
                   capturedHolds=sum(item["holds"] for item in rows), minimumBrightness=min(brightness),
                   maximumCaptureChannelLoss=max(-item["minimumChannelChange"] for item in changes),
                   resultFrames=len(hidden), maximumHiddenPhysicsUs=max(item["physics"] for item in hidden))
     (directory / "stressreport.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print("PASS: synthetic six-rope completion, two forced capture/repack recoveries, hidden solver idle, replay")
+    print(f"PASS: synthetic {box}-{level + 1} completion, two forced capture/repack recoveries, hidden solver idle, replay")

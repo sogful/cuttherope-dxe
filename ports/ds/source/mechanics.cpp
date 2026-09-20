@@ -47,6 +47,7 @@ float motion::angle(float base, float time, bool reset) const {
 }
 void simulation::animate() {
     ++visuals;
+    gravityage = std::min(100, gravityage + 1);
     ++popage;
     for (int& age : pumpages) age = std::min(100, age + 1);
     for (int& age : bounceages) age = std::min(100, age + 1);
@@ -80,6 +81,11 @@ void simulation::burst(int id) {
 bool simulation::interact(point position) {
     if (state != outcome::playing || introduction) return false;
     draghook = -1;
+    dragwheel = dragswitch = -1;
+    for (int i = 0; i < definition.switchcount; ++i) {
+        const auto d = position - definition.switches[i];
+        if (d.x >= -115.5f && d.x < 115.5f && d.y >= -116.5f && d.y < 116.5f) { dragswitch = i; return true; }
+    }
     for (int part = 0; part < activecount() && !hidden(); ++part) {
         const int id = activeid(part);
         const auto difference = position - bodies[id].pos;
@@ -90,6 +96,9 @@ bool simulation::interact(point position) {
     }
     for (int i = 0; i < definition.hookcount; ++i) {
         const auto difference = position - anchors[i];
+        if (definition.hooks[i].wheel && difference.x >= -110 && difference.x < 110 && difference.y >= -110 && difference.y < 110) {
+            dragwheel = i; wheeltouch = position; return true;
+        }
         if (definition.hooks[i].rail > 0 && std::abs(difference.x) <= 65 && std::abs(difference.y) <= 65) {
             draghook = i;
             return true;

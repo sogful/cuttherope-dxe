@@ -17,7 +17,16 @@ static int gamebox = -1;
 static int backgroundtop = -1, backgroundsections = 0;
 static float cameray = 0;
 static constexpr float scale = 192.0f / 1440;
+static const auto circle = [] {
+    std::array<dx::point, 48> points{};
+    for (int i = 0; i < 48; ++i) {
+        const float angle = i * 6.2831853f / 48;
+        points[i] = {std::cos(angle), std::sin(angle)};
+    }
+    return points;
+}();
 static void transferwindow() {}
+static int backgroundoffset(float position) { return static_cast<int>(std::round(position * scale)) / 64 * 64; }
 
 static dx::point screen(dx::point position) { return {128 + (position.x - 1280) * scale, (position.y - cameray) * scale}; }
 dx::point world(int x, int y) { return {1280 + (x - 128) / scale, y / scale + cameray}; }
@@ -126,7 +135,7 @@ static void loadgame(const ui::controller& menu, const dx::simulation& game) {
         sprites[index] = {source.w, source.h, source.x, source.y, textures[source.page]};
     }
     backgroundsections = std::clamp(static_cast<int>(std::ceil(game.definition.height / 1440)), 1, 3);
-    backgroundtop = static_cast<int>(game.cameray * scale) / 64 * 64;
+    backgroundtop = backgroundoffset(game.cameray);
     background = {256, 256, 0, 0, frontend::background(menu.pack, backgroundsections, backgroundtop)};
     frontend::reserve(occupied);
     gamecached = true;
@@ -143,7 +152,7 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
     if (!gamecached || gamebox != menu.pack) loadgame(menu, game);
     cameray = game.cameray;
     const int sectioncount = std::clamp(static_cast<int>(std::ceil(game.definition.height / 1440)), 1, 3);
-    const int top = static_cast<int>(std::round(cameray * scale)) / 64 * 64;
+    const int top = backgroundoffset(cameray);
     if (top != backgroundtop || sectioncount != backgroundsections) {
         frontend::background(menu.pack, sectioncount, top, background.textureID);
         backgroundtop = top; backgroundsections = sectioncount;
@@ -164,9 +173,8 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
         if (hook.radius >= 0 && opacity > 0) {
             glPolyFmt(POLY_ALPHA(std::max(1, static_cast<int>(opacity * 18))) | POLY_CULL_NONE | POLY_ID(51));
             for (int edge = 0; edge < 48; edge += 2) {
-                const float a = edge * 6.2831853f / 48, b = (edge + 1) * 6.2831853f / 48;
-                line(game.anchors[index] + dx::point{std::cos(a), std::sin(a)} * hook.radius,
-                     game.anchors[index] + dx::point{std::cos(b), std::sin(b)} * hook.radius, RGB15(31,31,31));
+                line(game.anchors[index] + circle[edge] * hook.radius,
+                     game.anchors[index] + circle[edge + 1] * hook.radius, RGB15(0,0,0));
             }
         }
         if (item.count && !item.cut) strand(game, index, 0, item.count, menu.skins[1]);

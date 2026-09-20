@@ -1,9 +1,20 @@
 #include "geometry.hpp"
 #include <algorithm>
+#include <cassert>
 
 namespace dx {
 bool simulation::drag(point position, bool held) {
-    if (!held || state != outcome::playing || introduction) { draghook = -1; return false; }
+    if (state != outcome::playing || introduction) { draghook = dragwheel = dragswitch = -1; return false; }
+    if (!held) {
+        if (dragswitch >= 0) {
+            const auto d = position - definition.switches[dragswitch];
+            if (d.x >= -115.5f && d.x < 115.5f && d.y >= -116.5f && d.y < 116.5f) togglegravity();
+        }
+        draghook = dragwheel = dragswitch = -1;
+        return false;
+    }
+    if (dragswitch >= 0) return true;
+    if (dragwheel >= 0) { rotatewheel(dragwheel, position); return true; }
     if (draghook < 0) return false;
     const auto& hook = definition.hooks[draghook];
     const float low = (hook.vertical ? hook.anchor.y : hook.anchor.x) - hook.offset;
@@ -12,6 +23,74 @@ bool simulation::drag(point position, bool held) {
     const auto& rope = ropes[draghook];
     if (rope.count) bodies[rope.bodies[0]].pin = bodies[rope.bodies[0]].pos = anchors[draghook];
     return true;
+}
+
+void simulation::togglegravity() { inverted = !inverted; ++gravityevents; gravityage = 0; }
+int simulation::ropelength(int index) const {
+    const auto& rope = ropes[index];
+    int length = 0;
+    for (int i = 1; i < rope.count; ++i) length += static_cast<int>((bodies[rope.bodies[i]].pos - bodies[rope.bodies[i - 1]].pos).length());
+    return length;
+}
+float simulation::wheelscale(int index) const {
+    const auto& rope = ropes[index];
+    if (!rope.count || (rope.cut && rope.remaining <= 0)) return 0;
+    const float length = ropelength(index) * .7f;
+    return length == 0 ? 0 : std::clamp(1 - length / 700, 0.0f, 1.2f);
+}
+void simulation::rotatewheel(int index, point position) {
+    if (position.x == wheeltouch.x && position.y == wheeltouch.y) return;
+    const auto first = wheeltouch - anchors[index], last = position - anchors[index];
+    float angle = (std::atan2(last.y, last.x) - std::atan2(first.y, first.x)) * 180 / 3.14159265f;
+    if (angle > 180) angle -= 360;
+    else if (angle < -180) angle += 360;
+    wheelangles[index] += angle;
+    ++wheelevents;
+    const float amount = angle > 0 ? std::clamp(angle, 1.0f, 4.5f) : std::clamp(angle, -4.5f, -1.0f);
+    const auto& rope = ropes[index];
+    if (rope.count >= 3 && (!rope.cut || rope.remaining > 0)) {
+        if (amount > 0 && ropelength(index) < 1650) reel(index, amount);
+        else if (amount < 0 && rope.count > 3) reel(index, amount);
+    }
+    wheeltouch = position;
+}
+void simulation::reel(int index, float amount) {
+    auto& rope = ropes[index];
+    auto& tail = bodies[rope.bodies[rope.count - 1]];
+    constraint* link = nullptr;
+    for (int i = 0; i < tail.linkcount; ++i)
+        if (tail.links[i].active && tail.links[i].other == rope.bodies[rope.count - 2]) { link = &tail.links[i]; break; }
+    int rest = link ? static_cast<int>(link->length) : -1;
+    const bool retract = amount < 0;
+    amount = std::abs(amount);
+    while (amount > 0) {
+        if (amount >= 105) {
+            const int previous = rope.bodies[rope.count - 2];
+            if (retract) {
+                if (rope.count <= 3) break;
+                if (link) { link->other = rope.bodies[rope.count - 3]; link->length = rest; }
+                rope.bodies[rope.count - 2] = rope.bodies[rope.count - 1];
+                --rope.count;
+                if (rope.cut && rope.split > rope.count - 1) rope.split = rope.count - 1;
+                freebodies[freecount++] = previous;
+                bodies[previous] = {};
+            } else {
+                assert(rope.count < static_cast<int>(rope.bodies.size()));
+                const int current = add(bodies[previous].pos, 50, false);
+                bodies[current].links[0] = {previous, 105, true}; bodies[current].linkcount = 1;
+                rope.bodies[rope.count] = rope.bodies[rope.count - 1];
+                rope.bodies[rope.count - 1] = current; ++rope.count;
+                if (link) { link->other = current; link->length = rest; }
+            }
+            amount -= 105;
+        } else {
+            const int next = static_cast<int>(retract ? rest - amount : rest + amount);
+            if (retract ? next < 1 : next > 105) { amount = 105; rest = retract ? 105 + next + 1 : next - 105; }
+            else { if (link) link->length = next; amount = 0; }
+        }
+    }
+    if (retract) for (int i = 0; i < tail.linkcount; ++i)
+        if (tail.links[i].maximum) tail.links[i].length = (rope.count - 1) * 108;
 }
 
 void simulation::merge(bool touching) {

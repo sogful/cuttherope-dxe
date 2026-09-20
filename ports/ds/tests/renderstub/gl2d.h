@@ -20,5 +20,9 @@ template<class... T> void glBoxFilled(T...) {}
 template<class... T> void glColor(T...) {}
 template<class... T> void glSprite(T...) {}
 template<class... T> void glSpriteRotateScaleXY(T...) {}
+template<class... T> void glPushMatrix(T...) {}
+template<class... T> void glPopMatrix(T...) {}
+template<class... T> void glTranslatef32(T...) {}
+template<class... T> void glRotateZi(T...) {}
 template<class... T> void glSpriteScaleXY(T...) {}
 template<class... T> void glTriangleFilledGradient(T...) {}

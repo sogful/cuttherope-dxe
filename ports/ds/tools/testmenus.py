@@ -83,7 +83,7 @@ for page, path, result in zip(manifest["pages"], files, native):
 checked = 0
 previews = 0
 spriteids = {item["name"]:i for i,item in enumerate(manifest["sprites"])}
-for stem, count, step in (("electro",5,1),("hat",5,1),("rail",5,1),("merge",5,1),("bouncer",10,1),("seat",6,1),("pump",4,2),("spike",4,2)):
+for stem, count, step in (("electro",5,1),("hat",5,1),("rail",5,1),("merge",5,1),("bouncer",10,1),("seat",8,1),("pump",4,2),("spike",4,2),("wheel",4,1),("gravity",3,1)):
     assert all(spriteids[stem+str(i)] == spriteids[stem+"0"] + i*step for i in range(count)), (stem,"Renderer animation IDs must match the atlas registration")
 for item in manifest["sprites"]:
     source = item.get("source") or {}

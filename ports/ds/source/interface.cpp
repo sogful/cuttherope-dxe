@@ -30,6 +30,7 @@ bool controller::levelopen(int index) const {
     const auto& records = saves.active().levels;
     return unlockall() || index == 0 || records[pack * 25 + index].completed || records[pack * 25 + index - 1].completed;
 }
+bool controller::hasnext() const { return levelid() < menuart::playableboxes * 25 - 1 && (level < 24 || packopen(pack + 1)); }
 void controller::persist() {
     auto& settings = saves.preferences;
     settings.effects = effects; settings.music = music; settings.locale = locale; settings.clickcut = clickcut;
@@ -69,7 +70,7 @@ int controller::buttons(button* out) const {
             for (int i = 0; i < 25; ++i) {
                 const int px = std::lround(128 + (824 + (i % 5) * 228 - 1280) * menuart::fit * (192.0f / 1440));
                 const int py = std::lround(96 + (203.5f + (i / 5) * 258 - 720) * menuart::fit * (192.0f / 1440));
-                out[count++] = {pack < 6 ? action::play : action::unavailable, px, py, 29, 29, "", levelopen(i), i};
+                out[count++] = {pack < menuart::playableboxes ? action::play : action::unavailable, px, py, 29, 29, "", levelopen(i), i};
             }
         }
         for (const auto& item : menuart::controls) {

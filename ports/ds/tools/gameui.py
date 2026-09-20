@@ -1,4 +1,5 @@
 import json
+from levels import boxes
 import math
 import xml.etree.ElementTree as xml
 
@@ -62,7 +63,7 @@ def build(menu):
         label(name, value, code, True, group="textpause" + code)
         face, _ = menu["font"](code, True)
         info["best"].append((name, sum(face.getlength(c) for c in value) * fit * scale))
-        for level in range(150):
+        for level in range(boxes * 25):
             label("levelname" + str(level) + code, f"{level // 25 + 1} - {level % 25 + 1}", code, factor=fit, group="textlevel" + code + str(level // 10))
         label("levelword" + code, strings["LEVEL"], code, factor=fit * .7, group="texthud" + code)
     label("failuretitle", "TRY AGAIN!", "en", group="textfailure")
@@ -103,8 +104,8 @@ def header(info, ids):
         lines += ["inline constexpr int " + key + "[] = {" + ",".join(map(str, info[key])) + "};"]
     lines += ["inline constexpr int hudpositions[12][4] = {" + ",".join("{" + ",".join(map(str, p)) + "}" for p in info["hud"]) + "};"]
     lines += ["inline constexpr int pausepositions[6][2] = {" + ",".join("{" + ",".join(map(str, p)) + "}" for p in info["pause"]) + "};"]
-    lines += ["inline constexpr int levelnames[150][12] = {"]
-    lines += ["{" + ",".join(str(ids["levelname" + str(level) + code]) for code in ("en","ru","de","fr","es","it","nl","pt_br","ko","ja","zh","zh_tw")) + "}," for level in range(150)]
+    lines += [f"inline constexpr int levelnames[{boxes * 25}][12] = {{"]
+    lines += ["{" + ",".join(str(ids["levelname" + str(level) + code]) for code in ("en","ru","de","fr","es","it","nl","pt_br","ko","ja","zh","zh_tw")) + "}," for level in range(boxes * 25)]
     lines += ["};"]
     lines += ["inline constexpr int levelwords[] = {" + ",".join(str(ids["levelword" + code]) for code in ("en","ru","de","fr","es","it","nl","pt_br","ko","ja","zh","zh_tw")) + "};"]
     import tutorials
