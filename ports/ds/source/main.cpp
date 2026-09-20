@@ -7,6 +7,7 @@
 #include "frontend.hpp"
 #include "menuassets.hpp"
 #include "trace.hpp"
+#include "profiling.hpp"
 #include <fat.h>
 #include <sys/stat.h>
 #include <cstdio>
@@ -28,9 +29,13 @@ struct diagnostics {
 };
 extern "C" {
 volatile diagnostics telemetry;
+#ifdef DS_PROFILE
+volatile unsigned profiledata[32];
+volatile unsigned profilestress = 0;
+#endif
 }
 static volatile unsigned vblanks = 0;
-static void vertical() { vblanks = vblanks + 1; }
+static void vertical() { vblanks = vblanks + 1; frontend::capture(); }
 static dx::simulation game;
 static ui::controller menu;
 
@@ -71,6 +76,7 @@ int main() {
         swiWaitForVBlank();
         const unsigned beginblank = vblanks;
         cpuStartTiming(0);
+        DS_PROFILE_DO(profiling::begin());
         scanKeys();
         const int down = keysDown(), keys = keysHeld();
         touchPosition touch{};
@@ -105,8 +111,18 @@ int main() {
         } else {
             held = false;
             game.drag(pointer, false);
-            if (!menu.frontend() && (menu.mode != ui::view::paused || menu.door) && !display::busy()) game.tick();
+            if (!menu.frontend() && (menu.mode != ui::view::paused || menu.door) && !display::busy()) {
+                if (menu.mode == ui::view::results && menu.age >= 32) game.animate();
+                else game.tick();
+            }
         }
+        DS_PROFILE_DO(if (profilestress & 4) {
+            profilestress = profilestress & ~4u;
+            game.state = dx::outcome::won;
+            game.resulttick = game.ticks; game.resultvisual = game.visuals;
+            game.bodies[0].pin = game.candy().pos; game.bodies[0].pinned = true;
+            game.stars.fill(true); game.count = 3;
+        });
         frame = game.visuals;
         audio::world(menu, game);
         if (game.bubbleevents != shownbubbles) { audio::effect(bubbledata, bubblebytes); shownbubbles = game.bubbleevents; }
@@ -203,5 +219,6 @@ int main() {
         telemetry.skinoffset = menu.skinoffsets[menu.skintab];
         telemetry.transition = display::busy();
         telemetry.storage = !menu.saves.writable ? 0 : menu.saves.failed ? 2 : 1;
+        DS_PROFILE_DO(profiling::finish(total));
     }
 }

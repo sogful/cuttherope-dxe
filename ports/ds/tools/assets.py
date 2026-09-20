@@ -156,11 +156,8 @@ def main():
     backgroundheader = backgrounds.build(content, output, sources)
 
     logopath = root / "assets/logods.png"
-    logo = ImageOps.contain(Image.open(logopath).convert("RGBA"), (256, 192), Image.Resampling.LANCZOS)
-    upper = Image.new("RGB", (256, 256))
-    upper.paste(logo, ((256 - logo.width) // 2, (192 - logo.height) // 2), logo)
-    (output / "logo.bin").write_bytes(rgb15(upper))
-    upper.crop((0, 0, 256, 192)).save(output / "logo.png")
+    import logo
+    logo.build(output)
 
     sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "win", "tap",
            "bubble", "bubble_break", "pump_1", "rope_get", "spider_activate", "spider_fall", "spider_win", "candy_break",
@@ -207,7 +204,7 @@ def main():
     (output / "assets.s").write_text("\n".join(assembly) + "\n", encoding="utf-8")
     manifest = {"level": "1_1", "levelCount": 150, "viewport": [256, 192], "scale": scale, "atlases": pages,
                 "texturebytes": sum(page["bytes"] for page in pages) + 131072,
-                "upperbytes": 131072, "logo": {"source": "assets/logods.png", "sha256": hashlib.sha256(logopath.read_bytes()).hexdigest()},
+                "upperbytes": 49152, "upperpalettebytes": 512, "logo": {"source": "assets/logods.png", "sha256": hashlib.sha256(logopath.read_bytes()).hexdigest()},
                 "audiobytes": sum(size for _, size in audio),
                 "sources": {str(path.relative_to(content)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)},
                 "sprites": [{key: value for key, value in record.items() if key != "image"} for record in records]}

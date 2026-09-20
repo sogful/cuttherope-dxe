@@ -5,6 +5,7 @@
 #include "result.hpp"
 #include "geometry.hpp"
 #include "assets.hpp"
+#include "profiling.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -19,8 +20,23 @@ static unsigned touched[menuart::pagecount]{}, frame = 0, occupied = 0;
 static unsigned reserved = 0;
 static unsigned repacks = 0;
 extern "C" { volatile unsigned renderfault = 0; }
-alignas(4) static unsigned char unpacked[131072];
-alignas(4) static unsigned char compressed[147456];
+alignas(32) static unsigned char staged[393216];
+static unsigned stagedbytes = 0;
+struct transfer { void* destination; const void* source; unsigned bytes; };
+static transfer transfers[784];
+static unsigned transfercount = 0;
+static unsigned char compressed[4096];
+#ifdef __NDS__
+static volatile bool captured = false, armed = false, frozen = false;
+#endif
+void capture() {
+#ifdef __NDS__
+    if (frozen) return;
+    captured = armed;
+    REG_DISPCAPCNT = DCAP_ENABLE | DCAP_BANK(DCAP_BANK_VRAM_C) | DCAP_SIZE(DCAP_SIZE_256x192);
+    armed = true;
+#endif
+}
 static FILE* catalog;
 void initialize() {
     if (nitroFSInit(nullptr)) catalog = std::fopen("nitro:/menu.bin", "rb");
@@ -83,6 +99,7 @@ static bool visible(const command& item) {
 }
 
 void reset() {
+    stagedbytes = transfercount = 0;
     glResetTextures();
     gCurrentTexture = -1;
     std::fill(std::begin(textures), std::end(textures), 0);
@@ -106,31 +123,118 @@ static void repack() {
     ++repacks;
 }
 
-// libnds temporarily maps texture/palette banks to the CPU when uploading.
-// Doing so during scanout makes the previous 3D frame sample missing VRAM.
-// Disk reads/decompression happen first, then the short DMA upload is confined
-// to the start of VBlank (not merely the VBlank at the start of the game loop).
-static void textureblank() {
-    if (REG_VCOUNT < 192 || REG_VCOUNT > 198) swiWaitForVBlank();
+static void enqueue(void* destination, const void* source, unsigned size) {
+    if (!destination || transfercount >= std::size(transfers)) {
+        renderfault = 0x20000000;
+        nocashMessage("CTRD DS: invalid texture transfer");
+        while (true) swiWaitForVBlank();
+    }
+    transfers[transfercount++] = {destination, source, size};
+}
+
+void stage(int texture, const void* pixels, unsigned size, const void* palette, int colors) {
+    enqueue(glGetTexturePointer(texture), pixels, size);
+    if (colors) {
+        glBindTexture(0, texture);
+        glColorTableEXT(0, 0, colors, 0, 0, nullptr);
+        enqueue(glGetColorTablePointer(texture), palette, colors * 2);
+    }
+}
+
+static unsigned char* staging(unsigned size) {
+    if (size > sizeof(staged) - stagedbytes) {
+        renderfault = 0x30000000 | (stagedbytes + size);
+        nocashMessage("CTRD DS: staging capacity exceeded");
+        while (true) swiWaitForVBlank();
+    }
+    unsigned char* result = staged + stagedbytes;
+    stagedbytes += size;
+    return result;
+}
+
+void present() {
+    if (!transfercount) { glFlush(GL_TRANS_MANUALSORT); return; }
+#ifdef __NDS__
+    unsigned bytes = 0;
+    for (unsigned i = 0; i < transfercount; ++i) {
+        DC_FlushRange(transfers[i].source, transfers[i].bytes);
+        bytes += transfers[i].bytes;
+    }
+    {
+        DS_SCOPE(wait);
+        while (GFX_BUSY) {}
+        while (REG_VCOUNT < 148 || REG_VCOUNT > 188) swiIntrWait(1, IRQ_VCOUNT);
+        // The old frame must have finished rendering, including its buffered tail.
+        while (REG_VCOUNT < 192 && (GFX_RDLINES_COUNT & 0x3f) < 192u - REG_VCOUNT) {}
+    }
+    const unsigned lines = (bytes + 2303) / 2304 + transfercount / 4 + 4;
+    const bool hidden = (REG_MASTER_BRIGHT & 0xc01f) == 0x8010;
+    bool hold = !hidden && lines >= 214u - REG_VCOUNT;
+    DS_PROFILE_DO(if (profilestress & 1) { hold = true; profilestress = profilestress & ~1u; });
+    if (hold) {
+        DS_SCOPE(wait);
+        do { swiWaitForVBlank(); } while (!captured);
+        frozen = true;
+        REG_DISPCAPCNT = 0;
+        // Capture is RGB5, so this rare held frame loses the 3D output's low color bit.
+        vramSetBankC(VRAM_C_MAIN_BG_0x06000000);
+        videoSetMode(MODE_5_2D);
+        bgInit(3, BgType_Bmp16, BgSize_B16_256x256, 0, 0);
+    } else glFlush(GL_TRANS_MANUALSORT);
+    {
+        DS_SCOPE(transfer);
+        DS_PROFILE_DO(profiling::data[profiling::uploadstart] = REG_VCOUNT);
+        const int interrupts = enterCriticalSection();
+        const auto a = VRAM_A_CR, b = VRAM_B_CR, d = VRAM_D_CR, e = VRAM_E_CR;
+        vramSetBankA(VRAM_A_LCD); vramSetBankB(VRAM_B_LCD);
+        vramSetBankD(VRAM_D_LCD); vramSetBankE(VRAM_E_LCD);
+        for (unsigned i = 0; i < transfercount; ++i) {
+            const auto& item = transfers[i];
+            dmaCopyWords(3, item.source, item.destination, item.bytes);
+        }
+        VRAM_A_CR = a; VRAM_B_CR = b; VRAM_D_CR = d; VRAM_E_CR = e;
+        leaveCriticalSection(interrupts);
+        DS_PROFILE_DO(profiling::data[profiling::uploadend] = REG_VCOUNT;
+            profiling::data[profiling::holds] = hold;
+            if (!hidden && !hold && (REG_VCOUNT >= 214 || REG_VCOUNT < 148)) ++profiling::data[profiling::visibleupload]);
+    }
+    if (hold) {
+        DS_SCOPE(wait);
+        glFlush(GL_TRANS_MANUALSORT);
+        swiWaitForVBlank();
+        swiWaitForVBlank();
+        vramSetBankC(VRAM_C_LCD);
+        videoSetMode(MODE_0_3D);
+        frozen = false;
+        capture();
+    }
+#else
+    glFlush(GL_TRANS_MANUALSORT);
+#endif
+    transfercount = stagedbytes = 0;
 }
 
 int background(int box, int sections, int top, int texture) {
     FILE* file = std::fopen("nitro:/world.bin", "rb");
     const unsigned offset = art::backgrounds[box][std::clamp(sections, 1, 3) - 1] + top * 512;
-    const bool valid = file && !std::fseek(file, offset, SEEK_SET) && std::fread(unpacked, 1, sizeof(unpacked), file) == sizeof(unpacked);
+    auto* pixels = staging(131072);
+    const bool valid = file && !std::fseek(file, offset, SEEK_SET) && std::fread(pixels, 1, 131072, file) == 131072;
     if (file) std::fclose(file);
     if (!valid) { nocashMessage("CTRD DS: background read failed"); while (true) swiWaitForVBlank(); }
-    textureblank();
     if (!texture) glGenTextures(1, &texture);
     glBindTexture(0, texture);
-    if (!glTexImage2D(0, 0, GL_RGBA, TEXTURE_SIZE_256, TEXTURE_SIZE_256, 0, TEXGEN_OFF, unpacked)) {
+    if (!glTexImage2D(0, 0, GL_RGBA, TEXTURE_SIZE_256, TEXTURE_SIZE_256, 0, TEXGEN_OFF, nullptr)) {
         nocashMessage("CTRD DS: background allocation failed"); while (true) swiWaitForVBlank();
     }
+    stage(texture, pixels, 131072);
     gCurrentTexture = -1;
     return texture;
 }
 
 static void upload(bool repacked = false) {
+    DS_SCOPE(upload);
+    DS_PROFILE_DO(if (profilestress & 2) { profilestress = profilestress & ~2u; repack(); });
+    DS_PROFILE_DO(profiling::data[profiling::commands] = count);
     ++frame;
     bool needed[menuart::pagecount]{};
     bool missing = false;
@@ -149,12 +253,14 @@ static void upload(bool repacked = false) {
         while (true) swiWaitForVBlank();
     }
     if (!missing) return;
+    const unsigned savedbytes = stagedbytes, savedtransfers = transfercount;
     auto evict = [&]() {
         int oldest = -1;
         for (int candidate = 0; candidate < menuart::pagecount; ++candidate) {
             if (textures[candidate] && !needed[candidate] && (oldest < 0 || touched[candidate] < touched[oldest])) oldest = candidate;
         }
         if (oldest < 0) return false;
+        DS_PROFILE_DO(if (touched[oldest] + 1 == frame) ++profiling::data[profiling::previousevictions]);
         glDeleteTextures(1, &textures[oldest]);
         textures[oldest] = 0;
         occupied -= bytes(oldest);
@@ -169,30 +275,46 @@ static void upload(bool repacked = false) {
             if (!evict()) break;
         }
         const auto& page = menuart::pages[index];
-        if (page.packed > sizeof(compressed) || std::fseek(catalog, page.offset, SEEK_SET) ||
-            std::fread(compressed, 1, page.packed, catalog) != page.packed ||
-            !packed::unpack(compressed, unpacked, sizeof(unpacked))) {
-            nocashMessage("CTRD DS: invalid packed menu texture");
-            while (true) swiWaitForVBlank();
-        }
-        textureblank();
         glGenTextures(1, &textures[index]);
         glBindTexture(0, textures[index]);
         int width = 0, height = 0;
         for (int size = page.width; size > 8; size >>= 1) ++width;
         for (int size = page.height; size > 8; size >>= 1) ++height;
-        while (!glTexImage2D(0, 0, page.direct ? GL_RGBA : page.alphabits == 5 ? GL_RGB8_A5 : GL_RGB32_A3, width, height, 0, TEXGEN_OFF, unpacked)) {
+        while (!glTexImage2D(0, 0, page.direct ? GL_RGBA : page.alphabits == 5 ? GL_RGB8_A5 : GL_RGB32_A3, width, height, 0, TEXGEN_OFF, nullptr)) {
             if (!evict()) {
                 // A/B/D are three separate 128 KiB banks. Enough free bytes
                 // need not imply a contiguous allocation after locale changes.
-                if (!repacked) { repack(); upload(true); return; }
+                if (!repacked) {
+                    stagedbytes = savedbytes; transfercount = savedtransfers;
+                    repack(); upload(true); return;
+                }
                 renderfault = 0x10000000 | index;
                 nocashMessage("CTRD DS: menu texture allocation failed");
                 while (true) swiWaitForVBlank();
             }
             glBindTexture(0, textures[index]);
         }
-        if (!page.direct) glColorTableEXT(0, 0, 1 << (8 - page.alphabits), 0, 0, reinterpret_cast<const u16*>(page.palette));
+        unsigned char* pixels = staging(bytes(index));
+        unsigned remaining = page.packed, cursor = 0, available = 0;
+        auto next = [&]() -> int {
+            if (cursor == available) {
+                DS_SCOPE(read);
+                const unsigned size = std::min(remaining, static_cast<unsigned>(sizeof(compressed)));
+                available = std::fread(compressed, 1, size, catalog);
+                cursor = 0; remaining -= available;
+                if (!available) return -1;
+            }
+            return compressed[cursor++];
+        };
+        {
+            DS_SCOPE(decode);
+            if (std::fseek(catalog, page.offset, SEEK_SET) || !packed::stream(next, pixels, bytes(index))) {
+                nocashMessage("CTRD DS: invalid packed menu texture");
+                while (true) swiWaitForVBlank();
+            }
+        }
+        stage(textures[index], pixels, bytes(index), page.palette, page.direct ? 0 : 1 << (8 - page.alphabits));
+        DS_PROFILE_DO(++profiling::data[profiling::uploads]; profiling::data[profiling::uploadbytes] += bytes(index));
         occupied += bytes(index);
     }
     // Raw libnds uploads do not update gl2d's binding cache.
@@ -433,7 +555,7 @@ void drawresult(const ui::controller& menu, const dx::simulation& game) {
     glBegin2D();
     render(true);
     glEnd2D();
-    glFlush(GL_TRANS_MANUALSORT);
+    present();
 }
 
 static void skins(const ui::controller& menu) {
@@ -742,10 +864,11 @@ void draw(const ui::controller& menu) {
     glBegin2D();
     render();
     glEnd2D();
-    glFlush(GL_TRANS_MANUALSORT);
+    present();
 }
 
 void render(bool overlay, bool ground) {
+    DS_SCOPE(render);
     const int first = ground ? 0 : overlay ? overlaystart : groundend;
     const int last = ground ? groundend : !overlay && overlaystart >= 0 ? overlaystart : count;
     for (int i = first; i < last; ++i) {

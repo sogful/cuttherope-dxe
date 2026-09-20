@@ -70,7 +70,8 @@ for record in manifest["sprites"]:
 
 assert len({record["page"] for record in manifest["sprites"]}) == len(manifest["atlases"])
 assert manifest["texturebytes"] <= 384 * 1024
-assert (generated / "logo.bin").stat().st_size == manifest["upperbytes"] == 128 * 1024
+assert (generated / "logo.bin").stat().st_size == manifest["upperbytes"] == 48 * 1024
+assert (generated / "logopalette.bin").stat().st_size == manifest["upperpalettebytes"] == 512
 report = {"framesChecked": checked, "paletteErrors": errors, "textureBytes": manifest["texturebytes"], "passed": True}
 (root / "build/visualtest.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
 print(f"PASS: {checked} source-canvas animation anchors, {len(errors)} independent palettes, landscape viewport")

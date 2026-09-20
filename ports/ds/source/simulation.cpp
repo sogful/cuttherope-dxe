@@ -1,8 +1,25 @@
 #include "simulation.hpp"
+#include "profiling.hpp"
+#include "numeric.hpp"
 #include <algorithm>
+#include <cstring>
+#include <cassert>
+
+#ifdef __NDS__
+#define DS_HOT ITCM_CODE
+#define DS_DATA DTCM_BSS
+#else
+#define DS_HOT
+#define DS_DATA
+#endif
 
 namespace dx {
 constexpr float delta = 0.016f;
+#ifndef DS_REFERENCE_PHYSICS
+static unsigned floatbits(float value) { unsigned bits; std::memcpy(&bits, &value, sizeof(bits)); return bits; }
+static bool zero(point value) { return ((floatbits(value.x) | floatbits(value.y)) & 0x7fffffffu) == 0; }
+static float distancefloor(float value) { return floatbits(value) < 0x3f800000u ? 1.0f : value; }
+#endif
 
 int simulation::add(point position, float inverse, bool pinned) {
     const int index = bodycount++;
@@ -75,7 +92,7 @@ void simulation::attach(int index, float length, int candy) {
     item.bodies[item.count++] = candy;
 }
 
-void simulation::integrate(body& item, float acceleration) {
+DS_HOT void simulation::integrate(body& item, float acceleration) {
     if (!item.initialized) {
         item.previous = item.pos;
         item.initialized = true;
@@ -85,7 +102,7 @@ void simulation::integrate(body& item, float acceleration) {
     item.pos = item.pos + displacement;
 }
 
-void simulation::satisfy(body& item) {
+DS_HOT void simulation::satisfy(body& item) {
     if (item.pinned) { item.pos = item.pin; return; }
     for (int index = 0; index < item.linkcount; ++index) {
         const constraint& link = item.links[index];
@@ -102,6 +119,59 @@ void simulation::satisfy(body& item) {
         item.pos = item.pos + difference * (item.inverse * factor);
         if (!other.pinned) other.pos = other.pos - difference * (other.inverse * factor);
     }
+}
+
+struct operation {
+    point* first;
+    point* second;
+    float length, inverse, otherinverse, sum;
+    unsigned flags;
+};
+#ifndef DS_REFERENCE_PHYSICS
+static DS_DATA point positions[256];
+static DS_DATA operation operations[48];
+#endif
+
+DS_HOT void simulation::solve(const rope& item) {
+#ifdef DS_REFERENCE_PHYSICS
+    for (int iteration = 0; iteration < 30; ++iteration)
+        for (int part = 0; part < item.count; ++part) satisfy(bodies[item.bodies[part]]);
+#else
+    for (int i = 0; i < bodycount; ++i) positions[i] = bodies[i].pos;
+    int count = 0;
+    for (int part = 0; part < item.count; ++part) {
+        const int id = item.bodies[part];
+        const body& first = bodies[id];
+        if (first.pinned) {
+            assert(count < static_cast<int>(std::size(operations)));
+            operations[count++] = {positions + id, nullptr, 0, first.pin.x, first.pin.y, 0, 1};
+            continue;
+        }
+        for (int i = 0; i < first.linkcount; ++i) {
+            const auto& link = first.links[i];
+            if (!link.active) continue;
+            const body& second = bodies[link.other];
+            assert(count < static_cast<int>(std::size(operations)));
+            operations[count++] = {positions + id, positions + link.other, link.length, first.inverse,
+                second.inverse, first.inverse + second.inverse, (second.pinned ? 2u : 0u) | (link.maximum ? 4u : 0u)};
+        }
+    }
+    for (int iteration = 0; iteration < 30; ++iteration) for (int i = 0; i < count; ++i) {
+        const auto& op = operations[i];
+        if (op.flags & 1) { *op.first = {op.inverse, op.otherinverse}; continue; }
+        point difference{numeric::subtract(op.second->x, op.first->x), numeric::subtract(op.second->y, op.first->y)};
+        if (zero(difference)) {
+            if (op.length == 0) continue;
+            difference = {1, 1};
+        }
+        const float length = difference.length();
+        if ((op.flags & 4) && length <= op.length) continue;
+        const float factor = numeric::subtract(length, op.length) / (distancefloor(length) * op.sum);
+        *op.first = *op.first + difference * (op.inverse * factor);
+        if (!(op.flags & 2)) *op.second = *op.second - difference * (op.otherinverse * factor);
+    }
+    for (int i = 0; i < bodycount; ++i) bodies[i].pos = positions[i];
+#endif
 }
 
 void simulation::detach(rope& item) {
@@ -128,12 +198,14 @@ void simulation::detach(rope& item) {
     }
 }
 
-void simulation::ropephysics() {
+DS_HOT void simulation::ropephysics() {
+    DS_SCOPE(physics);
     const float step = delta * definition.speed;
     for (int index = 0; index < definition.hookcount; ++index) {
         rope& item = ropes[index];
         if (item.count == 0) continue;
         if (item.cut && item.remaining <= 0) continue;
+        DS_PROFILE_DO(profiling::data[profiling::bodies] += item.count * 30);
         if (item.cut) {
             item.remaining = std::max(0.0f, item.remaining - step);
             if (item.pending >= 0 && item.remaining < 1.95f) detach(item);
@@ -142,9 +214,7 @@ void simulation::ropephysics() {
             const int id = item.bodies[part];
             if (id >= (definition.split ? 3 : 1)) integrate(bodies[id], 784.0f * (step * delta));
         }
-        for (int iteration = 0; iteration < 30; ++iteration) {
-            for (int part = 0; part < item.count; ++part) satisfy(bodies[item.bodies[part]]);
-        }
+        solve(item);
     }
 }
 
@@ -285,21 +355,38 @@ bool simulation::tap(point position) {
     return sever(chosen, segment);
 }
 
-void simulation::samples(int index, int first, int count, point* output, int& size) const {
+DS_HOT void simulation::samples(int index, int first, int count, point* output, int& size) const {
+    DS_SCOPE(samples);
     size = 0;
     if (count < 3) return;
     const rope& item = ropes[index];
     const int steps = (count - 1) * 4;
+    DS_PROFILE_DO(profiling::data[profiling::weights] += count * (steps + 1));
     // Bezier weights depend only on the segment count, not on the moving rope.
     // Cache the Bernstein basis instead of repeating de Casteljau's quadratic
     // interpolation for every vertex on every frame on the ARM9 soft-float CPU.
-    static constexpr int capacity = [] { int total = 0; for (int n = 3; n <= 32; ++n) total += n * (4 * (n - 1) + 1); return total; }();
+    static constexpr int capacity = [] { int total = 0; for (int n = 3; n <= 16; ++n) total += n * (4 * (n - 1) + 1); return total; }();
     static std::array<float, capacity> basis{};
-    static bool ready[33]{};
-    int offset = 0;
-    for (int n = 3; n < count; ++n) offset += n * (4 * (n - 1) + 1);
-    float* weights = basis.data() + offset;
-    if (!ready[count]) {
+    static bool ready[17]{};
+    struct cache { int count = 0; unsigned stamp = 0; float weights[32 * 125]{}; };
+    static cache large[2];
+    static unsigned stamp = 0;
+    float* weights;
+    bool generate;
+    if (count <= 16) {
+        int offset = 0;
+        for (int n = 3; n < count; ++n) offset += n * (4 * (n - 1) + 1);
+        weights = basis.data() + offset;
+        generate = !ready[count];
+        ready[count] = true;
+    } else {
+        cache& entry = large[0].count == count ? large[0] : large[1].count == count ? large[1] :
+            large[0].stamp < large[1].stamp ? large[0] : large[1];
+        generate = entry.count != count;
+        entry.count = count; entry.stamp = ++stamp;
+        weights = entry.weights;
+    }
+    if (generate) {
         for (int sample = 0; sample <= steps; ++sample) {
             float* row = weights + sample * count;
             row[0] = 1;
@@ -310,7 +397,6 @@ void simulation::samples(int index, int first, int count, point* output, int& si
                 row[0] *= u;
             }
         }
-        ready[count] = true;
     }
     for (int sample = 0; sample <= steps; ++sample) {
         point position{};

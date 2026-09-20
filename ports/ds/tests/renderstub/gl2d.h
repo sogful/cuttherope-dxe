@@ -1,6 +1,8 @@
 #pragma once
 inline int gCurrentTexture = -1;
 inline int failedallocations = 0, textureresets = 0;
+inline void* glGetTexturePointer(int) { static unsigned data; return &data; }
+inline void* glGetColorTablePointer(int) { static unsigned data; return &data; }
 inline constexpr int GL_FLIP_NONE=0, GL_FLIP_H=1, GL_FLIP_V=2, GL_RGBA=3, GL_RGB8_A5=4, GL_RGB32_A3=5;
 inline constexpr int GL_TRANS_MANUALSORT=0, TEXGEN_OFF=0, TEXTURE_SIZE_256=5;
 struct glImage { int width, height, u_off, v_off, textureID; };

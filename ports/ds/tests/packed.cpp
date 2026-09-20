@@ -14,6 +14,13 @@ int main(int argc, char** argv) {
         if (size > 131072) return 2;
         std::vector<unsigned char> output(size);
         if (!packed::unpack(source.data(), output.data(), output.size())) return 3;
+        std::vector<unsigned char> streamed(size);
+        unsigned cursor = 0;
+        auto next = [&]() -> int { return cursor < source.size() ? source[cursor++] : -1; };
+        if (!packed::stream(next, streamed.data(), streamed.size()) || streamed != output) return 4;
+        cursor = 0;
+        auto truncated = [&]() -> int { return cursor < 3 ? source[cursor++] : -1; };
+        if (packed::stream(truncated, streamed.data(), streamed.size())) return 5;
         std::uint32_t hash = 2166136261;
         for (unsigned char value : output) hash = (hash ^ value) * 16777619;
         std::printf("%u %u\n", size, hash);

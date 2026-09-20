@@ -11,7 +11,9 @@ root = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--assets", action="store_true", help="Rebuild converted assets")
-    parser.add_argument("--bootcheck", action="store_true", help="Build a minimal emulator/toolchain compatibility probe")
+    variant = parser.add_mutually_exclusive_group()
+    variant.add_argument("--bootcheck", action="store_true", help="Build a minimal emulator/toolchain compatibility probe")
+    variant.add_argument("--profile", action="store_true", help="Build separate instrumented ROM without replacing the normal ROM")
     args = parser.parse_args()
     wonderful = root / ".tools/msys64/opt/wonderful"
     sdk = Path(os.environ.get("BLOCKSDS", str(wonderful / "thirdparty/blocksds/core")))
@@ -21,9 +23,10 @@ def main():
     os.chdir(root)
     if args.assets or not (root / "generated/assets.hpp").exists() or not (root / "generated/menuassets.hpp").exists():
         subprocess.run([sys.executable, "tools/assets.py"], check=True)
-    build = root / "build"
+    subprocess.run([sys.executable, "tools/logo.py"], check=True)
+    build = root / "build" / "profile" if args.profile else root / "build"
     dist = root / "dist"
-    build.mkdir(exist_ok=True)
+    build.mkdir(parents=True, exist_ok=True)
     dist.mkdir(exist_ok=True)
     environment = os.environ.copy()
     environment["BLOCKSDS"] = sdk.as_posix()
@@ -32,6 +35,8 @@ def main():
              "-ffp-contract=off", "-fno-exceptions", "-fno-rtti", "-ffunction-sections", "-fdata-sections",
              "-Iinclude", "-Igenerated", "-I" + str(sdk / "libs/libnds/include"), "-specs=" + str(sdk / "sys/crts/ds_arm9.specs")]
     objects = []
+    if args.profile:
+        flags.append("-DDS_PROFILE")
     sources = [root / "tests/boot.cpp"] if args.bootcheck else sorted((root / "source").glob("*.cpp"))
     for source in sources:
         target = build / (source.stem + ".o")
@@ -46,7 +51,18 @@ def main():
         menus = build / "menuassets.o"
         subprocess.run([str(compiler), "-mcpu=arm946e-s+nofp", "-c", "generated/menuassets.s", "-o", str(menus)], check=True, env=environment)
         objects.append(str(menus))
-    name = "bootcheck" if args.bootcheck else "cuttherope"
+        logo = build / "logo.o"
+        subprocess.run([str(compiler), "-mcpu=arm946e-s+nofp", "-c", "generated/logo.s", "-o", str(logo)], check=True, env=environment)
+        objects.append(str(logo))
+        library = subprocess.check_output([str(compiler), *flags, "-print-libgcc-file-name"], env=environment, text=True).strip()
+        archive = compiler.with_name("arm-none-eabi-ar.exe")
+        members = ("_arm_addsubsf3.o", "_arm_muldivsf3.o", "_arm_cmpsf2.o", "_arm_fixsfsi.o", "_arm_fixunssfsi.o")
+        subprocess.run([str(archive), "x", library, *members], cwd=build, env=environment, check=True)
+        for member in members:
+            target = build / (Path(member).stem + ".itcm.o")
+            subprocess.run([str(compiler.with_name("arm-none-eabi-objcopy.exe")), str(build / member), str(target)], env=environment, check=True)
+            objects.append(str(target))
+    name = "bootcheck" if args.bootcheck else "cuttherope-profile" if args.profile else "cuttherope"
     elf = build / (name + ".elf")
     subprocess.run([str(compiler.with_name("arm-none-eabi-gcc.exe")), *flags, *objects, "-L" + str(sdk / "libs/libnds/lib"),
                     "-Wl,-Map=" + str(build / (name + ".map")), "-Wl,--start-group", "-lnds9", "-lstdc++", "-lc", "-lm", "-Wl,--end-group",

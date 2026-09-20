@@ -119,6 +119,7 @@ private:
     int add(point position, float inverse, bool pinned);
     void integrate(body& item, float acceleration);
     void satisfy(body& item);
+    void solve(const rope& item);
     void detach(rope& item);
     void attach(int index, float length, int candy = 0);
     void ropephysics();

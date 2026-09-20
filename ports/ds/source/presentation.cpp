@@ -1,6 +1,8 @@
 #include "presentation.hpp"
 #include "assets.hpp"
 #include "frontend.hpp"
+#include "profiling.hpp"
+#include "logo.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -15,6 +17,7 @@ static int gamebox = -1;
 static int backgroundtop = -1, backgroundsections = 0;
 static float cameray = 0;
 static constexpr float scale = 192.0f / 1440;
+static void transferwindow() {}
 
 static dx::point screen(dx::point position) { return {128 + (position.x - 1280) * scale, (position.y - cameray) * scale}; }
 dx::point world(int x, int y) { return {1280 + (x - 128) / scale, y / scale + cameray}; }
@@ -37,37 +40,55 @@ static void line(dx::point a, dx::point b, u16 color) {
 }
 
 static void strand(const dx::simulation& game, int index, int first, int count, int skin) {
+    DS_SCOPE(ropes);
     dx::point points[125];
     int size = 0;
     game.samples(index, first, count, points, size);
+    DS_PROFILE_DO(if (size > 0) profiling::data[profiling::segments] += (size - 1) * 2);
     const dx::rope& rope = game.ropes[index];
     const int alpha = rope.cut ? std::max(1, std::min(31, static_cast<int>(rope.remaining / 1.95f * 31))) : 31;
     glPolyFmt(POLY_ALPHA(alpha) | POLY_CULL_NONE | POLY_ID(49));
-    for (int segment = 1; segment < size; ++segment) {
-        const bool bright = (segment / 3) % 2 == 0;
-        static constexpr float colors[9][2][3] = {
-            {{.475f,.305f,.185f},{.67555556f,.44f,.27555556f}}, {{.624f,.294f,.114f},{1,.627f,.463f}},
-            {{.404f,.612f,.635f},{.773f,.898f,.902f}}, {{.757f,.533f,0},{.98f,.843f,.2f}},
-            {{.980f,.243f,.243f},{.282f,.525f,.153f}}, {{.176f,.318f,.659f},{1,1,1}},
-            {{.631f,.957f,1},{.996f,.631f,.953f}}, {{1,.329f,.318f},{1,.992f,.941f}},
-            {{1,.831f,.404f},{.251f,.239f,.278f}}
-        };
-        const float* rgb = colors[skin][bright ? 1 : 0];
-        const u16 color = rope.pending >= 0 ? RGB15(31, 31, 31) : RGB15(std::lround(rgb[0] * 31), std::lround(rgb[1] * 31), std::lround(rgb[2] * 31));
-        line(points[segment - 1], points[segment], color);
-        line(points[segment - 1] + dx::point{4, 0}, points[segment] + dx::point{4, 0}, color);
+    static constexpr float colors[9][2][3] = {
+        {{.475f,.305f,.185f},{.67555556f,.44f,.27555556f}}, {{.624f,.294f,.114f},{1,.627f,.463f}},
+        {{.404f,.612f,.635f},{.773f,.898f,.902f}}, {{.757f,.533f,0},{.98f,.843f,.2f}},
+        {{.980f,.243f,.243f},{.282f,.525f,.153f}}, {{.176f,.318f,.659f},{1,1,1}},
+        {{.631f,.957f,1},{.996f,.631f,.953f}}, {{1,.329f,.318f},{1,.992f,.941f}},
+        {{1,.831f,.404f},{.251f,.239f,.278f}}
+    };
+    u16 palette[2];
+    for (int i = 0; i < 2; ++i) {
+        const float* rgb = colors[skin][i];
+        palette[i] = rope.pending >= 0 ? RGB15(31, 31, 31) : RGB15(std::lround(rgb[0] * 31), std::lround(rgb[1] * 31), std::lround(rgb[2] * 31));
+    }
+    int previousx = 0, previousy = 0, previouswide = 0;
+    for (int i = 0; i < size; ++i) {
+        const auto pixel = screen(points[i]);
+        const int x = static_cast<int>(pixel.x), y = static_cast<int>(pixel.y);
+        const int wide = static_cast<int>(screen(points[i] + dx::point{4, 0}).x);
+        if (i) {
+            const u16 color = palette[(i / 3) % 2 == 0];
+            glLine(previousx, previousy, x, y, color);
+            glLine(previouswide, previousy, wide, y, color);
+        }
+        previousx = x; previousy = y; previouswide = wide;
     }
 }
 
 void initialize() {
+    irqSet(IRQ_VCOUNT, transferwindow);
+    SetYtrigger(148);
+    irqEnable(IRQ_VCOUNT);
     videoSetMode(MODE_0_3D);
     videoSetModeSub(MODE_5_2D);
     lcdMainOnBottom();
     vramSetBankA(VRAM_A_TEXTURE_SLOT0);
     vramSetBankB(VRAM_B_TEXTURE_SLOT1);
-    vramSetBankC(VRAM_C_SUB_BG);
-    const int upper = bgInitSub(3, BgType_Bmp16, BgSize_B16_256x256, 0, 0);
-    dmaCopy(logodata, bgGetGfxPtr(upper), 256 * 256 * 2);
+    vramSetBankC(VRAM_C_LCD);
+    vramSetBankH(VRAM_H_SUB_BG);
+    vramSetBankI(VRAM_I_SUB_BG_0x06208000);
+    const int upper = bgInitSub(3, BgType_Bmp8, BgSize_B8_256x256, 0, 0);
+    dmaCopy(logodata, bgGetGfxPtr(upper), 256 * 192);
+    dmaCopy(logopalettedata, BG_PALETTE_SUB, 512);
     // libnds allocates using LCD-bank addresses; preserve D's physical slot.
     vramSetBankD(VRAM_D_TEXTURE_SLOT3);
     vramSetBankE(VRAM_E_TEX_PALETTE);
@@ -94,11 +115,11 @@ static void loadgame(const ui::controller& menu, const dx::simulation& game) {
         int width = 0, height = 0;
         for (int size = source.width; size > 8; size >>= 1) ++width;
         for (int size = source.height; size > 8; size >>= 1) ++height;
-        if (!glTexImage2D(0, 0, GL_RGB32_A3, width, height, 0, TEXGEN_OFF, source.pixels)) {
+        if (!glTexImage2D(0, 0, GL_RGB32_A3, width, height, 0, TEXGEN_OFF, nullptr)) {
             nocashMessage("CTRD DS: sprite texture allocation failed");
             while (true) swiWaitForVBlank();
         }
-        glColorTableEXT(0, 0, 32, 0, 0, reinterpret_cast<const u16*>(source.palette));
+        frontend::stage(textures[index], source.pixels, source.width * source.height, source.palette, 32);
     }
     for (int index = 0; index < art::spritecount; ++index) {
         const art::sprite& source = art::sprites[index];
@@ -113,6 +134,7 @@ static void loadgame(const ui::controller& menu, const dx::simulation& game) {
 }
 
 static void scene(const dx::simulation& game, int frame, const ui::controller& menu, bool, dx::point) {
+    DS_SCOPE(scene);
     if (menu.frontend()) { frontend::draw(menu); return; }
     if (menu.mode == ui::view::results && menu.age >= 32) {
         frontend::drawresult(menu, game);
@@ -172,7 +194,7 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
         glBoxFilled(0, 0, 255, 191, RGB15(31, 31, 31));
     }
     glEnd2D();
-    glFlush(GL_TRANS_MANUALSORT);
+    frontend::present();
 }
 
 static int loaded = -1, transition = 0;

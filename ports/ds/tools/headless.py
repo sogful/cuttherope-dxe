@@ -42,14 +42,23 @@ def main():
     parser.add_argument("--boxes", action="store_true", help="Launch all 150 maps across the first six boxes")
     parser.add_argument("--startup", action="store_true", help="Capture consecutive frames through early level texture paging")
     parser.add_argument("--regressions", action="store_true", help="Exercise outcome input races, flashes, costume voices, carousel and tall backgrounds")
+    parser.add_argument("--profile", action="store_true", help="Read optional profiling build and capture framebuffer changes during stalled main updates")
+    parser.add_argument("--pagingstress", action="store_true", help="Profile-only synthetic heavy completion and captured-frame recovery test")
     parser.add_argument("--first-box", type=int, default=1, choices=range(1,7))
     parser.add_argument("--last-box", type=int, default=6, choices=range(1,7))
     parser.add_argument("--level-only", type=int, choices=range(1,26), help="Limit box checks to one level number")
     parser.add_argument("--costume", type=int, default=0, choices=range(16), help="Equip a costume through the real picker before a test")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
     args = parser.parse_args()
+    if args.pagingstress and not args.profile:
+        parser.error("--pagingstress requires --profile; normal ROMs have no diagnostic controls")
+    if args.profile and args.rom == str(root / "dist/cuttherope.nds"):
+        args.rom = str(root / "dist/cuttherope-profile.nds")
     core = c.CDLL(args.core)
-    directory = root / "build/headless"
+    directory = root / "build/headless" / "profile" if args.profile else root / "build/headless"
+    if args.profile:
+        label = "pagingstress" if args.pagingstress else f"boxes-{args.first_box}-{args.last_box}-{args.level_only or 'all'}" if args.boxes else "regressions" if args.regressions else "flow" if args.flow else "inspect"
+        directory /= label + f"-costume-{args.costume}"
     directory.mkdir(parents=True, exist_ok=True)
     folder = str(directory).encode()
     system = directory / "system"
@@ -167,6 +176,7 @@ def main():
     core.retro_get_memory_size.restype = c.c_size_t
     core.retro_init()
     loaded = False
+    profiler = None
     try:
         path = Path(args.rom)
         rom = c.create_string_buffer(path.read_bytes())
@@ -187,7 +197,7 @@ def main():
             assert max(high for low, high in difference.getextrema()) <= 8, "Upper display does not match the logo within RGB15 precision"
             image.save(directory / (label + ".png"))
             image.crop((0, 192, 256, 384)).save(directory / (label + "-game.png"))
-        symbols = (root / "build/symbols.txt").read_text().splitlines()
+        symbols = (root / ("build/profile/symbols.txt" if args.profile else "build/symbols.txt")).read_text().splitlines()
         address = int(next(line.split()[0] for line in symbols if line.endswith(" telemetry")), 16)
         report = {"core": str(Path(args.core).resolve()), "coreSha256": hashlib.sha256(Path(args.core).read_bytes()).hexdigest(),
                   "romSha256": hashlib.sha256(path.read_bytes()).hexdigest(), "console": "DS", "muted": True, "headless": True, "stages": {}}
@@ -201,6 +211,12 @@ def main():
         if not memory or offset + 216 > size:
             raise RuntimeError(f"Cannot read telemetry: RAM={size} address={address:x}")
         assert size == 4 * 1024 * 1024, f"Expected original DS main RAM, received {size} bytes"
+        if args.profile:
+            import profilecapture
+            def readprofile(name):
+                location = int(next(line.split()[0] for line in symbols if line.endswith(" " + name)), 16)
+                return struct.unpack("<32I", c.string_at(memory + location - 0x02000000, 128))
+            profiler = profilecapture.recorder(directory, report, readprofile, framebuffer)
         report["mainRamBytes"] = size
         references = json.loads((root.parent / "roblox/tests/desktop-trajectories.json").read_text())
         reference = {sample["tick"]: sample for trace in references if trace["level"] == 1 for sample in trace["samples"]}
@@ -226,6 +242,8 @@ def main():
                 lastframe = current["frames"]
                 fault = struct.unpack("<I", c.string_at(faultaddress, 4))[0] if faultaddress else 0
                 assert not fault and stalled < 120, f"ROM main loop stalled/cache fault={fault:#x}: {current}"
+                if profiler:
+                    profiler.observe(current)
                 tick = current["ticks"]
                 if args.boxes and current["view"] == 0 and current["level"] in mapreferences:
                     expected = mapreferences[current["level"]].get(tick)
@@ -287,6 +305,13 @@ def main():
             assert telemetry()["costume"] == args.costume
             key(0)
         assert title["view"] == 5 and title["ticks"] == 0 and title["frames"] > 40, title
+        if args.pagingstress:
+            import pagingstress
+            control = memory + int(next(line.split()[0] for line in symbols if line.endswith(" profilestress")), 16) - 0x02000000
+            def stress(value):
+                c.cast(control, c.POINTER(c.c_uint))[0] = value
+            pagingstress.check(run, tap, key, telemetry, framebuffer, settle, stress, profiler, report, directory)
+            return
         if args.regressions:
             import regressions
             regressions.check(run, tap, key, touch, telemetry, framebuffer, snapshot, settle, report, directory)
@@ -768,9 +793,13 @@ def main():
         print(f"PASS: DS boot, {len(samples)} original trajectories (max error {max(errors):.6f}), "
               f"{report['soakFrames']} soak frames" + ("" if args.inspect else ", candy layers, HUD, swipe, win/score, retry, pause, audio toggles, menu navigation, no input leakage"), flush=True)
     finally:
-        if loaded:
-            core.retro_unload_game()
-        core.retro_deinit()
+        try:
+            if profiler:
+                profiler.save()
+        finally:
+            if loaded:
+                core.retro_unload_game()
+            core.retro_deinit()
 
 
 if __name__ == "__main__":
