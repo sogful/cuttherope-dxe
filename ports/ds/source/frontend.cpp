@@ -4,6 +4,7 @@
 #include "trace.hpp"
 #include "result.hpp"
 #include "geometry.hpp"
+#include "assets.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -16,6 +17,8 @@ namespace frontend {
 static int textures[menuart::pagecount]{};
 static unsigned touched[menuart::pagecount]{}, frame = 0, occupied = 0;
 static unsigned reserved = 0;
+static unsigned repacks = 0;
+extern "C" { volatile unsigned renderfault = 0; }
 alignas(4) static unsigned char unpacked[131072];
 alignas(4) static unsigned char compressed[147456];
 static FILE* catalog;
@@ -59,8 +62,29 @@ static unsigned bytes(int page) {
     return item.width * item.height * (item.direct ? 2 : 1);
 }
 
+static bool visible(const command& item) {
+    if (item.bounds.right <= item.bounds.left || item.bounds.bottom <= item.bounds.top) return false;
+    if (item.id < 0) return true;
+    const auto& source = menuart::sprites[item.id];
+    float left = item.x + std::lround(source.ox * item.scale);
+    float top = item.y + std::lround(source.oy * item.vertical);
+    float width = source.w * item.scale, height = source.h * item.vertical;
+    if (item.angle) {
+        // Conservative all-angle bound avoids extra software trig for every
+        // confetti particle in both the cache and drawing passes.
+        const float radius = std::max(std::abs(source.ox),std::abs(source.ox + source.w)) * item.scale +
+            std::max(std::abs(source.oy),std::abs(source.oy + source.h)) * item.vertical;
+        left = item.x - radius; top = item.y - radius;
+        width = height = radius * 2;
+    }
+    // One-pixel margin covers the fixed-point sprite transform's rounding.
+    return left + width + 1 > std::max(0,item.bounds.left) && left - 1 < std::min(256,item.bounds.right) &&
+        top + height + 1 > std::max(0,item.bounds.top) && top - 1 < std::min(192,item.bounds.bottom);
+}
+
 void reset() {
     glResetTextures();
+    gCurrentTexture = -1;
     std::fill(std::begin(textures), std::end(textures), 0);
     std::fill(std::begin(touched), std::end(touched), 0);
     occupied = 0;
@@ -68,6 +92,19 @@ void reset() {
 }
 
 unsigned texturebytes() { return occupied + reserved; }
+unsigned cacherepacks() { return repacks; }
+unsigned cachefault() { return renderfault; }
+
+// Keep gameplay atlas/background handles alive during results/replay.
+static void repack() {
+    for (int& texture : textures) {
+        if (texture) glDeleteTextures(1, &texture);
+        texture = 0;
+    }
+    occupied = 0;
+    gCurrentTexture = -1;
+    ++repacks;
+}
 
 // libnds temporarily maps texture/palette banks to the CPU when uploading.
 // Doing so during scanout makes the previous 3D frame sample missing VRAM.
@@ -77,18 +114,19 @@ static void textureblank() {
     if (REG_VCOUNT < 192 || REG_VCOUNT > 198) swiWaitForVBlank();
 }
 
-int background(int box) {
+int background(int box, int sections, int top, int texture) {
     FILE* file = std::fopen("nitro:/world.bin", "rb");
-    const bool valid = file && !std::fseek(file, box * sizeof(unpacked), SEEK_SET) && std::fread(unpacked, 1, sizeof(unpacked), file) == sizeof(unpacked);
+    const unsigned offset = art::backgrounds[box][std::clamp(sections, 1, 3) - 1] + top * 512;
+    const bool valid = file && !std::fseek(file, offset, SEEK_SET) && std::fread(unpacked, 1, sizeof(unpacked), file) == sizeof(unpacked);
     if (file) std::fclose(file);
     if (!valid) { nocashMessage("CTRD DS: background read failed"); while (true) swiWaitForVBlank(); }
     textureblank();
-    int texture = 0;
-    glGenTextures(1, &texture);
+    if (!texture) glGenTextures(1, &texture);
     glBindTexture(0, texture);
     if (!glTexImage2D(0, 0, GL_RGBA, TEXTURE_SIZE_256, TEXTURE_SIZE_256, 0, TEXGEN_OFF, unpacked)) {
         nocashMessage("CTRD DS: background allocation failed"); while (true) swiWaitForVBlank();
     }
+    gCurrentTexture = -1;
     return texture;
 }
 
@@ -98,7 +136,7 @@ static void upload(bool repacked = false) {
     bool missing = false;
     unsigned required = 0;
     for (int i = 0; i < count; ++i) {
-        if (commands[i].id < 0) continue;
+        if (commands[i].id < 0 || !visible(commands[i])) continue;
         const int page = menuart::sprites[commands[i].id].page;
         if (!needed[page]) required += bytes(page);
         needed[page] = true;
@@ -106,6 +144,7 @@ static void upload(bool repacked = false) {
         missing = missing || !textures[page];
     }
     if (required + reserved > 384 * 1024) {
+        renderfault = required + reserved;
         nocashMessage("CTRD DS: menu working set exceeds texture VRAM");
         while (true) swiWaitForVBlank();
     }
@@ -146,7 +185,8 @@ static void upload(bool repacked = false) {
             if (!evict()) {
                 // A/B/D are three separate 128 KiB banks. Enough free bytes
                 // need not imply a contiguous allocation after locale changes.
-                if (!repacked && !reserved) { reset(); upload(true); return; }
+                if (!repacked) { repack(); upload(true); return; }
+                renderfault = 0x10000000 | index;
                 nocashMessage("CTRD DS: menu texture allocation failed");
                 while (true) swiWaitForVBlank();
             }
@@ -155,6 +195,8 @@ static void upload(bool repacked = false) {
         if (!page.direct) glColorTableEXT(0, 0, 1 << (8 - page.alphabits), 0, 0, reinterpret_cast<const u16*>(page.palette));
         occupied += bytes(index);
     }
+    // Raw libnds uploads do not update gl2d's binding cache.
+    gCurrentTexture = -1;
 }
 
 static void packs(const ui::controller& menu) {
@@ -169,16 +211,19 @@ static void packs(const ui::controller& menu) {
             static constexpr unsigned char colors[17][3] = {{70,37,0},{39,52,0},{44,45,54},{31,42,84},{69,31,50},{75,33,0},
                 {84,22,0},{0,51,78},{98,0,0},{66,40,0},{0,47,90},{0,58,0},{63,42,0},{89,12,0},{56,45,0},{37,32,104},{55,38,62}};
             const clip hole{std::max(strip.left, center - 16), 96, std::min(strip.right, center + 16), 122};
-            commands[count++] = {-1, 0, 0, 31, GL_FLIP_NONE, 0, 1, hole, static_cast<u16>(RGB15(colors[i][0] >> 3, colors[i][1] >> 3, colors[i][2] >> 3))};
-            add(menuart::pack1, 128, 96, hole);
+            if (hole.right > hole.left) {
+                commands[count++] = {-1, 0, 0, 31, GL_FLIP_NONE, 0, 1, hole, static_cast<u16>(RGB15(colors[i][0] >> 3, colors[i][1] >> 3, colors[i][2] >> 3))};
+                add(menuart::pack1, 128, 96, hole);
+            }
         }
         const int first = count;
         add(menuart::boxes[i], center, 96, strip);
         label(menu, menuart::boxname0 + i, center, 76, strip);
         if (!menu.packopen(i)) {
             add(menuart::pack2, center, 96, strip);
-            label(menu, menuart::required0 + i, center - 4, 111, strip);
-            add(menuart::pack3, center + 12, 113, strip);
+            const int middle = std::lround(96 + 110 * menuart::fit * pixels);
+            label(menu, menuart::required0 + i, center - std::lround(30 * menuart::fit * pixels), middle, strip);
+            add(menuart::pack3, center + std::lround(menuart::lockwidths[menu.locale][i] * .5f * menuart::fit * pixels), middle, strip);
             label(menu, menuart::hint0 + i, center, 143, strip);
         }
         if (i == menuart::boxcount - 1) {
@@ -226,7 +271,12 @@ static void options(const ui::controller& menu) {
 static int animation(int index, float seconds, bool preview = false) {
     for (int limit = 0; limit < 64; ++limit) {
         const auto& item = menuart::animations[index];
-        if (seconds < item.duration || item.followup < 0) return (preview ? item.previewframes : item.frames)[std::min(item.count - 1, static_cast<int>(seconds * item.fps))];
+        if (seconds < item.duration || item.followup < 0) {
+            int frame = static_cast<int>(seconds * item.fps);
+            if (frame >= item.count) frame = item.count - 1;
+            if (frame < 0) frame = 0;
+            return preview ? item.previewframes[frame] : item.frames[frame];
+        }
         if (item.followup == index) seconds = std::fmod(seconds, item.duration);
         else { seconds -= item.duration; index = item.followup; }
     }
@@ -371,18 +421,6 @@ void prepareoverlay(const ui::controller& menu, const dx::simulation& game) {
         }
     }
     if (menu.mode == ui::view::results) { doors(menu.age * .016f / .5f, false, false, menu.pack); results(menu); }
-    if (menu.mode == ui::view::failure) {
-        rect({}, RGB15(2, 1, 0), 24);
-        add(menuart::failuretitle, 128, 32);
-        add(menuart::failurehint, 128, 66);
-        ui::button buttons[8];
-        const int size = menu.buttons(buttons);
-        for (int i = 0; i < size; ++i) {
-            const auto& b = buttons[i];
-            add(menu.pressed == i ? menuart::shortdown : menuart::shortup, b.x, b.y, {}, GL_FLIP_NONE, 1, 0, b.enabled ? 31 : 11);
-            gamelabel(menu, menuart::gameREPLAY + i, b.x, b.y, b.enabled ? 1 : .35f);
-        }
-    }
     if (menu.door) doors(menu.doorframe * .016f / .5f, menu.door == 1, menu.door == 1, menu.pack);
     if (menu.door == 1 && menu.replaypanel) results(menu, true);
     (void)game;
@@ -480,6 +518,10 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         world(menuart::spider0 + frame, rope.spiderpos, 31, rope.spiderangle);
     }
     for (int i = 0; i < 3; ++i) {
+        if (game.stars[i]) {
+            const int frame = static_cast<int>((elapsed - game.collectedat[i]) * .016f / .05f);
+            if (frame >= 0 && frame < 13) world(menuart::starburst0 + frame, game.starpositions[i]);
+        }
         const float timeout = game.definition.timeouts[i];
         if (timeout <= 0 || game.stars[i] || game.expired[i]) continue;
         world(menuart::timedstar20, game.starpositions[i]);
@@ -520,17 +562,20 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         int target = menuart::body0 + elapsed / 3 % 19;
         if (game.mouth) target = menuart::body19 + std::min(8, (game.ticks - game.mouthtick) / 3);
         if (game.state == dx::outcome::won) {
-            const int since = elapsed - game.resulttick;
+            const int since = elapsed - game.resultvisual;
             target = since < 12 ? menuart::body28 + since / 3 : menuart::body32 + (since - 12) / 3 % 9;
         }
-        if (game.state == dx::outcome::lost) target = menuart::bodysad0 + std::min(12, (elapsed - game.resulttick) / 3);
+        if (game.state == dx::outcome::lost) target = menuart::bodysad0 + std::min(12, (elapsed - game.resultvisual) / 3);
         world(target, game.definition.target);
     }
     if (menu.skins[2] > 0) {
         int state = 0, since = elapsed;
+        const auto& states = menuart::costumes[menu.skins[2] - 1];
+        if ((elapsed - game.excitement) * .016f < menuart::animations[states[1]].duration) { state = 1; since = elapsed - game.excitement; }
+        if ((elapsed - game.greeting) * .016f < menuart::animations[states[6]].duration) { state = 6; since = elapsed - game.greeting; }
         if (game.mouth) { state = 2; since = game.ticks - game.mouthtick; }
-        if (game.state == dx::outcome::won) { state = 4; since = elapsed - game.resulttick; }
-        if (game.state == dx::outcome::lost) { state = 3; since = elapsed - game.resulttick; }
+        if (game.state == dx::outcome::won) { state = 4; since = elapsed - game.resultvisual; }
+        if (game.state == dx::outcome::lost) { state = 3; since = elapsed - game.resultvisual; }
         add(animation(menuart::costumes[menu.skins[2] - 1][state], since * .016f),
             wx(game.definition.target.x), wy(game.definition.target.y));
     }
@@ -588,7 +633,7 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         if (alpha && size > .01f) add(menuart::particle0 + item.quad, px(item.position.x), py(item.position.y), {}, GL_FLIP_NONE, size,
             static_cast<int>(item.rotation * 32768 / 360), alpha);
     }
-    upload();
+    // prepareoverlay adds the HUD/flaps before one combined cache update.
 }
 
 struct tint { float r, g, b, a = 1; };
@@ -705,6 +750,7 @@ void render(bool overlay, bool ground) {
     const int last = ground ? groundend : !overlay && overlaystart >= 0 ? overlaystart : count;
     for (int i = first; i < last; ++i) {
         const command& item = commands[i];
+        if (!visible(item)) continue;
         if (item.id < 0) {
             glPolyFmt(POLY_ALPHA(item.alpha) | POLY_CULL_NONE | POLY_ID(60));
             glBoxFilled(item.bounds.left, item.bounds.top, item.bounds.right - 1, item.bounds.bottom - 1, item.color);

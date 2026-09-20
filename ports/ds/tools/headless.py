@@ -41,9 +41,11 @@ def main():
     parser.add_argument("--flow", action="store_true", help="Capture box transitions and the complete animated result sequence")
     parser.add_argument("--boxes", action="store_true", help="Launch all 150 maps across the first six boxes")
     parser.add_argument("--startup", action="store_true", help="Capture consecutive frames through early level texture paging")
+    parser.add_argument("--regressions", action="store_true", help="Exercise outcome input races, flashes, costume voices, carousel and tall backgrounds")
     parser.add_argument("--first-box", type=int, default=1, choices=range(1,7))
     parser.add_argument("--last-box", type=int, default=6, choices=range(1,7))
     parser.add_argument("--level-only", type=int, choices=range(1,26), help="Limit box checks to one level number")
+    parser.add_argument("--costume", type=int, default=0, choices=range(16), help="Equip a costume through the real picker before a test")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
     args = parser.parse_args()
     core = c.CDLL(args.core)
@@ -192,7 +194,7 @@ def main():
         keys = ["magic", "version", "frames", "ticks", "state", "stars", "micros", "peak", "late", "vblanks", "x", "y", "cuts", "touches", "resets", "paused",
                 "view", "effects", "music", "score", "bestscore", "beststars", "locale", "pack", "clickcut", "scroll", "texturebytes",
                 "unlocked", "skintab", "candy", "rope", "costume", "trace", "skinoffset", "transition", "storage", "door", "doorframe", "menuage", "improved",
-                "level", "visuals", "bubble", "pumps", "ropes", "failure", "intro", "cameray", "hooks", "split", "merges", "teleports", "bounces", "rail"]
+                "level", "visuals", "bubble", "pumps", "ropes", "failure", "intro", "cameray", "hooks", "split", "merges", "teleports", "bounces", "rail", "flash", "flashframe", "voices", "voice", "repacks", "renderfault"]
         memory = core.retro_get_memory_data(2)
         size = core.retro_get_memory_size(2)
         offset = address - 0x02000000
@@ -207,8 +209,14 @@ def main():
         maperrors = {}
         referenceattempt = 1
         lastframe, stalled = -1, 0
+        faultsymbol = next((line for line in symbols if line.endswith(" renderfault")), None)
+        faultaddress = memory + int(faultsymbol.split()[0], 16) - 0x02000000 if faultsymbol else None
         def telemetry():
-            return dict(zip(keys, struct.unpack("<10I2f42I", c.string_at(memory + offset, 216))))
+            version = struct.unpack("<I", c.string_at(memory + offset + 4, 4))[0]
+            fields = 48 if version >= 9 else 46 if version >= 8 else 42
+            result = dict(zip(keys, struct.unpack(f"<10I2f{fields}I", c.string_at(memory + offset, 48 + fields * 4))))
+            for key in keys: result.setdefault(key, 0)
+            return result
         def run(count):
             nonlocal lastframe, stalled
             for _ in range(count):
@@ -216,7 +224,8 @@ def main():
                 current = telemetry()
                 stalled = stalled + 1 if current["frames"] == lastframe else 0
                 lastframe = current["frames"]
-                assert stalled < 120, "ROM main loop stalled (check emulator diagnostic output)"
+                fault = struct.unpack("<I", c.string_at(faultaddress, 4))[0] if faultaddress else 0
+                assert not fault and stalled < 120, f"ROM main loop stalled/cache fault={fault:#x}: {current}"
                 tick = current["ticks"]
                 if args.boxes and current["view"] == 0 and current["level"] in mapreferences:
                     expected = mapreferences[current["level"]].get(tick)
@@ -252,13 +261,36 @@ def main():
         def settle():
             for _ in range(360):
                 current = telemetry()
-                if not current["door"] and not current["transition"]:
+                if not current["door"] and not current["transition"] and not current["flash"]:
                     return
                 run(1)
             raise AssertionError("Transition failed to finish: " + repr(telemetry()))
-        run(60)
+        if args.regressions or args.startup:
+            from PIL import ImageStat
+            boot = []
+            for _ in range(60):
+                run(1)
+                boot.append(framebuffer().crop((0,192,256,384)))
+            boot[0].save(directory / 'boot-reveal.gif', save_all=True, append_images=boot[1:], duration=17, loop=0)
+            brightness = [sum(ImageStat.Stat(item).mean)/3 for item in boot]
+            report['bootBrightness'] = brightness
+            # The emulator powers on with a white framebuffer before ARM9 has
+            # entered main. Inspect our black-loading -> title handoff only.
+            firstblack = next(i for i,value in enumerate(brightness) if value < 1)
+            assert all(value < 1 or value > 80 for value in brightness[firstblack:]), ('Unexpected boot fade', brightness)
+        else:
+            run(60)
         title = snapshot("title")
+        if args.costume:
+            tap(147,91); tap(153,16)
+            for _ in range(args.costume): key(7)
+            assert telemetry()["costume"] == args.costume
+            key(0)
         assert title["view"] == 5 and title["ticks"] == 0 and title["frames"] > 40, title
+        if args.regressions:
+            import regressions
+            regressions.check(run, tap, key, touch, telemetry, framebuffer, snapshot, settle, report, directory)
+            return
         if args.boxes:
             import xml.etree.ElementTree as xml
             tap(128,170)
@@ -308,6 +340,8 @@ def main():
                             run(1)
                         result = snapshot("magic-hat-win")
                         assert result["teleports"] == 1 and result["state"] == 1 and result["stars"] == 3, result
+                        run(420)
+                        snapshot("magic-result-finished")
                     if box == 4 and level == 0:
                         while telemetry()["ticks"] < 120: run(1)
                         touch(97,35); touch(164,35); touch(164,35,False)
@@ -322,6 +356,8 @@ def main():
                             run(1)
                         result = snapshot("valentine-win")
                         assert result["state"] == 1 and result["stars"] == 3, result
+                        run(420)
+                        snapshot("valentine-result-finished")
                     if telemetry()["view"] == 0: key(3)
                     current = telemetry()["view"]
                     if current == 1: tap(128,96)
@@ -522,7 +558,7 @@ def main():
         key(8)
         if args.startup:
             sequence, clocks, strips = [], [], []
-            for _ in range(240):
+            for _ in range(600):
                 run(1)
                 state = telemetry()
                 screen = framebuffer().crop((0,192,256,384))
@@ -539,7 +575,7 @@ def main():
             report.update(passed=worst[1] < 1,startupFrames=len(sequence),backgroundChange=worst[1],clocks=clocks,seconds=time.monotonic()-start)
             (directory / "startupreport.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
             assert worst[1] < 1, ("Texture upload corrupted the unchanged background",worst)
-            print("PASS: 240 consecutive startup frames; no background flash during texture paging")
+            print("PASS: 600 consecutive startup frames; no background flash during texture paging")
             return
         run(180)
         idle = snapshot("idle")
@@ -564,13 +600,17 @@ def main():
             assert telemetry()["view"] == 2 and telemetry()["stars"] == 3
             assert not telemetry()["improved"], "First completion must not show an improvement stamp"
             resultvisuals = telemetry()["visuals"]
-            for i in range(365):
+            resultframes = telemetry()["frames"]
+            for i in range(1800):
                 run(1)
                 if i % 3 == 0:
                     sequence.append(framebuffer().crop((0, 192, 256, 384)))
                 if i in (0, 15, 31, 55, 94, 135, 181, 225, 270, 360):
                     capture("result-phase-" + str(i))
-            assert telemetry()["visuals"] > resultvisuals + 300, "Result transition froze world animation"
+                if telemetry()["frames"] >= resultframes + 365:
+                    break
+            elapsedframes = telemetry()["frames"] - resultframes
+            assert elapsedframes >= 365 and telemetry()["visuals"] - resultvisuals == elapsedframes, ("Result transition froze world animation", telemetry())
             sequence[0].save(directory / "result-sequence.gif", save_all=True, append_images=sequence[1:], duration=48, loop=0)
             snapshot("result-complete")
             replay = []

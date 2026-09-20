@@ -44,6 +44,8 @@ def build(menu):
         quad("merge" + str(index), "candies/obj_candy_fx", 11 + index, factor=1, restore=True, group="merge")
     for index in range(10):
         quad("bouncer" + str(index), "obj_bouncer", index, factor=1, group="bouncer" + str(index // 5))
+    for index in range(13):
+        quad("starburst" + str(index), "obj_star_disappear", index, factor=1, restore=True, group="starburst" + str(index // 5))
     # Rasterize HorizontallyTiledImage at source resolution, then downsample once.
     # This retains the native 44-pixel repeat and clipped final tile at DS scale.
     lengths = set()

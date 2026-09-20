@@ -2,6 +2,7 @@
 #include "simulation.hpp"
 #include "scroller.hpp"
 #include "progress.hpp"
+#include <algorithm>
 
 namespace ui {
 enum class view { playing, paused, results, failure, levels, home, packs, options, languages, credits, resetmenu, skins };
@@ -38,11 +39,13 @@ public:
     float skinvelocity = 0;
     bool candyhint = true;
     int door = 0, doorframe = 0, elapsed = 0, resultstars = 0;
+    int flash = 0, flashframe = 0;
     bool improved = false;
     bool replaypanel = false;
     int resulttime = 0;
     view destination = view::levels;
-    bool blocked() const { return door != 0 || (mode == view::results && age < 32); }
+    bool blocked() const { return flash != 0 || door != 0 || (mode == view::results && age < 32); }
+    float white() const { return flash == 1 ? std::min(1.0f, flashframe * .016f / .15f) : flash == 2 ? std::max(0.0f, 1 - flashframe * .016f / .15f) : 0; }
     bool unlockall() const { return saves.unlocked; }
     int levelid() const { return pack * 25 + level; }
     int totalstars(int box = -1) const;

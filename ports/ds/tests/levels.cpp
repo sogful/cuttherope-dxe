@@ -104,6 +104,9 @@ int main() {
     empty.spikecount = 1; empty.spikes[0] = {{1280,720},{},0,1};
     game.reset(empty); game.tick();
     assert(game.state == dx::outcome::lost && game.failreason == 2);
+    game.reset(empty); game.tick(true);
+    assert(game.state == dx::outcome::playing && game.failreason == 0);
+    game.tick(); assert(game.state == dx::outcome::lost);
     empty.spikecount = 0;
     empty.hookcount = 1; empty.hooks[0] = {{1280,500},300,180,false};
     game.reset(empty);

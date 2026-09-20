@@ -5,13 +5,14 @@
 #include "level.hpp"
 #include "audio.hpp"
 #include "frontend.hpp"
+#include "menuassets.hpp"
 #include "trace.hpp"
 #include <fat.h>
 #include <sys/stat.h>
 #include <cstdio>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 7;
+    std::uint32_t magic = 0x44585250, version = 9;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -22,6 +23,8 @@ struct diagnostics {
     std::uint32_t door = 0, doorframe = 0, menuage = 0, improved = 0;
     std::uint32_t level = 0, visuals = 0, bubble = 0, pumps = 0, ropes = 0, failure = 0, intro = 0, cameray = 0, hooks = 0;
     std::uint32_t split = 0, merges = 0, teleports = 0, bounces = 0, rail = 0;
+    std::uint32_t flash = 0, flashframe = 0, voices = 0, voice = 0;
+    std::uint32_t repacks = 0, renderfault = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -51,7 +54,18 @@ int main() {
     int shownbubbles = 0, shownpops = 0, shownpumps = 0, shownropes = 0;
     int shownbounces = 0, shownteleports = 0, shownmerges = 0;
     bool shownmouth = false, shownresult = false;
+    bool greeting = false;
     unsigned total = 0, peak = 0, late = 0;
+    auto resetgame = [&]() {
+        game.reset(dx::loadlevel(menu.levelid()));
+        frame = shownstars = 0;
+        shownmouth = shownresult = held = objecttouch = false;
+        shownbubbles = shownpops = shownpumps = shownropes = 0;
+        shownbounces = shownteleports = shownmerges = 0;
+        telemetry.resets = telemetry.resets + 1;
+        trace::trail.reset();
+        greeting = menu.door == 1 && !menu.replaypanel;
+    };
     nocashMessage("CTRD DS: ready");
     while (true) {
         swiWaitForVBlank();
@@ -73,15 +87,8 @@ int main() {
         const ui::view oldview = menu.mode;
         if (display::busy()) menu.suspend({touchx, touchy, 0, touching});
         else menu.update(game, {touchx, touchy, commands, touching});
-        if (menu.reset) {
-            game.reset(dx::loadlevel(menu.levelid()));
-            frame = shownstars = 0;
-            shownmouth = shownresult = held = false;
-            shownbubbles = shownpops = shownpumps = shownropes = 0;
-            shownbounces = shownteleports = shownmerges = 0;
-            telemetry.resets = telemetry.resets + 1;
-            trace::trail.reset();
-        }
+        const bool resetbefore = menu.reset;
+        if (resetbefore) resetgame();
         audio::update(menu);
         if (menu.mode == ui::view::playing && !display::busy()) {
             trace::trail.update(menu.gameTouch, pointer, menu.skins[3]);
@@ -94,7 +101,7 @@ int main() {
             if (menu.gameTouch && !held) telemetry.touches = telemetry.touches + 1;
             previous = pointer;
             held = menu.gameTouch;
-            game.tick();
+            game.tick(menu.flash == 1);
         } else {
             held = false;
             game.drag(pointer, false);
@@ -114,23 +121,40 @@ int main() {
             if (game.count == 2) audio::effect(star2data, star2bytes);
             if (game.count == 3) audio::effect(star3data, star3bytes);
             shownstars = game.count;
+            if (menu.skins[2] > 0 && !game.mouth && game.state == dx::outcome::playing &&
+                (game.visuals - game.excitement) * .016f >= menuart::animations[menuart::costumes[menu.skins[2] - 1][1]].duration) {
+                game.excitement = game.visuals;
+                audio::speak(menu.skins[2], audio::voice::excited);
+            }
+        }
+        if (greeting && game.ticks * .016f >= 1.3f) {
+            if (!game.mouth && game.state == dx::outcome::playing && menu.skins[2] > 0) {
+                game.greeting = game.visuals;
+                audio::speak(menu.skins[2], audio::voice::greeting);
+            }
+            greeting = false;
         }
         if (game.mouth && !shownmouth) {
-            audio::effect(monsteropendata, monsteropenbytes);
+            audio::speak(menu.skins[2], audio::voice::open);
             shownmouth = true;
         }
-        if (!game.mouth) shownmouth = false;
+        if (!game.mouth && shownmouth) {
+            if (game.state == dx::outcome::playing) audio::speak(menu.skins[2], audio::voice::close);
+            shownmouth = false;
+        }
         if (game.state == dx::outcome::won && !shownresult) {
-            audio::effect(monsterchewingdata, monsterchewingbytes);
+            audio::speak(menu.skins[2], audio::voice::chewing);
             shownresult = true;
             nocashMessage("CTRD DS: level won");
         }
         if (game.state == dx::outcome::lost && !shownresult) {
+            audio::speak(menu.skins[2], audio::voice::sad);
             if (game.failreason == 2) audio::effect(candybreakdata, candybreakbytes);
             if (game.failreason == 3) audio::effect(spiderwindata, spiderwinbytes);
             shownresult = true;
         }
         if (!display::busy()) menu.advance(game);
+        if (menu.reset && !resetbefore) { resetgame(); audio::update(menu); }
         if (menu.mode == ui::view::results && oldview != ui::view::results) audio::effect(windata, winbytes);
         if (menu.clicked || menu.mode != oldview) menu.persist();
         display::draw(game, frame, menu, menu.gameTouch, pointer);
@@ -159,6 +183,9 @@ int main() {
         telemetry.intro = game.introduction; telemetry.cameray = std::lround(game.cameray); telemetry.hooks = game.definition.hookcount;
         telemetry.split = game.split; telemetry.merges = game.mergeevents; telemetry.teleports = game.teleportevents;
         telemetry.bounces = game.bounceevents; telemetry.rail = game.draghook + 1;
+        telemetry.flash = menu.flash; telemetry.flashframe = menu.flashframe;
+        telemetry.voices = audio::voices(); telemetry.voice = audio::lastvoice();
+        telemetry.repacks = frontend::cacherepacks(); telemetry.renderfault = frontend::cachefault();
         telemetry.view = static_cast<unsigned>(menu.mode);
         telemetry.effects = menu.effects;
         telemetry.music = menu.music;

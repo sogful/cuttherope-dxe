@@ -85,7 +85,7 @@ def build(menu):
         states = config["timelines"]
         preview = states.get("IdleVariationThree") if slot == 1 else states.get("Excited", states["IdleLoop"])
         active = next(iter(config["idleVariants"]), states["IdleLoop"])
-        chosen = [states["IdleLoop"], states.get("Excited", states["IdleLoop"]), states["MouthOpening"], states["Sad"], states["Chewing"], active]
+        chosen = [states["IdleLoop"], states.get("Excited", states["IdleLoop"]), states["MouthOpening"], states["Sad"], states["Chewing"], active, states.get("Greeting", states["IdleLoop"])]
         required = set(chosen + [preview])
         pending = list(required)
         for timeline in pending:
@@ -106,7 +106,9 @@ def build(menu):
                 digest = hashlib.sha256(path.read_bytes()).hexdigest()
                 relative = str(path.relative_to(root.parents[1]))
                 info["sources"][relative] = digest
-                add(name, image, "costume" + str(slot) + "x" + str(timeline) + "x" + str(frame // 12),
+                # Four-frame gameplay pages keep a single animated character
+                # from pinning 64 KiB during world + flap + result compositing.
+                add(name, image, "costume" + str(slot) + "x" + str(timeline) + "x" + str(frame // 4),
                     source={"baked": relative, "sha256": digest, "scale": scale})
                 frames.append(name)
                 previewname = "slot" + name
@@ -165,7 +167,7 @@ def header(info, ids, fit, scale):
     lines += ["struct animation { const int* frames; const int* previewframes; int count; float fps, duration; int followup; };", "inline constexpr animation animations[] = {"]
     for index, animation in enumerate(info["animations"]):
         lines.append(f"{{animation{index},slotanimation{index},{len(animation['frames'])},{float(animation['fps'])}f,{animation['duration']}f,{animation['followup']}}},")
-    lines += ["};", "inline constexpr int costumes[15][6] = {"]
+    lines += ["};", "inline constexpr int costumes[15][7] = {"]
     lines += ["{" + ",".join(map(str, values)) + "}," for values in info["costumes"]]
     lines += ["};"]
     fields = list(info["presets"][0])

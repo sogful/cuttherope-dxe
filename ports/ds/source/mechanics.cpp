@@ -58,7 +58,7 @@ void simulation::animate() {
         time += std::clamp(-time, -delta, delta);
         if (time == 0) { electric[i] = !electric[i]; time = electric[i] ? definition.spikes[i].on : definition.spikes[i].off; }
     }
-    for (int i = 0; i < 3; ++i) starpositions[i] = definition.stars[i] + definition.starmotions[i].at(visuals * delta);
+    for (int i = 0; i < 3; ++i) if (!stars[i] && !expired[i]) starpositions[i] = definition.stars[i] + definition.starmotions[i].at(visuals * delta);
 }
 void simulation::camera() {
     const float target = std::clamp(candy().pos.y - 720, 0.0f, std::max(0.0f, definition.height - 1440));
@@ -112,10 +112,11 @@ bool simulation::interact(point position) {
     return false;
 }
 void simulation::fail(int reason) {
-    if (state != outcome::playing) return;
+    if (suppressoutcome || state != outcome::playing) return;
     state = outcome::lost;
     failreason = reason;
     resulttick = ticks;
+    resultvisual = visuals;
     for (int part = 0; part < activecount(); ++part) {
         const int id = activeid(part);
         bodies[id].pin = bodies[id].pos; bodies[id].pinned = true; burst(id);

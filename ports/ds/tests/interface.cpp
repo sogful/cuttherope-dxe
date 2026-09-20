@@ -68,7 +68,7 @@ int main() {
     game.resulttick = 500;
     game.count = 3;
     game.stars = {true, true, true};
-    for (int i = 0; i < 59; ++i) menu.advance(game);
+    for (int i = 0; i < 124; ++i) menu.advance(game);
     assert(menu.mode == ui::view::playing);
     menu.advance(game);
     assert(menu.mode == ui::view::results && menu.score == 5200 && menu.bestscore == 5200 && menu.beststars == 3);
@@ -87,9 +87,19 @@ int main() {
     settle();
     game.reset(dx::firstlevel);
     game.state = dx::outcome::lost;
-    for (int i = 0; i < 60; ++i) menu.advance(game);
-    assert(menu.mode == ui::view::failure && menu.bestscore == 5200);
+    menu.update(game, {});
+    for (int i = 0; i < 62; ++i) menu.advance(game);
+    assert(menu.mode == ui::view::playing && !menu.flash && !menu.reset);
+    menu.advance(game);
+    assert(menu.flash == 1 && menu.bestscore == 5200 && !menu.reset);
+    for (int i = 0; i < 9; ++i) { menu.update(game, {}); menu.advance(game); assert(!menu.reset); }
+    menu.advance(game);
+    assert(menu.reset && menu.flash == 2 && menu.white() == 1);
+    game.reset(dx::firstlevel);
+    settle();
+    assert(menu.mode == ui::view::playing && menu.white() == 0);
     key(ui::cancel);
+    tap(128, 96);
     settle();
     assert(menu.mode == ui::view::levels);
     key(ui::cancel);
@@ -162,5 +172,25 @@ int main() {
         assert(state.score >= previous && state.score <= 5200 && state.alpha >= 0 && state.alpha <= 1);
         previous = state.score;
     }
-    std::puts("PASS: UI capture/cancel, pause/resume, audio, frontend navigation, localization, reset confirmation, credits drag, DX pack scrolling, win/loss, scoring");
+    // Exercise a press/release across every win-delay/result-opening boundary.
+    for (int age = 0; age < 160; ++age) for (int control = 0; control < 2; ++control) {
+        ui::controller race;
+        race.mode = ui::view::playing;
+        game.state = dx::outcome::won;
+        for (int i = 0; i < age; ++i) race.advance(game);
+        const int x = control ? menuart::hudpositions[0][0] : menuart::hudpositions[0][2];
+        race.update(game, {x, 8, 0, true});
+        race.advance(game);
+        race.update(game, {x, 8, 0, false});
+        if (race.mode == ui::view::paused) race.update(game, {0,0,ui::start,false});
+        int resets = 0;
+        for (int i = 0; i < 240; ++i) {
+            race.update(game, {});
+            race.advance(game);
+            if (race.reset) { ++resets; game.reset(dx::firstlevel); }
+        }
+        assert(!race.blocked() && resets <= 1);
+        assert(race.mode == ui::view::results || (race.mode == ui::view::playing && game.state == dx::outcome::playing));
+    }
+    std::puts("PASS: UI capture/cancel, pause/resume, audio, frontend, localization, persistence, DX scrolling, two-second win, delayed white retry, 320 transition-input boundaries, scoring");
 }

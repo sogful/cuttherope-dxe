@@ -414,6 +414,8 @@ def main():
         fields += [str(keys.index(item["label"]) if item["label"] else -1), str(item["argument"])]
         header.append('{' + ','.join(fields) + '},')
     header += ['};', f'inline constexpr float fit = {fit:.8f}f;', f'inline constexpr float mainfit = {mainfit:.8f}f;']
+    lockwidths = [[int(math.ceil(sum(font(code)[0].getlength(c) for c in str(config["unlockStars"]))) * .7) for config in configs] for code in codes]
+    header += ['inline constexpr int lockwidths[12][17] = {'] + ['{' + ','.join(map(str,row)) + '},' for row in lockwidths] + ['};']
     header += skins.header(skininfo, ids, fit, scale)
     header += gameui.header(gameinfo, ids)
     header += worldart.header(rails, ids)
@@ -422,7 +424,7 @@ def main():
     (output / "menuassets.s").write_text('\n'.join(assembly) + '\n', encoding="utf-8")
     sources.update(assets.sources)
     manifest = dict(viewport=[256, 192], logical=[1920, 1440], design=[2560, 1440], fit=fit, mainfit=mainfit,
-                    controls=controls, locales=codes, creditheights=creditheights,
+                    controls=controls, locales=codes, creditheights=creditheights, lockwidths=lockwidths,
                     pages=[{key: value for key, value in page.items() if key != "image"} for page in pages],
                     sprites=[{key: value for key, value in record.items() if key != "image"} for record in records],
                     sources={str(path.relative_to(content)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)})

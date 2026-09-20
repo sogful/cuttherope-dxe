@@ -152,19 +152,8 @@ def main():
     pages = atlases()
 
     (output / "nitro").mkdir(exist_ok=True)
-    backgrounds = bytearray()
-    for box in range(1, 7):
-        path = images / f"backgrounds/bgr_{box:02}_p1.png"
-        sources.add(path)
-        background = Image.open(path).convert("RGB")
-        width = round(background.height * 256 / 192)
-        left = (background.width - width) // 2
-        landscape = background.crop((left, 0, left + width, background.height)).resize((256, 192), Image.Resampling.LANCZOS)
-        backdrop = Image.new("RGB", (256, 256))
-        backdrop.paste(landscape, (0, 0))
-        backgrounds.extend(colors.direct(backdrop))
-        backdrop.save(output / ("background.png" if box == 1 else f"background{box}.png"))
-    (output / "nitro/world.bin").write_bytes(backgrounds)
+    import backgrounds
+    backgroundheader = backgrounds.build(content, output, sources)
 
     logopath = root / "assets/logods.png"
     logo = ImageOps.contain(Image.open(logopath).convert("RGBA"), (256, 192), Image.Resampling.LANCZOS)
@@ -173,7 +162,7 @@ def main():
     (output / "logo.bin").write_bytes(rgb15(upper))
     upper.crop((0, 0, 256, 192)).save(output / "logo.png")
 
-    sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "monster_open", "monster_chewing", "win", "tap",
+    sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "win", "tap",
            "bubble", "bubble_break", "pump_1", "rope_get", "spider_activate", "spider_fall", "spider_win", "candy_break",
            "bouncer", "teleport", "candy_link", "electric"]
     audio = []
@@ -192,6 +181,8 @@ def main():
         stem = name.replace("_", "")
         (output / (stem + ".bin")).write_bytes(data)
         audio.append((stem, len(data)))
+    import voices
+    voiceheader = voices.build(content, output, sources)
 
     import levels
     levels.build(content, output, sources)
@@ -207,7 +198,7 @@ def main():
     header += [record["name"] + "," for record in records]
     header += ["spritecount };", "inline constexpr sprite sprites[] = {"]
     header += ["{" + ",".join(str(record.get(key, 0)) for key in ("x", "y", "w", "h", "ox", "oy", "advance", "page")) + "}," for record in records]
-    header += ["};", "}"]
+    header += ["};"] + backgroundheader + voiceheader + ["}"]
     header += [f"inline constexpr int {name}bytes = {size};" for name, size in audio]
     (output / "assets.hpp").write_text("\n".join(header) + "\n", encoding="utf-8")
     assembly = ['.section .rodata', '.balign 4']

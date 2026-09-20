@@ -121,6 +121,13 @@ void controller::activate(action command, int argument) {
     case action::pause: enter(view::paused); break;
     case action::resume: enter(view::playing); break;
     case action::restart:
+        if (mode != view::results) {
+            flash = 1; flashframe = resultage = 0;
+            replaypanel = false;
+            enter(view::playing);
+            break;
+        }
+        [[fallthrough]];
     case action::play:
     case action::next:
         if (command == action::next) {
@@ -134,6 +141,7 @@ void controller::activate(action command, int argument) {
         doorframe = 0;
         reset = true;
         resultage = 0;
+        flash = flashframe = 0;
         if (!replaypanel) score = 0;
         for (int& value : starage) value = -1;
         enter(view::playing);
@@ -190,7 +198,8 @@ void controller::update(const dx::simulation& game, input current) {
     if (frontend()) { frontinput(current); return; }
     button list[32];
     const int count = buttons(list);
-    const bool gameplay = mode == view::playing && game.state == dx::outcome::playing;
+    const bool ingame = mode == view::playing;
+    const bool gameplay = ingame && game.state == dx::outcome::playing;
     if (current.touch && !held) {
         armed = -1;
         captured = !gameplay;
@@ -210,20 +219,20 @@ void controller::update(const dx::simulation& game, input current) {
     if (!current.touch && !held) captured = false;
     held = current.touch;
     if (current.keys & start) {
-        if (gameplay) activate(action::pause);
+        if (ingame) activate(action::pause);
         else if (mode == view::paused) activate(action::resume);
     } else if (current.keys & cancel) {
         if (mode == view::paused) activate(action::resume);
         else if (mode == view::levels) activate(action::back);
         else if (mode == view::results || mode == view::failure) activate(action::levels);
-        else if (gameplay) activate(action::pause);
+        else if (ingame) activate(action::pause);
     } else if (current.keys & (previous | following)) {
         if (mode != view::playing) {
             const int direction = current.keys & previous ? -1 : 1;
             do { focus = (focus + direction + count) % count; } while (!list[focus].enabled);
         }
     } else if (current.keys & accept) {
-        if (gameplay) activate(action::restart);
+        if (ingame) activate(action::restart);
         else if (mode != view::playing) activate(list[focus].id);
     }
     gameTouch = current.touch && !captured && mode == view::playing && !reset && game.state == dx::outcome::playing;
@@ -310,6 +319,16 @@ void controller::frontinput(input current) {
 }
 
 void controller::advance(const dx::simulation& game) {
+    if (flash) {
+        if (++flashframe * .016f >= .15f) {
+            if (flash == 1) {
+                flash = 2; flashframe = 0; reset = true;
+                resultage = age = score = 0;
+                for (int& value : starage) value = -1;
+            } else { flash = flashframe = 0; }
+        }
+        return;
+    }
     if (door) {
         if (++doorframe >= 32) { const int previous = door; door = 0; if (previous == 2) enter(destination); }
         return;
@@ -333,7 +352,8 @@ void controller::advance(const dx::simulation& game) {
         if (game.stars[i]) starage[i] = std::min(starage[i] + 1, 30);
     }
     if (game.state == dx::outcome::playing) return;
-    if (++resultage < 60) return;
+    if (++resultage < (game.state == dx::outcome::won ? 125 : 63)) return;
+    if (game.state == dx::outcome::lost) { activate(action::restart); return; }
     score = points(game.count, game.resulttick);
     elapsed = game.resulttick;
     resultstars = game.count;

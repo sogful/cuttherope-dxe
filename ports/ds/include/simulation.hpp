@@ -70,7 +70,7 @@ enum class outcome { playing, won, lost };
 class simulation {
 public:
     void reset(const level& data);
-    void tick();
+    void tick(bool suppressoutcome = false);
     bool swipe(point start, point end);
     bool tap(point position);
     bool sever(int index, int segment);
@@ -89,6 +89,7 @@ public:
     std::array<rope, 8> ropes{};
     std::array<bool, 3> stars{};
     std::array<int, 3> collectedat{};
+    int excitement = -1000, greeting = -1000;
     std::array<point, 3> starpositions{};
     std::array<bool, 3> expired{};
     std::array<bool, 32> bubblesused{};
@@ -98,7 +99,7 @@ public:
     point popposition{};
     float cameray = 0, cameraspeed = 20, cameradistance = 0;
     bool introduction = false;
-    int bodycount = 0, ticks = 0, count = 0, resulttick = 0;
+    int bodycount = 0, ticks = 0, count = 0, resulttick = 0, resultvisual = 0;
     bool mouth = false;
     int mouthtick = 0;
     outcome state = outcome::playing;
@@ -124,6 +125,7 @@ private:
     void hazards();
     void spiders();
     void fail(int reason);
+    bool suppressoutcome = false;
     void burst(int id = 0);
     void merge(bool touching);
     void transports();

@@ -20,6 +20,7 @@ void simulation::reset(const level& data) {
     ropes = {};
     stars = {};
     collectedat = {};
+    excitement = greeting = -1000;
     expired = {};
     bubblesused = {};
     pumpages.fill(100);
@@ -33,7 +34,8 @@ void simulation::reset(const level& data) {
     bubbleevents = pumpevents = ropeevents = failreason = visuals = pops = 0;
     popage = 100;
     starpositions = data.stars;
-    bodycount = ticks = count = resulttick = mouthtick = 0;
+    bodycount = ticks = count = resulttick = resultvisual = mouthtick = 0;
+    suppressoutcome = false;
     mouth = false;
     state = outcome::playing;
     add(data.candy, 1, false);
@@ -146,7 +148,8 @@ void simulation::ropephysics() {
     }
 }
 
-void simulation::tick() {
+void simulation::tick(bool suppress) {
+    suppressoutcome = suppress;
     camera();
     if (introduction) return;
     animate();
@@ -184,7 +187,7 @@ void simulation::tick() {
             const point difference = bodies[activeid(part)].pos + (split ? point{-1,14} : point{}) - starpositions[index];
             if (!stars[index] && !expired[index] && std::abs(difference.x) < (split ? 98 : 97) && std::abs(difference.y) < (split ? 89 : 93)) {
                 stars[index] = true;
-                collectedat[index] = ticks;
+                collectedat[index] = visuals;
                 ++count;
             }
         }
@@ -211,9 +214,10 @@ void simulation::tick() {
         const int id = activeid(part);
         if (bubblefor(id) >= 0) bodies[id].pos = bodies[id].pos + (bodies[id].velocity * (-1.0f / 14) + point{0, -40}) * delta;
     }
-    if (!split && !hidden() && mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
+    if (!suppressoutcome && !split && !hidden() && mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
         state = outcome::won;
         resulttick = ticks;
+        resultvisual = visuals;
         bodies[0].pin = bodies[0].pos;
         bodies[0].pinned = true;
         if (bubble >= 0) burst();
