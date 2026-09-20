@@ -190,7 +190,8 @@ def pack():
         elif group == "pauseplate":
             width, height, positions = 256, max(8, 1 << math.ceil(math.log2(items[0]["image"].height))), [(0, 0)]
         else:
-            layouts = [result for width in (32, 64, 128, 256) if (result := assets.layout(items, width))]
+            widths = (32,64,128,256,512) if group.startswith("rails") else (32,64,128,256)
+            layouts = [result for width in widths if (result := assets.layout(items, width))]
             assert layouts, (group, [(r["name"], r["image"].size) for r in items])
             _, width, height, positions = min(layouts)
         assert width * height <= 131072, (group, width, height)

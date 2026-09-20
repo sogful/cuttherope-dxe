@@ -41,6 +41,9 @@ def main():
     parser.add_argument("--flow", action="store_true", help="Capture box transitions and the complete animated result sequence")
     parser.add_argument("--boxes", action="store_true", help="Launch all 150 maps across the first six boxes")
     parser.add_argument("--startup", action="store_true", help="Capture consecutive frames through early level texture paging")
+    parser.add_argument("--first-box", type=int, default=1, choices=range(1,7))
+    parser.add_argument("--last-box", type=int, default=6, choices=range(1,7))
+    parser.add_argument("--level-only", type=int, choices=range(1,26), help="Limit box checks to one level number")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
     args = parser.parse_args()
     core = c.CDLL(args.core)
@@ -262,8 +265,13 @@ def main():
             tap(131,185)
             assert telemetry()["unlocked"]
             key(0); key(8); key(8)
-            for box in range(6):
-                for level in range(25):
+            assert args.first_box <= args.last_box
+            if args.first_box > 1:
+                key(0)
+                for _ in range(args.first_box - 1): key(7)
+                run(180); key(8)
+            for box in range(args.first_box - 1,args.last_box):
+                for level in ([args.level_only - 1] if args.level_only else range(25)):
                     assert telemetry()["view"] == 4 and telemetry()["pack"] == box
                     tap(round(128 + (824 + (level % 5) * 228 - 1280) * 1.01846195 * 192 / 1440),
                         round(96 + (203.5 + (level // 5) * 258 - 720) * 1.01846195 * 192 / 1440))
@@ -292,19 +300,49 @@ def main():
                         snapshot("foil-dragged-rail")
                         touch(154,96,False)
                         assert telemetry()["rail"] == 0, "Rail did not release the stylus"
-                    if stage["view"] == 0: key(3)
+                    if box == 3 and level == 0:
+                        while telemetry()["ticks"] < 120: run(1)
+                        touch(77,44); touch(96,44); touch(96,44,False)
+                        for _ in range(800):
+                            if telemetry()["view"] == 2: break
+                            run(1)
+                        result = snapshot("magic-hat-win")
+                        assert result["teleports"] == 1 and result["state"] == 1 and result["stars"] == 3, result
+                    if box == 4 and level == 0:
+                        while telemetry()["ticks"] < 120: run(1)
+                        touch(97,35); touch(164,35); touch(164,35,False)
+                        for _ in range(1200):
+                            if telemetry()["merges"]: break
+                            run(1)
+                        result = snapshot("valentine-merged")
+                        assert result["merges"] == 1 and not result["split"], result
+                        touch(114,73); touch(146,73); touch(146,73,False)
+                        for _ in range(800):
+                            if telemetry()["view"] == 2: break
+                            run(1)
+                        result = snapshot("valentine-win")
+                        assert result["state"] == 1 and result["stars"] == 3, result
+                    if telemetry()["view"] == 0: key(3)
                     current = telemetry()["view"]
                     if current == 1: tap(128,96)
-                    elif current in (2,3): key(0)
+                    elif current in (2,3):
+                        # Results block input while the first 32 flap frames play.
+                        while telemetry()["view"] == 2 and telemetry()["menuage"] < 32: run(1)
+                        key(0)
                     settle()
                     run(10)
-                    assert telemetry()["view"] == 4
-                if box < 5:
+                    assert telemetry()["view"] == 4, telemetry()
+                if box < args.last_box - 1:
                     key(0); key(7); run(180); key(8)
-            assert len(maperrors) >= 31, "Missing emulated multi-rope reference samples"
-            report.update(passed=True, maps=150, referenceSamples=len(maperrors), maximumDesktopError=max(maperrors.values()), seconds=time.monotonic()-start)
-            (directory / "boxreport.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-            print("PASS: 150 maps launched through real UI, six boxes, scrolling intros, pump and rail input")
+            if args.first_box == 1 and not args.level_only:
+                assert len(maperrors) >= 31, "Missing emulated multi-rope reference samples"
+            if args.last_box == 6 and not args.level_only:
+                assert any(item["bounces"] for item in report["stages"].values()), "No bouncer contact observed"
+            maps = (args.last_box - args.first_box + 1) * (1 if args.level_only else 25)
+            report.update(passed=True, maps=maps, referenceSamples=len(maperrors), maximumDesktopError=max(maperrors.values(),default=0), seconds=time.monotonic()-start)
+            filename = "boxreport" + ("" if maps == 150 else f"-{args.first_box}-{args.last_box}-{args.level_only or 'all'}") + ".json"
+            (directory / filename).write_text(json.dumps(report, indent=2), encoding="utf-8")
+            print(f"PASS: {maps} maps launched through real UI, boxes {args.first_box}-{args.last_box}")
             return
         if args.skins:
             fades = []
@@ -568,14 +606,21 @@ def main():
             touch(66, 26)
             touch(66, 26, False)
             opening = []
+            openingclocks = {}
             for _ in range(95):
                 run(1)
                 opening.append(framebuffer().crop((0, 192, 256, 384)))
+                current = telemetry()
+                if not current["transition"] and current["door"] == 1:
+                    openingclocks[current["frames"]] = current["visuals"]
                 if _ in (28, 44, 60, 76):
                     capture("opening-" + str(_))
             opening[0].save(directory / "box-opening.gif", save_all=True, append_images=opening[1:], duration=16, loop=0)
             assert snapshot("opened-level")["view"] == 0
-            assert telemetry()["visuals"] > 65, "Opening flaps blocked world animation"
+            # Texture uploads may consume VBlanks. Compare actual main-loop
+            # frames while the flaps move, not an assumed 95 emu frames == 95 ticks.
+            clocks = list(openingclocks.values())
+            assert len(clocks) >= 10 and all(b > a for a,b in zip(clocks,clocks[1:])), "Opening flaps blocked world animation"
             report.update(passed=True, seconds=time.monotonic() - start)
             (directory / "flowreport.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
             print("PASS: complete result timeline, improvement-only stamp, replay, original pause, box close/open")

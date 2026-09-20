@@ -2,6 +2,7 @@ import json
 import math
 import shutil
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -40,6 +41,7 @@ for actual in result["traces"]:
         assert a["tick"] == b["tick"] and math.hypot(a["x"] - b["x"], a["y"] - b["y"]) < .05, (actual["level"], a, b)
 (build / "leveltest.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
 print("PASS: four DX trajectories, 150 XML maps, 180,000 finite-coordinate frames, original and advanced mechanics")
+subprocess.run([sys.executable, str(root / "tools/testmovers.py")], check=True)
 binary = build / "interfacetest.exe"
 subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror",
                 "-I" + str(root / "include"), "-I" + str(root / "generated"),

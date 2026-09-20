@@ -438,7 +438,6 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
             break;
         }
     }
-    groundend = count;
     world(menuart::seat0 + menu.pack, game.definition.target);
     for (int i = 0; i < game.definition.bubblecount; ++i) {
         if (!game.bubblesused[i]) {
@@ -461,6 +460,14 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         const int frame = game.bounceages[i] * .016f / .04f;
         world(menuart::bouncer0 + (item.size - 1) * 5 + (frame < 5 ? frame : 0), item.position + item.path.at(elapsed * .016f), 31, item.path.angle(item.angle, elapsed * .016f));
     }
+    for (int i = 0; i < game.definition.hatcount; ++i) {
+        const auto& hat = game.definition.hats[i];
+        const auto position = hat.position + hat.path.at(elapsed * .016f) + dx::point{0, -.5f};
+        const float angle = hat.path.angle(hat.angle, elapsed * .016f, hat.resetangle);
+        world(menuart::hat0 + hat.group % 2, position, 31, angle);
+        if (game.hatages[i] * .016f < .2f) world(menuart::hat2 + std::min(2, static_cast<int>(game.hatages[i] * .016f / .05f)), position, 31, angle);
+    }
+    groundend = count;
     for (int i = 0; i < game.definition.hookcount; ++i) if (game.definition.hooks[i].rail > 0) {
         world(menuart::rail4, game.anchors[i], 31, game.definition.hooks[i].vertical ? 90 : 0);
         if (game.draghook == i) world(menuart::rail3, game.anchors[i], 31, game.definition.hooks[i].vertical ? 90 : 0);
@@ -538,13 +545,6 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     for (int part = 0; part < game.activecount(); ++part) {
         const int id = game.activeid(part);
         if (game.bubblefor(id) >= 0) world(menuart::bubble4 + static_cast<int>(elapsed * .016f / .05f) % 13, game.bodies[id].pos);
-    }
-    for (int i = 0; i < game.definition.hatcount; ++i) {
-        const auto& hat = game.definition.hats[i];
-        const auto position = hat.position + hat.path.at(elapsed * .016f) + dx::point{0, -.5f};
-        const float angle = hat.path.angle(hat.angle, elapsed * .016f, hat.resetangle);
-        world(menuart::hat0 + hat.group % 2, position, 31, angle);
-        if (game.hatages[i] * .016f < .2f) world(menuart::hat2 + std::min(2, static_cast<int>(game.hatages[i] * .016f / .05f)), position, 31, angle);
     }
     if (game.popage * .016f < .6f) world(menuart::bubble18 + std::min(11, static_cast<int>(game.popage * .016f / .05f)), game.popposition);
     const auto& trail = trace::trail;

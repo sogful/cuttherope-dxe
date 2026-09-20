@@ -66,7 +66,7 @@ def build(menu):
         canvas.paste(right,(width-right.width,(height-right.height)//2))
         canvas = canvas.resize(tuple(round(v * menu["scale"]) for v in canvas.size),Image.Resampling.LANCZOS)
         name = "track" + str(length)
-        menu["add"](name,canvas,"rails",source={"railLength":length})
+        menu["add"](name,canvas,"rails"+str(length),source={"railLength":length})
         tracks.append((length,name))
     return tracks
 

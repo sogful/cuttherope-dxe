@@ -51,15 +51,17 @@ def build(content, output, sources):
                 return [float(node.get("x")) * 3 + left + dx, float(node.get("y")) * 3 + dy]
 
             def motion(node):
+                if not node.get("path"):
+                    return [[0.0,0.0],0.0,0.0,0.0]
                 pathvalue = node.get("path", "0,0")
                 circle = 0.0
                 if pathvalue.startswith("R"):
-                    circle = float(pathvalue[2:]) * (1 if pathvalue[1] == "C" else -1)
+                    circle = float(pathvalue[2:]) * 3 * (1 if pathvalue[1] == "C" else -1)
                     values = [0.0,0.0]
                 else:
-                    values = [number(v) for v in pathvalue.rstrip(",").split(",")]
+                    values = [number(v) * 3 for v in pathvalue.rstrip(",").split(",")]
                 assert len(values) == 2, (path, node.attrib)
-                return [values, float(node.get("moveSpeed", 0)), float(node.get("rotateSpeed", 0)), circle]
+                return [values, float(int(float(node.get("moveSpeed", 0)) * 3.3)), float(int(float(node.get("rotateSpeed", 0)))), circle]
 
             for node in objects:
                 if node.tag.startswith("tutorial"):

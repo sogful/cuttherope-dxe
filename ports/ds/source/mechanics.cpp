@@ -32,8 +32,16 @@ float motion::angle(float base, float time, bool reset) const {
         const float radius = std::abs(circle);
         const int count = static_cast<int>(radius) / 2;
         const float segmenttime = 2 * radius * std::sin(3.14159265f / count) / speed;
-        time = std::fmod(time, segmenttime * count);
-        if (time >= segmenttime * (count - 1)) time = 0;
+        const float duration = segmenttime * count;
+        const int cycle = static_cast<int>(time / duration);
+        const float phase = std::fmod(time, duration);
+        if (phase >= segmenttime * (count - 1)) time = 0;
+        else if (cycle) {
+            // Mover resets on an update whose target is the first vertex, then
+            // resumes with a *whole* .016 rotation step when crossing that vertex.
+            // Subtracting fractional lap time loses that first partial frame.
+            time = (std::lround(time / delta) - std::floor(cycle * duration / delta)) * delta;
+        }
     }
     return base + rotation * time;
 }

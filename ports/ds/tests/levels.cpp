@@ -187,5 +187,21 @@ int main() {
     for (int i = 0; i < game.definition.hookcount; ++i) game.sever(i,0);
     for (int i = 0; i < 600 && game.state == dx::outcome::playing; ++i) game.tick();
     assert(game.state == dx::outcome::won && game.count == 3);
+    std::printf("],\"movers\":[");
+    int emitted = 0;
+    for (const auto& level : dx::levels) {
+        auto mover = [&](const char* kind, int index, dx::point origin, dx::motion motion, float angle, bool reset = false) {
+            if (!motion.speed && !motion.rotation && !motion.circle && !motion.offset.length()) return;
+            for (int tick : {0,1,15,60,180,360,600}) {
+                const auto p = origin + motion.at(tick * .016f);
+                std::printf("%s{\"level\":%d,\"kind\":\"%s\",\"index\":%d,\"tick\":%d,\"x\":%.7f,\"y\":%.7f,\"angle\":%.7f}",
+                    emitted++ ? "," : "",level.box*25+level.index,kind,index,tick,p.x,p.y,motion.angle(angle,tick*.016f,reset));
+            }
+        };
+        for (int i = 0; i < 3; ++i) mover("star",i,level.stars[i],level.starmotions[i],0);
+        for (int i = 0; i < level.spikecount; ++i) { const auto& x = level.spikes[i]; mover("spike",i,x.anchor,x.path,x.angle); }
+        for (int i = 0; i < level.hatcount; ++i) { const auto& x = level.hats[i]; mover("sock",i,x.position,x.path,x.angle,x.resetangle); }
+        for (int i = 0; i < level.bouncercount; ++i) { const auto& x = level.bouncers[i]; mover("bouncer",i,x.position,x.path,x.angle); }
+    }
     std::printf("],\"maps\":150,\"frames\":180000,\"passed\":true}\n");
 }
