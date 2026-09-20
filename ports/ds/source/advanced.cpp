@@ -1,18 +1,21 @@
 #include "geometry.hpp"
+#include "routes.hpp"
 #include <algorithm>
 #include <cassert>
 
 namespace dx {
 bool simulation::drag(point position, bool held) {
-    if (state != outcome::playing || introduction) { draghook = dragwheel = dragswitch = -1; return false; }
+    if (state != outcome::playing || introduction) { draghook = dragwheel = dragswitch = dragspike = -1; return false; }
     if (!held) {
+        if (dragspike >= 0 && spikehit(dragspike, position)) rotatespikes(definition.spikes[dragspike].group);
         if (dragswitch >= 0) {
             const auto d = position - definition.switches[dragswitch];
             if (d.x >= -115.5f && d.x < 115.5f && d.y >= -116.5f && d.y < 116.5f) togglegravity();
         }
-        draghook = dragwheel = dragswitch = -1;
+        draghook = dragwheel = dragswitch = dragspike = -1;
         return false;
     }
+    if (dragspike >= 0) { if (!spikehit(dragspike, position)) dragspike = -1; return true; }
     if (dragswitch >= 0) return true;
     if (dragwheel >= 0) { rotatewheel(dragwheel, position); return true; }
     if (draghook < 0) return false;
@@ -126,13 +129,82 @@ void simulation::merge(bool touching) {
 }
 
 void simulation::cutattached(int id) {
+    releasecandy(id);
+}
+
+void simulation::dropspider(int index, bool won) {
+    auto& rope = ropes[index];
+    if (!definition.hooks[index].spider || !rope.count || rope.spiderstate) return;
+    rope.spiderstate = won ? 2 : 1;
+    rope.spiderfall = visuals;
+    rope.spiderorigin = {static_cast<float>(static_cast<int>(rope.spiderpos.x)), static_cast<float>(static_cast<int>(rope.spiderpos.y))};
+    rope.spiderup = inverted;
+    rope.spiderturn = static_cast<float>((visuals * 73 + index * 47) % 241 - 120);
+    if (!won) ++spiderfalls;
+}
+
+void simulation::releasecandy(int id) {
     for (int i = 0; i < definition.hookcount; ++i) {
         auto& rope = ropes[i];
-        if (rope.count && rope.candy == id && !rope.cut) {
-            sever(i, rope.count - 2);
-            detach(rope);
-        }
+        if (!rope.count || rope.candy != id) continue;
+        if (!rope.cut) sever(i, rope.count - 2);
+        if (rope.pending >= 0) detach(rope);
+        rope.hidetail = true;
+        dropspider(i);
     }
+    for (int i = 0; i < bodies[id].linkcount; ++i) bodies[id].links[i].active = false;
+}
+
+point simulation::spikeposition(int index) const {
+    const auto& spike = definition.spikes[index];
+    return spike.anchor + spike.path.at(visuals * .016f);
+}
+float simulation::spikeangle(int index) const {
+    const auto& spike = definition.spikes[index];
+    if (spike.group < 0 || spike.path.speed || spike.path.rotation || !spikeevents)
+        return spike.path.angle(spike.angle, visuals * .016f);
+    if (spikeduration[index] == 0) return spikenormal[index] ? spike.angle + 90 : spike.angle;
+    return spikefirst[index] + (spikelast[index] - spikefirst[index]) * (spikeages[index] / spikeduration[index]);
+}
+bool simulation::spikehit(int index, point position) const {
+    if (definition.spikes[index].group <= 0) return false;
+    const auto p = position - spikeposition(index);
+    return p.x >= -99.5f && p.x < 106.5f && p.y >= -104 && p.y < 104;
+}
+void simulation::rotatespikes(int group) {
+    for (int i = 0; i < definition.spikecount; ++i) if (definition.spikes[i].group == group) {
+        const float start = spikeangle(i);
+        spikenormal[i] = !spikenormal[i];
+        const float target = definition.spikes[i].angle + (spikenormal[i] ? 90 : 0);
+        spikefirst[i] = static_cast<int>(start); spikelast[i] = static_cast<int>(target);
+        spikeduration[i] = std::abs(target - start) / 90 * .3f;
+        spikeages[i] = 0; spikedirection = spikenormal[i];
+    }
+    ++spikeevents;
+}
+void simulation::movebee(int index) {
+    const auto& hook = definition.hooks[index];
+    if (hook.route < 0) return;
+    const auto& path = routes[hook.route];
+    auto& pos = anchors[index];
+    auto& target = beetargets[index];
+    if (visuals == 1) { pos = routepoints[path.first]; target %= path.count; }
+    float remaining = .016f;
+    int guard = 0;
+    while (remaining > 0 && hook.speed > 0 && guard <= path.count) {
+        const auto end = routepoints[path.first + target], d = end - pos;
+        const float distance = d.length();
+        if (distance == 0) { target = (target + 1) % path.count; ++guard; continue; }
+        const float duration = distance / hook.speed;
+        if (duration <= remaining) { pos = end; remaining -= duration; target = (target + 1) % path.count; ++guard; }
+        else { pos = pos + d * (1 / distance) * (hook.speed * remaining); remaining = 0; }
+    }
+    const float x = routepoints[path.first + target].x - pos.x;
+    const float tilt = std::abs(x) > 15 ? (x > 0 ? 10 : -10) : 0;
+    beeangles[index] += std::clamp(tilt - beeangles[index], -.96f, .96f);
+    auto& rope = ropes[index];
+    if (rope.count) bodies[rope.bodies[0]].pin = bodies[rope.bodies[0]].pos = pos;
+    if (rope.spiderdistance == 0) rope.spiderpos = pos;
 }
 
 void simulation::transports() {
@@ -186,12 +258,12 @@ void simulation::bounce() {
                 hit = hit || linebox(a,b,body.pos,40) || segment(a,b,body.previous,body.pos);
             }
             if (!hit) continue;
-            const auto position = rotate(body.pos - center,-angle);
-            auto previous = rotate(body.previous - center,-angle);
-            const float impulse = std::max((body.previous - body.pos).length() * 40,840.0f) * (previous.y >= 0 ? 1 : -1);
+            const auto position = center + rotate(body.pos - center,-angle);
+            auto previous = center + rotate(body.previous - center,-angle);
+            const float impulse = std::max((body.previous - body.pos).length() * 40,840.0f) * (previous.y >= center.y ? 1 : -1);
             previous.y = position.y;
-            body.previous = center + rotate(previous,angle);
-            body.pos = center + rotate(position,angle) + rotate({0,impulse},angle) * .016f;
+            body.previous = center + rotate(previous - center,angle);
+            body.pos = center + rotate(position - center,angle) + rotate({0,impulse},angle) * .016f;
             bounceages[i] = 0; ++bounceevents;
         }
     }

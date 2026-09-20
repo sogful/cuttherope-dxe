@@ -13,7 +13,7 @@
 #include <cstdio>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 10;
+    std::uint32_t magic = 0x44585250, version = 11;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -27,6 +27,7 @@ struct diagnostics {
     std::uint32_t flash = 0, flashframe = 0, voices = 0, voice = 0;
     std::uint32_t repacks = 0, renderfault = 0;
     std::uint32_t gravity = 0, gravityevents = 0, wheel = 0, wheelevents = 0, wheelparts = 0, wheellength = 0;
+    std::uint32_t spikeevents = 0, spikebutton = 0, beex = 0, beey = 0, spiderfalls = 0, spiderclimbers = 0, fadephase = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -60,6 +61,7 @@ int main() {
     int shownbubbles = 0, shownpops = 0, shownpumps = 0, shownropes = 0;
     int shownbounces = 0, shownteleports = 0, shownmerges = 0;
     int showngravity = 0, shownwheel = 0;
+    int shownspikes = 0, shownspiderfalls = 0, shownspideractivations = 0;
     bool shownmouth = false, shownresult = false;
     bool greeting = false;
     unsigned total = 0, peak = 0, late = 0;
@@ -70,6 +72,7 @@ int main() {
         shownbubbles = shownpops = shownpumps = shownropes = 0;
         shownbounces = shownteleports = shownmerges = 0;
         showngravity = shownwheel = 0;
+        shownspikes = shownspiderfalls = shownspideractivations = 0;
         telemetry.resets = telemetry.resets + 1;
         trace::trail.reset();
         greeting = menu.door == 1 && !menu.replaypanel;
@@ -113,9 +116,9 @@ int main() {
             game.tick(menu.flash == 1);
         } else {
             held = false;
-            game.dragswitch = -1;
+            game.dragswitch = game.dragspike = -1;
             game.drag(pointer, false);
-            if (!menu.frontend() && (menu.mode != ui::view::paused || menu.door) && !display::busy()) {
+            if (!menu.frontend() && (menu.mode != ui::view::paused || menu.door) && display::active()) {
                 if (menu.mode == ui::view::results && menu.age >= 32) game.animate();
                 else game.tick();
             }
@@ -134,6 +137,12 @@ int main() {
             showngravity = game.gravityevents;
         }
         if (game.wheelevents != shownwheel) { audio::effect(wheeldata, wheelbytes); shownwheel = game.wheelevents; }
+        if (game.spikeevents != shownspikes) {
+            audio::effect(game.spikedirection ? spikerotateindata : spikerotateoutdata, game.spikedirection ? spikerotateinbytes : spikerotateoutbytes);
+            shownspikes = game.spikeevents;
+        }
+        if (game.spiderfalls != shownspiderfalls) { audio::effect(spiderfalldata, spiderfallbytes); shownspiderfalls = game.spiderfalls; }
+        if (game.spideractivations != shownspideractivations) { audio::effect(spideractivatedata, spideractivatebytes); shownspideractivations = game.spideractivations; }
         if (game.bubbleevents != shownbubbles) { audio::effect(bubbledata, bubblebytes); shownbubbles = game.bubbleevents; }
         if (game.pops != shownpops) { audio::effect(bubblebreakdata, bubblebreakbytes); shownpops = game.pops; }
         if (game.pumpevents != shownpumps) { audio::effect(pump1data, pump1bytes); shownpumps = game.pumpevents; }
@@ -178,7 +187,7 @@ int main() {
             if (game.failreason == 3) audio::effect(spiderwindata, spiderwinbytes);
             shownresult = true;
         }
-        if (!display::busy()) menu.advance(game);
+        if (!display::busy() || (!menu.frontend() && display::active())) menu.advance(game);
         if (menu.reset && !resetbefore) { resetgame(); audio::update(menu); }
         if (menu.mode == ui::view::results && oldview != ui::view::results) audio::effect(windata, winbytes);
         if (menu.clicked || menu.mode != oldview) menu.persist();
@@ -233,6 +242,17 @@ int main() {
         telemetry.wheelparts = telemetry.wheellength = 0;
         for (int i = 0; i < game.definition.hookcount; ++i) if (game.definition.hooks[i].wheel) {
             telemetry.wheelparts = game.ropes[i].count; telemetry.wheellength = game.ropelength(i); break;
+        }
+        telemetry.spikeevents = game.spikeevents; telemetry.spikebutton = game.dragspike + 1;
+        telemetry.beex = telemetry.beey = 0;
+        telemetry.spiderfalls = game.spiderfalls; telemetry.spiderclimbers = 0;
+        telemetry.fadephase = display::fadephase();
+        for (int i = 0; i < game.definition.hookcount; ++i) {
+            if (game.definition.hooks[i].route >= 0 && !telemetry.beex) {
+                telemetry.beex = static_cast<int>(game.anchors[i].x); telemetry.beey = static_cast<int>(game.anchors[i].y);
+            }
+            if (game.definition.hooks[i].spider && game.ropes[i].count && !game.ropes[i].spiderstate && !game.ropes[i].cut)
+                telemetry.spiderclimbers = telemetry.spiderclimbers + 1;
         }
         DS_PROFILE_DO(profiling::finish(total));
     }

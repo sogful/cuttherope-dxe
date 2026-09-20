@@ -19,6 +19,7 @@ const level& loadlevel(int index) {
     for (int i = 0; i < data.hookcount; ++i) {
         auto& item = data.hooks[i]; item.anchor = vector(); item.length = scalar(); item.radius = scalar(); item.spider = scalar();
         item.rail = scalar(); item.offset = scalar(); item.vertical = scalar(); item.part = scalar(); item.wheel = scalar();
+        item.route = scalar(); item.speed = scalar(); item.hidepath = scalar();
     }
     data.bubblecount = scalar();
     for (int i = 0; i < data.bubblecount; ++i) data.bubbles[i] = vector();
@@ -26,6 +27,7 @@ const level& loadlevel(int index) {
     for (int i = 0; i < data.spikecount; ++i) {
         auto& item = data.spikes[i]; item.anchor = vector(); item.path = mover(); item.angle = scalar(); item.size = scalar();
         item.on = scalar(); item.off = scalar(); item.delay = scalar();
+        item.group = scalar();
     }
     data.pumpcount = scalar();
     for (int i = 0; i < data.pumpcount; ++i) { data.pumps[i].position = vector(); data.pumps[i].angle = scalar(); }

@@ -17,14 +17,6 @@ static int gamebox = -1;
 static int backgroundtop = -1, backgroundsections = 0;
 static float cameray = 0;
 static constexpr float scale = 192.0f / 1440;
-static const auto circle = [] {
-    std::array<dx::point, 48> points{};
-    for (int i = 0; i < 48; ++i) {
-        const float angle = i * 6.2831853f / 48;
-        points[i] = {std::cos(angle), std::sin(angle)};
-    }
-    return points;
-}();
 static void transferwindow() {}
 static int backgroundoffset(float position) { return static_cast<int>(std::round(position * scale)) / 64 * 64; }
 
@@ -41,12 +33,6 @@ static void image(int id, dx::point point, bool absolute = false, int alpha = 31
              static_cast<int>(std::round(origin.y)) + definition.oy, GL_FLIP_NONE, &sprites[id]);
 }
 
-
-static void line(dx::point a, dx::point b, u16 color) {
-    a = screen(a);
-    b = screen(b);
-    glLine(static_cast<int>(a.x), static_cast<int>(a.y), static_cast<int>(b.x), static_cast<int>(b.y), color);
-}
 
 static void strand(const dx::simulation& game, int index, int first, int count, int skin) {
     DS_SCOPE(ropes);
@@ -169,18 +155,10 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
     for (int index = 0; index < game.definition.hookcount; ++index) {
         const dx::rope& item = game.ropes[index];
         const auto& hook = game.definition.hooks[index];
-        const float opacity = item.attached < 0 ? 1 : 1 - (game.visuals - item.attached) * .016f * 1.5f;
-        if (hook.radius >= 0 && opacity > 0) {
-            glPolyFmt(POLY_ALPHA(std::max(1, static_cast<int>(opacity * 18))) | POLY_CULL_NONE | POLY_ID(51));
-            for (int edge = 0; edge < 48; edge += 2) {
-                line(game.anchors[index] + circle[edge] * hook.radius,
-                     game.anchors[index] + circle[edge + 1] * hook.radius, RGB15(0,0,0));
-            }
-        }
         if (item.count && !item.cut) strand(game, index, 0, item.count, menu.skins[1]);
         else if (item.remaining > 0) {
             strand(game, index, 0, item.split, menu.skins[1]);
-            strand(game, index, item.split, item.count - item.split, menu.skins[1]);
+            if (!item.hidetail) strand(game, index, item.split, item.count - item.split, menu.skins[1]);
         }
         if (!hook.rail) image(art::hookfront, game.anchors[index]);
     }
@@ -208,6 +186,8 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
 static int loaded = -1, transition = 0;
 static ui::controller previous;
 bool busy() { return loaded < 0 || transition != 0; }
+bool active() { return loaded >= 0 && (transition == 0 || transition >= 14); }
+int fadephase() { return transition; }
 void draw(const dx::simulation& game, int frame, const ui::controller& menu, bool touching, dx::point finger) {
     const int desired = menu.frontend() ? static_cast<int>(menu.mode) * 12 + menu.locale : menu.pack;
     if (loaded < 0) {

@@ -3,6 +3,7 @@ import hashlib
 import json
 import math
 import struct
+import sys
 import wave
 from functools import lru_cache
 import xml.etree.ElementTree as xml
@@ -161,7 +162,7 @@ def main():
 
     sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "win", "tap",
            "bubble", "bubble_break", "pump_1", "rope_get", "spider_activate", "spider_fall", "spider_win", "candy_break",
-           "bouncer", "teleport", "candy_link", "electric", "wheel", "gravity_on", "gravity_off"]
+           "bouncer", "teleport", "candy_link", "electric", "wheel", "gravity_on", "gravity_off", "spike_rotate_in", "spike_rotate_out"]
     audio = []
     for name in sfx + ["game_music", "menu_music"]:
         music = name.endswith("_music")
@@ -184,13 +185,20 @@ def main():
     import levels
     levels.build(content, output, sources)
 
-    blobs = [name for page in pages for name in (page["name"], page["name"] + "palette")] + ["logo"] + [name for name, _ in audio]
+    # Only the immediate star/hook/default-candy renderer uses resident atlases.
+    # All other gameplay/menu art now has pageable replacements.
+    resident = {record['page'] for record in records if record['name'] in ('star0','hookback','candy0')}
+    blobs = [name for i,page in enumerate(pages) if i in resident for name in (page["name"], page["name"] + "palette")] + ["logo"] + [name for name, _ in audio]
     header = ["#pragma once", "#include <cstdint>", 'extern "C" {']
     header += [f"extern const unsigned char {name}data[];" for name in blobs]
     header += ["}", "namespace art {", "struct sprite { int x, y, w, h, ox, oy, advance, page; };",
                "struct texture { int width, height; const unsigned char* pixels; const unsigned char* palette; int kind; };",
                "inline constexpr texture textures[] = {"]
-    header += [f"{{{page['width']},{page['height']},{page['name']}data,{page['name']}palettedata,{1 if page['source'].startswith('char_animations') else 2 if page['source'].startswith('candies/') else 0 if page['source'].startswith(('obj_', 'char_supports')) else 3}}}," for page in pages]
+    for i,page in enumerate(pages):
+        pixels = page['name'] + 'data' if i in resident else 'nullptr'
+        palette = page['name'] + 'palettedata' if i in resident else 'nullptr'
+        kind = 1 if page['source'].startswith('char_animations') else 2 if page['source'].startswith('candies/') else 0 if page['source'].startswith(('obj_', 'char_supports')) else 3
+        header.append(f"{{{page['width']},{page['height']},{pixels},{palette},{kind}}},")
     header += ["};", f"inline constexpr int texturecount = {len(pages)};", "enum id {"]
     header += [record["name"] + "," for record in records]
     header += ["spritecount };", "inline constexpr sprite sprites[] = {"]
@@ -211,8 +219,9 @@ def main():
     assert manifest["texturebytes"] <= 384 * 1024, "Main-engine textures exceed VRAM A+B+D"
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"Converted {levels.boxes * 25} original maps, {len(records)} base sprites, {manifest['texturebytes']} base texture bytes, {manifest['audiobytes']} audio bytes")
-    import menus
-    menus.main()
+    if '--base-only' not in sys.argv:
+        import menus
+        menus.main()
 
 
 if __name__ == "__main__":

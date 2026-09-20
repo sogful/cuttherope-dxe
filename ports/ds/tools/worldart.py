@@ -1,5 +1,6 @@
 from PIL import Image, ImageDraw
 import xml.etree.ElementTree as xml
+import math
 from levels import boxes
 
 
@@ -13,11 +14,16 @@ def build(menu):
         quad("seat" + str(index), "char_supports", index, factor=1, restore=True, group="seat" + str(index))
     for index in range(30):
         quad("bubble" + str(index), "obj_bubble", index, factor=1, restore=True, group="bubble" + str(index // 6))
-    for index in range(11):
+    for index in range(13):
         quad("spider" + str(index), "obj_spider", index, factor=1, restore=True, group="spider")
     for index in range(4):
         quad("pump" + str(index), "obj_pump", index, factor=1, restore=True, group="pump")
         quad("spike" + str(index), "obj_spikes", 8 + index, factor=1, group="spike" + str(index))
+    for index in range(8):
+        quad("tool" + str(index), "obj_spikes", index, factor=1, restore=True, group="tool" + str(index))
+    for index in range(1,5):
+        quad("bee" + str(index), "obj_bee", index, factor=.77, restore=True, group="bee", pivot=(143,196))
+    quad("pollen", "obj_bee", 5, factor=1.5, group="pollen")
     for index in (19, 20):
         quad("timedstar" + str(index), "obj_star_idle", index, factor=1, group="timedstars")
     ring, _ = menu["assets"].readframe("obj_star_idle", 19)
@@ -53,12 +59,40 @@ def build(menu):
         quad("gravity" + str(index), "obj_star_idle", 21 + index, factor=1, group="gravity" + str(index))
     # Rasterize HorizontallyTiledImage at source resolution, then downsample once.
     # This retains the native 44-pixel repeat and clipped final tile at DS scale.
-    lengths = set()
+    lengths, radii = set(), set()
     for box in range(1, boxes + 1):
         for level in range(1, 26):
             for node in xml.parse(menu["content"] / f"maps/{box}_{level}.xml").iter("grab"):
                 length = float(node.get("moveLength", 0)) * 3
                 if length > 0: lengths.add(int(length))
+                radius = float(node.get("radius", -1)) * 3
+                if radius >= 0: radii.add(int(radius))
+    circles = []
+    for radius in sorted(radii):
+        # DX uses alternating circle chords with a 4-world-pixel solid core
+        # and one-pixel alpha fringe on each edge. Integrate at 8x DS size.
+        size = math.ceil((radius + 4) * menu["scale"]) * 2 + 1
+        count = max(16, radius) // 2
+        count += count % 2
+        vertices = [(math.cos(i * math.tau / count) * radius, math.sin(i * math.tau / count) * radius) for i in range(count)]
+        high = Image.new("RGBA", (size * 8, size * 8), (51,128,230,0))
+        pixels = high.load()
+        ratio = menu["scale"] * 8
+        for edge in range(0,count,2):
+            ax, ay = vertices[edge]; bx, by = vertices[edge+1]
+            vx, vy = bx-ax, by-ay; length = math.hypot(vx,vy)
+            for y in range(max(0,int((min(ay,by)-4)*ratio+size*4)), min(size*8,math.ceil((max(ay,by)+4)*ratio+size*4))):
+                for x in range(max(0,int((min(ax,bx)-4)*ratio+size*4)), min(size*8,math.ceil((max(ax,bx)+4)*ratio+size*4))):
+                    px,py = (x+.5-size*4)/ratio-ax,(y+.5-size*4)/ratio-ay
+                    t = (px*vx+py*vy)/(length*length)
+                    if not 0 <= t <= 1: continue
+                    distance = abs(px*vy-py*vx)/length
+                    alpha = round(max(0,min(1,3-distance))*255)
+                    if alpha > pixels[x,y][3]: pixels[x,y] = (51,128,230,alpha)
+        canvas = high.resize((size,size),Image.Resampling.LANCZOS)
+        name = "catch" + str(radius)
+        menu["add"](name,canvas,name,source={"catchRadius":radius})
+        circles.append((radius,name))
     left, center, right = (menu["assets"].readframe("obj_hook", q)[0] for q in (6,8,7))
     tracks = []
     for length in sorted(lengths):
@@ -75,8 +109,11 @@ def build(menu):
         name = "track" + str(length)
         menu["add"](name,canvas,"rails"+str(length),source={"railLength":length})
         tracks.append((length,name))
-    return tracks
+    return tracks, circles
 
 
-def header(tracks, ids):
-    return ["struct rail { int length, sprite; };", "inline constexpr rail rails[] = {"] + [f"{{{length},{ids[name]}}}," for length,name in tracks] + ["};"]
+def header(groups, ids):
+    output = ["struct rail { int length, sprite; };"]
+    for name, rows in zip(("rails", "circles"), groups):
+        output += ["inline constexpr rail " + name + "[] = {"] + [f"{{{length},{ids[sprite]}}}," for length,sprite in rows] + ["};"]
+    return output

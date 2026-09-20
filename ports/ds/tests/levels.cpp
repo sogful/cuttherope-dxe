@@ -16,11 +16,13 @@ static void decoded(const dx::level& a, const dx::level& b) {
     for (int i = 0; i < a.hookcount; ++i) {
         const auto& x = a.hooks[i]; const auto& y = b.hooks[i]; same(x.anchor,y.anchor);
         assert(x.length == y.length && x.radius == y.radius && x.spider == y.spider && x.rail == y.rail && x.offset == y.offset && x.vertical == y.vertical && x.part == y.part && x.wheel == y.wheel);
+        assert(x.route == y.route && x.speed == y.speed && x.hidepath == y.hidepath);
     }
     for (int i = 0; i < a.bubblecount; ++i) same(a.bubbles[i],b.bubbles[i]);
     for (int i = 0; i < a.spikecount; ++i) {
         const auto& x = a.spikes[i]; const auto& y = b.spikes[i]; same(x.anchor,y.anchor); same(x.path,y.path);
         assert(x.angle == y.angle && x.size == y.size && x.on == y.on && x.off == y.off && x.delay == y.delay);
+        assert(x.group == y.group);
     }
     for (int i = 0; i < a.pumpcount; ++i) { same(a.pumps[i].position,b.pumps[i].position); assert(a.pumps[i].angle == b.pumps[i].angle); }
     for (int i = 0; i < a.hatcount; ++i) {
@@ -76,6 +78,12 @@ int main() {
             if (frame % 30 == 0 && !game.introduction) for (int i = 0; i < level.pumpcount; ++i) game.interact(level.pumps[i].position);
             game.tick();
             assert(std::isfinite(game.candy().pos.x) && std::isfinite(game.candy().pos.y));
+            if (game.state != dx::outcome::playing) {
+                for (int i = 0; i < level.hookcount; ++i) if (game.ropes[i].count) {
+                    assert(game.ropes[i].cut && game.ropes[i].pending < 0);
+                    if (level.hooks[i].spider) assert(game.ropes[i].spiderstate);
+                }
+            }
             assert(game.bodycount <= 256 && game.candy().linkcount <= 20);
             for (int part = 0; part < game.activecount(); ++part) {
                 const auto& body = game.bodies[game.activeid(part)];

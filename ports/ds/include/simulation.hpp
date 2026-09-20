@@ -22,8 +22,8 @@ struct point {
     }
 };
 struct motion { point offset{}; float speed = 0, rotation = 0, circle = 0; point at(float time) const; float angle(float base, float time, bool reset = false) const; };
-struct hook { point anchor; float length; float radius = -1; bool spider = false; float rail = 0, offset = 0; bool vertical = false; int part = 0; bool wheel = false; };
-struct spike { point anchor{}; motion path{}; float angle = 0; int size = 1; float on = 0, off = 0, delay = 0; };
+struct hook { point anchor; float length; float radius = -1; bool spider = false; float rail = 0, offset = 0; bool vertical = false; int part = 0; bool wheel = false; int route = -1; float speed = 0; bool hidepath = false; };
+struct spike { point anchor{}; motion path{}; float angle = 0; int size = 1; float on = 0, off = 0, delay = 0; int group = -1; };
 struct pump { point position{}; float angle = 0; };
 struct hat { point position{}; motion path{}; float angle = 0; int group = 0; bool resetangle = false; };
 struct bouncer { point position{}; motion path{}; float angle = 0; int size = 1; };
@@ -67,6 +67,10 @@ struct rope {
     int attached = -1;
     float spiderdistance = 0, spiderangle = 0;
     point spiderpos{};
+    int spiderstate = 0, spiderfall = -1;
+    point spiderorigin{};
+    float spiderturn = 0;
+    bool spiderup = false, hidetail = false;
     int candy = 0;
 };
 enum class outcome { playing, won, lost };
@@ -82,6 +86,10 @@ public:
     void animate();
     void togglegravity();
     void rotatewheel(int index, point position);
+    void rotatespikes(int group);
+    float spikeangle(int index) const;
+    point spikeposition(int index) const;
+    bool spikehit(int index, point position) const;
     int ropelength(int index) const;
     float wheelscale(int index) const;
     void camera();
@@ -126,7 +134,15 @@ public:
     int gravityevents = 0, wheelevents = 0, gravityage = 100, dragswitch = -1, dragwheel = -1;
     std::array<float, 16> wheelangles{};
     point wheeltouch{};
+    std::array<int, 16> beetargets{};
+    std::array<float, 16> beeangles{}, spikeages{}, spikefirst{}, spikelast{}, spikeduration{};
+    std::array<bool, 16> spikenormal{};
+    int dragspike = -1, spikeevents = 0, spiderfalls = 0, spideractivations = 0;
+    bool spikedirection = false;
 private:
+    void movebee(int index);
+    void dropspider(int index, bool won = false);
+    void releasecandy(int id);
     int add(point position, float inverse, bool pinned);
     void integrate(body& item, float acceleration, float inverse = 0);
     void satisfy(body& item);

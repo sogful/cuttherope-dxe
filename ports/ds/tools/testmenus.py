@@ -83,7 +83,16 @@ for page, path, result in zip(manifest["pages"], files, native):
 checked = 0
 previews = 0
 spriteids = {item["name"]:i for i,item in enumerate(manifest["sprites"])}
-for stem, count, step in (("electro",5,1),("hat",5,1),("rail",5,1),("merge",5,1),("bouncer",10,1),("seat",8,1),("pump",4,2),("spike",4,2),("wheel",4,1),("gravity",3,1)):
+circles = [item for item in manifest['sprites'] if 'catchRadius' in (item.get('source') or {})]
+assert len(circles) == 22
+for item in circles:
+    page = manifest['pages'][item['page']]
+    assert page['alphabits'] == 5 and not page['dither']
+    image = atlases[item['page']].crop((item['x'],item['y'],item['x']+item['w'],item['y']+item['h']))
+    visible = [p for p in image.getdata() if p[3] > 32]
+    assert len({p[3] for p in visible}) > 8, 'Catch radius lost its supersampled alpha fringe'
+    assert all(p[2] > p[1] > p[0] for p in visible), 'DX catch radius must be blue, not black'
+for stem, count, step in (("electro",5,1),("hat",5,1),("rail",5,1),("merge",5,1),("bouncer",10,1),("seat",10,1),("pump",4,2),("spike",4,2),("wheel",4,1),("gravity",3,1),("tool",8,1),("spider",13,1)):
     assert all(spriteids[stem+str(i)] == spriteids[stem+"0"] + i*step for i in range(count)), (stem,"Renderer animation IDs must match the atlas registration")
 for item in manifest["sprites"]:
     source = item.get("source") or {}

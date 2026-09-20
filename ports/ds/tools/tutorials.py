@@ -24,6 +24,8 @@ def build(menu):
                 for node in nodes:
                     if not node.tag.startswith("tutorial"):
                         continue
+                    if node.tag == "tutorialText" and not node.get("text"):
+                        continue  # DX's skipInvalid loader ignores these empty editor placeholders.
                     x, y = float(node.get("x")) * 3 + left, float(node.get("y")) * 3 + top
                     if node.tag == "tutorialText":
                         name = f"hint{box}x{level}x{code}x{len(info['items'])}"

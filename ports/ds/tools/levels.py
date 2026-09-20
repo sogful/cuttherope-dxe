@@ -1,9 +1,11 @@
 """Compile original maps and compact runtime records, rejecting unsupported mechanics."""
 import hashlib
 import json
+import math
+import struct
 import xml.etree.ElementTree as xml
 
-boxes = 8
+boxes = 10
 
 
 def build(content, output, sources):
@@ -28,7 +30,8 @@ def build(content, output, sources):
     total = boxes * 25
     lines = ['#pragma once', '#include "simulation.hpp"', '#ifndef __NDS__', 'namespace dx {',
              f'inline constexpr std::array<level, {total}> levels = [] {{ std::array<level, {total}> items{{}};']
-    audit, packed, offsets = [], [], []
+    audit, packed, offsets, routes, routepoints = [], [], [], [], []
+    f = lambda value: struct.unpack("<f", struct.pack("<f", value))[0]
     limits = dict(hooks=16, bubbles=32, spikes=16, pumps=8, hats=8, bouncers=16, switches=4)
     for box in range(1, boxes + 1):
         for index in range(1, 26):
@@ -37,7 +40,7 @@ def build(content, output, sources):
             document = xml.parse(path).getroot()
             settings = document.find("./layer[@name='settings']/map")
             design = document.find("./layer[@name='settings']/gameDesign")
-            objects = document.find("./layer[@name='Objects']")
+            objects = [node for layer in document.findall('layer') if layer.get('name') != 'settings' for node in layer]
             width, height = float(settings.get("width")) * 3, float(settings.get("height")) * 3
             left = (2560 - width) / 2
             dx, dy = float(design.get("mapOffsetX", 0)), float(design.get("mapOffsetY", 0))
@@ -74,12 +77,33 @@ def build(content, output, sources):
                 elif node.tag in ("candyL", "candyR"):
                     halves[node.tag == "candyR"] = position(node)
                 elif node.tag == "grab":
-                    assert node.get("gun", "false") == "false" and not node.get("path"), (path,node.attrib)
+                    assert node.get("gun", "false") == "false", (path,node.attrib)
+                    for flag in ("kickable", "invisible", "helicopter"):
+                        assert node.get(flag, "false") == "false", (path,node.attrib)
+                    route = -1
+                    if node.get("path"):
+                        route = len(routes)
+                        origin, points, value = position(node), [], node.get("path")
+                        if value.startswith("R"):
+                            radius = int(value[2:]) * 3
+                            count, angle = radius // 2, 0.0
+                            step = f(f(math.tau) / count) * (1 if value[1] == "C" else -1)
+                            for _ in range(count):
+                                points.append([f(origin[0] + f(radius * f(math.cos(angle)))), f(origin[1] + f(radius * f(math.sin(angle))))])
+                                angle = f(angle + step)
+                        else:
+                            points.append(origin)
+                            values = list(map(number,value.rstrip(",").split(",")))
+                            assert len(values) % 2 == 0
+                            points += [[f(origin[0] + f(values[i] * 3)),f(origin[1] + f(values[i+1] * 3))] for i in range(0,len(values),2)]
+                        routes.append([len(routepoints),len(points),value.startswith('R')])
+                        routepoints.extend(points)
                     radius = float(node.get("radius", -1))
                     radius = radius * 3 if radius != -1 else -1.0
                     records["hooks"].append([position(node), float(node.get("length", 0)) * 3, radius, node.get("spider") == "true",
-                        max(0.0, float(node.get("moveLength", -1)) * 3), float(node.get("moveOffset", 0)) * 3,
-                        node.get("moveVertical") == "true", int(node.get("part") != "L"), node.get("wheel") == "true"])
+                        0.0 if route >= 0 else max(0.0, float(node.get("moveLength", -1)) * 3), float(node.get("moveOffset", 0)) * 3,
+                        node.get("moveVertical") == "true", int(node.get("part") != "L"), node.get("wheel") == "true",
+                        route, float(int(float(node.get("moveSpeed", 0)) * 3.3)), node.get("hidePath") == "true"])
                 elif node.tag == "star":
                     stars.append(position(node)); timeouts.append(float(node.get("timeout", -1))); motions.append(motion(node))
                 elif node.tag == "bubble":
@@ -87,9 +111,10 @@ def build(content, output, sources):
                 elif node.tag == "pump":
                     records["pumps"].append([position(node), float(node.get("angle", 0)) + 90])
                 elif node.tag in ("spike1", "spike2", "spike3", "spike4", "electro"):
-                    assert node.get("toggled", "false") == "false", (path,node.attrib)
+                    toggle = node.get("toggled", "false")
+                    group = -1 if toggle == "false" else int(toggle)
                     records["spikes"].append([position(node), motion(node), number(node.get("angle", 0)), int(node.get("size")),
-                        float(node.get("onTime",0)), float(node.get("offTime",0)), float(node.get("initialDelay",0))])
+                        float(node.get("onTime",0)), float(node.get("offTime",0)), float(node.get("initialDelay",0)), group])
                 elif node.tag == "sock":
                     records["hats"].append([position(node), motion(node), number(node.get("angle",0)) + 90,
                         int(node.get("group",0)), box == 4 and index == 25])
@@ -97,11 +122,11 @@ def build(content, output, sources):
                     records["bouncers"].append([position(node), motion(node), number(node.get("angle",0)), int(node.get("size"))])
                 elif node.tag == "gravitySwitch":
                     records["switches"].append(position(node))
-                elif node.tag == "hidden03":
+                elif node.tag in ("hidden03", "spikesSwitch"):
                     pass  # The C# LoadObjects switch also ignores this legacy map tag.
                 else:
                     raise ValueError((path, "Unsupported object", node.tag))
-            assert len(stars) == 3 and target is not None
+            assert len(stars) == 3 and target is not None, path
             assert (tags.get("candyL") == tags.get("candyR") == 1) if split else tags.get("candy") == 1
             if split:
                 candy = [(halves[0][axis] + halves[1][axis]) / 2 for axis in (0,1)]
@@ -132,6 +157,11 @@ def build(content, output, sources):
     data += [','.join(literal(v) for v in packed[i:i+16]) + ',' for i in range(0,len(packed),16)]
     (output / "leveldata.hpp").write_text('\n'.join(data + ['};','}']) + '\n', encoding="utf-8")
     (output / "levelmanifest.json").write_text(json.dumps(audit, indent=2), encoding="utf-8")
+    header = ['#pragma once', '#include "simulation.hpp"', 'namespace dx {', 'struct route { int first, count; bool circle; };', 'inline constexpr route routes[] = {']
+    header += [literal(item) + ',' for item in routes]
+    header += ['};', 'inline constexpr point routepoints[] = {']
+    header += [literal(item) + ',' for item in routepoints]
+    (output / "routes.hpp").write_text('\n'.join(header + ['};','}']) + '\n', encoding="utf-8")
 
 
 if __name__ == "__main__":

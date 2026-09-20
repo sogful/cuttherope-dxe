@@ -39,13 +39,13 @@ def main():
     parser.add_argument("--menus", action="store_true", help="Check source-shaped title, packs, settings, languages and credits")
     parser.add_argument("--skins", action="store_true", help="Check fades, isolated unlock mode, picker scrolling, all cosmetic tabs and equipped gameplay")
     parser.add_argument("--flow", action="store_true", help="Capture box transitions and the complete animated result sequence")
-    parser.add_argument("--boxes", action="store_true", help="Launch all 200 maps across the first eight boxes")
+    parser.add_argument("--boxes", action="store_true", help="Launch all 250 maps across the first ten boxes")
     parser.add_argument("--startup", action="store_true", help="Capture consecutive frames through early level texture paging")
     parser.add_argument("--regressions", action="store_true", help="Exercise outcome input races, flashes, costume voices, carousel and tall backgrounds")
     parser.add_argument("--profile", action="store_true", help="Read optional profiling build and capture framebuffer changes during stalled main updates")
     parser.add_argument("--pagingstress", action="store_true", help="Profile-only synthetic heavy completion and captured-frame recovery test")
-    parser.add_argument("--first-box", type=int, default=1, choices=range(1,9))
-    parser.add_argument("--last-box", type=int, default=8, choices=range(1,9))
+    parser.add_argument("--first-box", type=int, default=1, choices=range(1,11))
+    parser.add_argument("--last-box", type=int, default=10, choices=range(1,11))
     parser.add_argument("--level-only", type=int, choices=range(1,26), help="Limit box checks to one level number")
     parser.add_argument("--costume", type=int, default=0, choices=range(16), help="Equip a costume through the real picker before a test")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
@@ -226,11 +226,12 @@ def main():
         referenceattempt = 1
         lastframe, stalled = -1, 0
         keys += ["gravity", "gravityevents", "wheel", "wheelevents", "wheelparts", "wheellength"]
+        keys += ["spikeevents", "spikebutton", "beex", "beey", "spiderfalls", "spiderclimbers", "fadephase"]
         faultsymbol = next((line for line in symbols if line.endswith(" renderfault")), None)
         faultaddress = memory + int(faultsymbol.split()[0], 16) - 0x02000000 if faultsymbol else None
         def telemetry():
             version = struct.unpack("<I", c.string_at(memory + offset + 4, 4))[0]
-            fields = 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
+            fields = 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
             result = dict(zip(keys, struct.unpack(f"<10I2f{fields}I", c.string_at(memory + offset, 48 + fields * 4))))
             for key in keys: result.setdefault(key, 0)
             return result
@@ -356,6 +357,25 @@ def main():
                     assert stage["level"] == box * 25 + level and stage["visuals"] > 0
                     assert math.isfinite(stage["x"]) and math.isfinite(stage["y"])
                     assert not stage["intro"], "Tall level introduction never handed control back"
+                    if box == 8 and level == 0:
+                        before = telemetry()["cuts"]
+                        touch(104,146)
+                        pressed = snapshot("tool-button-pressed")
+                        assert pressed["spikebutton"] == 1, pressed
+                        touch(170,146); touch(104,146,False)
+                        assert telemetry()["spikeevents"] == 0
+                        tap(104,146); run(20)
+                        assert telemetry()["spikeevents"] == 1 and telemetry()["cuts"] == before
+                        snapshot("tool-rotated")
+                        tap(104,146); run(20)
+                        assert telemetry()["spikeevents"] == 2
+                    if box == 9 and level == 0:
+                        initial = telemetry(); frames = []
+                        for _ in range(90):
+                            run(1); frames.append(framebuffer().crop((0,192,256,384)))
+                        moved = snapshot("buzz-moving")
+                        assert (moved["beex"],moved["beey"]) != (initial["beex"],initial["beey"])
+                        frames[0].save(directory / "buzz-path.gif",save_all=True,append_images=frames[1:],duration=17,loop=0)
                     if box == 6 and level == 11:
                         rotations = []
                         for _ in range(120):
@@ -442,7 +462,7 @@ def main():
                 assert any(item["bounces"] for item in report["stages"].values()), "No bouncer contact observed"
             maps = (args.last_box - args.first_box + 1) * (1 if args.level_only else 25)
             report.update(passed=True, maps=maps, referenceSamples=len(maperrors), maximumDesktopError=max(maperrors.values(),default=0), seconds=time.monotonic()-start)
-            filename = "boxreport" + ("" if maps == 200 else f"-{args.first_box}-{args.last_box}-{args.level_only or 'all'}") + ".json"
+            filename = "boxreport" + ("" if maps == 250 else f"-{args.first_box}-{args.last_box}-{args.level_only or 'all'}") + ".json"
             (directory / filename).write_text(json.dumps(report, indent=2), encoding="utf-8")
             print(f"PASS: {maps} maps launched through real UI, boxes {args.first_box}-{args.last_box}")
             return
@@ -466,13 +486,13 @@ def main():
             key(8)
             assert snapshot("unlocked-fabric-levels")["pack"] == 1 and telemetry()["view"] == 4
             key(0)
-            for _ in range(5): key(7)
+            for _ in range(9): key(7)
             run(180)
             key(8)
             tap(66, 26)
             assert telemetry()["view"] == 4 and telemetry()["resets"] == 0, "An unavailable map silently launched 1-1"
             key(0)
-            for _ in range(6): key(6)
+            for _ in range(10): key(6)
             run(180)
             key(0)
             tap(128, 170)
@@ -621,7 +641,10 @@ def main():
             return
         key(8)
         key(8)
-        key(8)
+        if args.startup:
+            buttons.add(8); run(3); buttons.clear(); run(1)
+        else:
+            key(8)
         if args.startup:
             sequence, clocks, strips = [], [], []
             for _ in range(600):
@@ -636,12 +659,15 @@ def main():
             reference_strip = strips[-1][1]
             differences = [(index,sum(sum(p) for p in ImageChops.difference(strip,reference_strip).getdata()) / (30*125*3)) for index,strip in strips]
             worst = max(differences,key=lambda item:item[1])
+            incoming = [row for row in clocks if 15 <= row["fadephase"] <= 27]
+            assert len(incoming) >= 5 and incoming[-1]["ticks"] > incoming[0]["ticks"] + 3, "Physics froze during the incoming fade"
+            assert abs(incoming[-1]["y"] - incoming[0]["y"]) > .01, "Candy stayed fixed during the incoming fade"
             sequence[0].save(directory / "level-startup.gif",save_all=True,append_images=sequence[1:],duration=17,loop=0)
             sequence[worst[0]].save(directory / "startup-worst-game.png")
             report.update(passed=worst[1] < 1,startupFrames=len(sequence),backgroundChange=worst[1],clocks=clocks,seconds=time.monotonic()-start)
             (directory / "startupreport.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
             assert worst[1] < 1, ("Texture upload corrupted the unchanged background",worst)
-            print("PASS: 600 consecutive startup frames; no background flash during texture paging")
+            print("PASS: physics/candy advance during incoming fade; 600 startup frames without background flashes")
             return
         run(180)
         idle = snapshot("idle")
@@ -753,9 +779,9 @@ def main():
             won = snapshot("win")
             assert won["state"] == 1 and won["stars"] == 3 and won["cuts"] == 1 and won["view"] == 2, won
             assert won["beststars"] == 3 and won["bestscore"] == won["score"] >= 3000, won
-            buttons.add(8)  # libretro joypad A
-            run(3)
-            buttons.clear()
+            settle()  # Result controls intentionally ignore input until flaps close.
+            while telemetry()["menuage"] < 32: run(1)
+            key(8)  # libretro joypad A
             run(70)
             retry = snapshot("retry")
             assert retry["state"] == 0 and retry["stars"] == 0 and retry["resets"] == 2, retry

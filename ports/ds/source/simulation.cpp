@@ -36,6 +36,8 @@ void simulation::reset(const level& data) {
     definition = data;
     freecount = 0;
     inverted = false; gravityevents = wheelevents = 0; gravityage = 100;
+    dragspike = -1; spikeevents = spiderfalls = spideractivations = 0; spikedirection = false;
+    beetargets.fill(1); beeangles.fill(0); spikeages.fill(0); spikefirst.fill(0); spikelast.fill(0); spikeduration.fill(0); spikenormal.fill(false);
     dragwheel = dragswitch = -1; wheelangles.fill(0); wheeltouch = {};
     bodies = {};
     ropes = {};
@@ -209,19 +211,28 @@ DS_HOT void simulation::ropephysics() {
     DS_SCOPE(physics);
     const float step = delta * definition.speed;
     for (int index = 0; index < definition.hookcount; ++index) {
+        movebee(index);
         rope& item = ropes[index];
-        if (item.count == 0) continue;
-        if (item.cut && item.remaining <= 0) continue;
-        DS_PROFILE_DO(profiling::data[profiling::bodies] += item.count * 30);
-        if (item.cut) {
-            item.remaining = std::max(0.0f, item.remaining - step);
-            if (item.pending >= 0 && item.remaining < 1.95f) detach(item);
+        if (item.count && (!item.cut || item.remaining > 0)) {
+            DS_PROFILE_DO(profiling::data[profiling::bodies] += item.count * 30);
+            if (item.cut) {
+                item.remaining = std::max(0.0f, item.remaining - step);
+                if (item.pending >= 0 && item.remaining < 1.95f) detach(item);
+            }
+            for (int part = 0; part < item.count; ++part) {
+                const int id = item.bodies[part];
+                if (id >= (definition.split ? 3 : 1)) integrate(bodies[id], 784.0f * (step * delta));
+            }
+            solve(item);
         }
-        for (int part = 0; part < item.count; ++part) {
-            const int id = item.bodies[part];
-            if (id >= (definition.split ? 3 : 1)) integrate(bodies[id], 784.0f * (step * delta));
+        const auto& hook = definition.hooks[index];
+        for (int part = 0; part < activecount() && !hidden() && state == outcome::playing; ++part) {
+            const int id = activeid(part);
+            if (ropes[index].count == 0 && hook.radius >= 0 && (bodies[id].pos - anchors[index]).length() <= hook.radius + 42) {
+                attach(index, hook.radius + 42, id);
+                ++ropeevents;
+            }
         }
-        solve(item);
     }
 }
 
@@ -235,16 +246,6 @@ void simulation::tick(bool suppress) {
     if (state != outcome::playing) return;
     ++ticks;
     const float step = delta * definition.speed;
-    for (int index = 0; index < definition.hookcount; ++index) {
-        const auto& hook = definition.hooks[index];
-        for (int part = 0; part < activecount() && !hidden(); ++part) {
-            const int id = activeid(part);
-            if (ropes[index].count == 0 && hook.radius >= 0 && (bodies[id].pos - anchors[index]).length() <= hook.radius + 42) {
-                attach(index, hook.radius + 42, id);
-                ++ropeevents;
-            }
-        }
-    }
     const point halfgap = halfdraw[0] - halfdraw[1];
     const bool touching = std::abs(halfgap.x) < 88 && std::abs(halfgap.y) < 76;
     for (int part = 0; part < activecount() && !hidden(); ++part) {
@@ -269,7 +270,8 @@ void simulation::tick(bool suppress) {
             }
         }
     }
-    for (int i = 0; i < definition.bubblecount; ++i) {
+    bool captured = false;
+    for (int i = 0; i < definition.bubblecount && !captured; ++i) {
         for (int part = 0; part < activecount() && !hidden(); ++part) {
             const int id = activeid(part);
             const auto d = bodies[id].pos - definition.bubbles[i];
@@ -278,6 +280,7 @@ void simulation::tick(bool suppress) {
                 (id ? halfbubbles[id-1] : bubble) = i;
                 bubblesused[i] = true;
                 ++bubbleevents;
+                captured = true;
                 break;
             }
         }
@@ -293,6 +296,7 @@ void simulation::tick(bool suppress) {
             -bodies[id].velocity.y / 14 + (inverted ? 40.0f : -40.0f)} * delta;
     }
     if (!suppressoutcome && !split && !hidden() && mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
+        releasecandy(0);
         state = outcome::won;
         resulttick = ticks;
         resultvisual = visuals;
@@ -312,6 +316,7 @@ bool simulation::sever(int index, int segment) {
     item.cut = true;
     item.pending = segment;
     item.split = segment + 1;
+    dropspider(index);
     return true;
 }
 

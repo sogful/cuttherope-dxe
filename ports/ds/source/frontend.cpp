@@ -6,6 +6,7 @@
 #include "geometry.hpp"
 #include "assets.hpp"
 #include "profiling.hpp"
+#include "routes.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -65,7 +66,8 @@ static int x(float value, float fit = menuart::fit) { return std::lround(128 + (
 static int y(float value, float fit = menuart::fit) { return std::lround(96 + (value - 720) * pixels * fit); }
 
 static void add(int id, int px, int py, clip bounds = {}, int flip = GL_FLIP_NONE, float scale = 1, int angle = 0, int alpha = 31, u16 color = RGB15(31, 31, 31)) {
-    if (id < 0 || count >= static_cast<int>(commands.size()) || scale <= .001f || alpha <= 0) return;
+    if (id < 0 || scale <= .001f || alpha <= 0) return;
+    if (count >= static_cast<int>(commands.size())) { renderfault = 6; return; }
     commands[count++] = {id, px, py, alpha, flip, angle, scale, bounds, color, scale};
 }
 
@@ -438,7 +440,8 @@ static void doors(float progress, bool opening, bool loading, int box) {
     piece(menuart::doorshade, (opening ? -t : t - 1) * 891 * 4 * pixels + base, 0, 891 * 4 * pixels, 400 * 4 * pixels);
     const float leftside = opening ? (1280 - 12) * (1 - t) - 25 * t : -13 * (1 - t) + (1293 - 16) * t;
     const float rightside = opening ? (1280 + 14) * (1 - t) + 2560 * t : (2560 - 40) * (1 - t) + (1280 + 20) * t;
-    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0, menuart::boxcover7x0, menuart::boxcover8x0};
+    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0, menuart::boxcover7x0, menuart::boxcover8x0, menuart::boxcover9x0, menuart::boxcover10x0};
+    static_assert(std::size(covers) == menuart::playableboxes, "Every playable box needs its authored flaps");
     const int cover = covers[box];
     piece(cover + 1, base + leftside * pixels, 0, side, 192 * (1 + .3f * closed));
     piece(cover + 1, base + rightside * pixels, 0, side, 192 * (1 + .3f * closed));
@@ -579,6 +582,55 @@ static void skins(const ui::controller& menu) {
     }
 }
 
+static void pollen(const dx::simulation& game, int elapsed) {
+    struct mote { dx::point position; unsigned seed; };
+    static std::array<mote, 160> motes;
+    static int level = -1, size = 0;
+    const int id = game.definition.box * 25 + game.definition.index;
+    if (level != id) {
+        level = id; size = 0;
+        unsigned seed = 0x74519u + id;
+        auto random = [&]() { seed = seed * 1664525u + 1013904223u; return seed; };
+        auto segment = [&](dx::point first, dx::point last) {
+            const auto d = last - first;
+            const float length = d.length();
+            const auto direction = length > 0 ? d / length : dx::point{};
+            for (int i = 0; i <= static_cast<int>(length / 44); ++i) {
+                if (size >= static_cast<int>(motes.size())) { renderfault = 5; return; }
+                const dx::point jitter{static_cast<float>(static_cast<int>(random()%5)-2),static_cast<float>(static_cast<int>(random()%5)-2)};
+                motes[size++] = {first + direction * (i * 44.0f) + jitter, random()};
+            }
+        };
+        for (int i = 0; i < game.definition.hookcount; ++i) {
+            const auto& hook = game.definition.hooks[i];
+            if (hook.route < 0 || hook.hidepath) continue;
+            const auto& path = dx::routes[hook.route];
+            for (int j = 0; j < path.count - 1; ++j) if (!path.circle || j % 3 == 0)
+                segment(dx::routepoints[path.first+j], dx::routepoints[path.first+j+1]);
+            if (path.count > 2) segment(dx::routepoints[path.first], dx::routepoints[path.first+path.count-1]);
+        }
+    }
+    auto oscillate = [](float time, float initial, float low, float high) {
+        const float first = std::abs(initial-low);
+        if (time <= first) return initial + (low > initial ? time : -time);
+        const float span = high-low, phase = std::fmod(time-first,span*2);
+        return low + (phase < span ? phase : span*2-phase);
+    };
+    static constexpr float sizes[] = {.3f,.3f,.5f,.5f,.6f};
+    for (int i = 0; i < size-1; ++i) {
+        const auto& item = motes[i];
+        const float phase = (item.seed & 65535) / 65535.0f;
+        float lowx = sizes[(item.seed >> 16)%5], lowy = lowx;
+        if (item.seed & 0x100000) lowx *= 1.1f; else lowy *= 1.1f;
+        const float offset = std::min(1-lowx,1-lowy), highx = lowx+offset, highy = lowy+offset;
+        const float sx = oscillate(elapsed*.016f,highx*phase,lowx,highx), sy = oscillate(elapsed*.016f,highy*phase,lowy,highy);
+        const int alpha = std::lround(31*oscillate(elapsed*.016f,.3f+.7f*phase,.3f,1));
+        const int before = count;
+        add(menuart::pollen,std::lround(128+(item.position.x-1280)*pixels),std::lround((item.position.y-cameray)*pixels),{},GL_FLIP_NONE,sx,0,alpha);
+        if (count > before) commands[count-1].vertical = sy;
+    }
+}
+
 void preparegame(const ui::controller& menu, const dx::simulation& game, int elapsed) {
     count = 0;
     groundend = 0;
@@ -589,6 +641,16 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     auto world = [&](int sprite, dx::point position, int alpha = 31, float angle = 0) {
         add(sprite, wx(position.x), wy(position.y), {}, GL_FLIP_NONE, 1, static_cast<int>(angle * 32768 / 360), alpha);
     };
+    pollen(game,elapsed);
+    for (int i = 0; i < game.definition.hookcount; ++i) {
+        const auto& rope = game.ropes[i];
+        const float radius = game.definition.hooks[i].radius;
+        const float alpha = rope.attached < 0 ? 1 : 1-(elapsed-rope.attached)*.016f*1.5f;
+        if (radius < 0 || alpha <= 0) continue;
+        for (const auto& ring : menuart::circles) if (ring.length == static_cast<int>(radius)) {
+            world(ring.sprite,game.anchors[i],std::max(1,static_cast<int>(alpha*31))); break;
+        }
+    }
     if (menu.pack == 7) {
         const float turn = std::min(1.0f, game.gravityage * .016f / .3f);
         const float angle = game.inverted ? 180 * turn : 180 * (1 - turn);
@@ -621,8 +683,12 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     }
     for (int i = 0; i < game.definition.spikecount; ++i) {
         const auto& spike = game.definition.spikes[i];
-        const int sprite = spike.size == 5 ? menuart::electro0 + (game.electric[i] ? 1 + elapsed / 3 % 4 : 0) : menuart::spike0 + (spike.size - 1) * 2;
-        world(sprite, spike.anchor + spike.path.at(elapsed * .016f), 31, spike.path.angle(spike.angle, elapsed * .016f));
+        const int sprite = spike.size == 5 ? menuart::electro0 + (game.electric[i] ? 1 + elapsed / 3 % 4 : 0) :
+            spike.group >= 0 ? menuart::tool0 + spike.size - 1 : menuart::spike0 + (spike.size - 1) * 2;
+        const auto center = game.spikeposition(i);
+        world(sprite, center, 31, game.spikeangle(i));
+        if (spike.group > 0) add(menuart::tool4 + (spike.group-1)*2 + (game.dragspike==i), wx(center.x), wy(center.y), {},
+            game.spikenormal[i] ? GL_FLIP_H : GL_FLIP_NONE, 1, static_cast<int>(game.spikeangle(i)*32768/360));
     }
     for (int i = 0; i < game.definition.bouncercount; ++i) {
         const auto& item = game.definition.bouncers[i];
@@ -647,8 +713,31 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         if (game.draghook == i) world(menuart::rail3, game.anchors[i], 31, game.definition.hooks[i].vertical ? 90 : 0);
     }
     for (int i = 0; i < game.definition.hookcount; ++i) {
+        if (game.definition.hooks[i].route >= 0) {
+            static constexpr int wings[] = {2,3,4,3};
+            world(menuart::bee1,game.anchors[i],31,game.beeangles[i]);
+            world(menuart::bee1 + wings[(static_cast<int>(elapsed*.016f/.03f)+i)%4]-1,game.anchors[i],31,game.beeangles[i]);
+        }
         const auto& rope = game.ropes[i];
-        if (!game.definition.hooks[i].spider || rope.cut) continue;
+        if (!game.definition.hooks[i].spider) continue;
+        if (rope.spiderstate) {
+            const float age = (elapsed-rope.spiderfall)*.016f;
+            if (age > 1.3f) continue;
+            const bool won = rope.spiderstate == 2;
+            const float hop = won ? 70 : 50, direction = rope.spiderup ? -1 : 1;
+            const float t = std::min(1.0f,age/.3f), fall = std::max(0.0f,age-.3f);
+            auto position = rope.spiderorigin;
+            const float first = won ? -10 : 0, peak = -direction*hop;
+            position.y += first + (peak-first)*(1-(1-t)*(1-t)) + (direction*1440-peak)*fall*fall;
+            world(menuart::spider11 + won,position,31,won?0:rope.spiderturn*std::min(1.0f,age));
+            if (won) {
+                position.y -= 5;
+                if (game.split) world(menuart::gamehalves[menu.skins[0]][rope.candy-1],position);
+                else for (int id : menuart::gamecandies[menu.skins[0]]) world(id,position);
+            }
+            continue;
+        }
+        if (rope.cut) continue;
         const float time = rope.attached < 0 ? 0 : (elapsed - rope.attached) * .016f;
         const int frame = time < .75f ? std::min(6, time < .25f ? static_cast<int>(time / .05f) : time < .65f ? 5 : 6) : 7 + static_cast<int>((time - .75f) / .1f) % 4;
         world(menuart::spider0 + frame, rope.spiderpos, 31, rope.spiderangle);

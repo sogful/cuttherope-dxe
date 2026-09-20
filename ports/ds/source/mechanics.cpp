@@ -5,7 +5,12 @@
 namespace dx {
 static constexpr float delta = .016f, radians = 3.14159265f / 180;
 point rotate(point p, float angle) {
-    const float s = std::sin(angle * radians), c = std::cos(angle * radians);
+    // CTRMathHelper.FmSin/FmCos quantize to 1024 entries, truncating signed
+    // angles before masking. Exact trig changes angled bouncer trajectories.
+    const float rad = angle * 3.14159265f / 180;
+    const int index = static_cast<int>(rad * 1024 / 6.2831853f) & 1023;
+    const float quantized = index * 2 * 3.14159265f / 1024;
+    const float s = std::sin(quantized), c = std::cos(quantized);
     return {p.x * c - p.y * s, p.x * s + p.y * c};
 }
 point motion::at(float time) const {
@@ -47,6 +52,7 @@ float motion::angle(float base, float time, bool reset) const {
 }
 void simulation::animate() {
     ++visuals;
+    for (int i = 0; i < definition.spikecount; ++i) spikeages[i] = std::min(spikeduration[i], spikeages[i] + delta);
     gravityage = std::min(100, gravityage + 1);
     ++popage;
     for (int& age : pumpages) age = std::min(100, age + 1);
@@ -81,7 +87,8 @@ void simulation::burst(int id) {
 bool simulation::interact(point position) {
     if (state != outcome::playing || introduction) return false;
     draghook = -1;
-    dragwheel = dragswitch = -1;
+    dragwheel = dragswitch = dragspike = -1;
+    for (int i = 0; i < definition.spikecount; ++i) if (spikehit(i, position)) { dragspike = i; return true; }
     for (int i = 0; i < definition.switchcount; ++i) {
         const auto d = position - definition.switches[i];
         if (d.x >= -115.5f && d.x < 115.5f && d.y >= -116.5f && d.y < 116.5f) { dragswitch = i; return true; }
@@ -122,6 +129,7 @@ bool simulation::interact(point position) {
 }
 void simulation::fail(int reason) {
     if (suppressoutcome || state != outcome::playing) return;
+    for (int part = 0; part < activecount(); ++part) releasecandy(activeid(part));
     state = outcome::lost;
     failreason = reason;
     resulttick = ticks;
@@ -153,11 +161,13 @@ void simulation::hazards() {
     for (int i = 0; i < definition.spikecount; ++i) {
         const auto& spike = definition.spikes[i];
         if (spike.size == 5 && !electric[i]) continue;
-        const auto center = spike.anchor + spike.path.at(visuals * delta);
-        const float angle = spike.angle + spike.path.rotation * visuals * delta;
+        const auto center = spikeposition(i);
+        const float angle = spikeangle(i);
+        static constexpr float toggledwidths[] = {202,319,444,559};
+        const float width = spike.group >= 0 && spike.size < 5 ? toggledwidths[spike.size - 1] : widths[spike.size - 1];
         for (int side : {-1, 1}) {
-            const auto a = center + rotate({-widths[spike.size - 1] / 2, side * 5.0f}, angle);
-            const auto b = center + rotate({widths[spike.size - 1] / 2, side * 5.0f}, angle);
+            const auto a = center + rotate({-width / 2, side * 5.0f}, angle);
+            const auto b = center + rotate({width / 2, side * 5.0f}, angle);
             for (int part = 0; part < activecount(); ++part) {
                 const auto& body = bodies[activeid(part)];
                 if (linebox(a, b, body.pos) || segment(a, b, body.previous, body.pos)) { fail(2); return; }
@@ -168,8 +178,9 @@ void simulation::hazards() {
 void simulation::spiders() {
     for (int i = 0; i < definition.hookcount; ++i) {
         auto& rope = ropes[i];
-        if (!definition.hooks[i].spider || rope.count == 0 || rope.cut) continue;
+        if (!definition.hooks[i].spider || rope.count == 0 || rope.cut || rope.spiderstate) continue;
         if ((visuals - rope.attached) * delta < .75f) continue;
+        if ((visuals - rope.attached - 1) * delta < .75f) ++spideractivations;
         rope.spiderdistance += 117 * delta;
         point curve[125]; int size;
         samples(i, 0, rope.count, curve, size);
@@ -180,7 +191,7 @@ void simulation::spiders() {
             if (rope.spiderdistance < passed + length || j == size - 1) {
                 rope.spiderpos = curve[j - 1] + edge * ((rope.spiderdistance - passed) / length);
                 rope.spiderangle = std::atan2(edge.y, edge.x) / radians + 270;
-                if (j == size - 1) fail(3);
+                if (j == size - 1 && !suppressoutcome) { dropspider(i, true); fail(3); }
                 break;
             }
             passed += length;
