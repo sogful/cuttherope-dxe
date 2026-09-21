@@ -295,7 +295,6 @@ function mechanics:tick(delta)
 					local transport={time=.1,exit=exit,speed=speed}
 					if body==physics.candy then physics.transport=transport else body.transport=transport end
 					physics:releaseRopes(body,#physics.bulbs>0)
-					physics:popBubble(body)
 					exit.state,exit.timeout,hat.flash="throwing",.8,self.time
 					if physics.audio then physics.audio:play("teleport") end
 					return

@@ -95,9 +95,9 @@ check("HatEntryReleaseAndExit",function()
 	physics.candy.previous,physics.candy.velocity=Vector2.new(0,-20),Vector2.new(0,300)
 	physics.bubble=true
 	physics.mechanics:tick(.016)
-	assert(physics.transport and not physics.bubble and #physics.candy.constraints==0 and physics.ropes[1].cut)
+	assert(physics.transport and physics.bubble and #physics.candy.constraints==0 and physics.ropes[1].cut)
 	for _=1,7 do physics.mechanics:advanceTransport(.016) physics.mechanics:tick(.016) end
-	assert(not physics.transport and physics.teleports==1)
+	assert(not physics.transport and physics.teleports==1 and physics.bubble)
 	assert((physics.candy.pos-Vector2.new(500,16)).Magnitude<.001)
 	assert(math.abs(physics.candy.velocity.Y-378)<.001)
 	assert(math.abs(physics.candy.previous.Y-9.7)<.001)

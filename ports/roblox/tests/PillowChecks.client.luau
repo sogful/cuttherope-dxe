@@ -68,9 +68,12 @@ check("HatsTransportBulbWithoutHidingCandy",function()
 	local d=definition()
 	d.socks={{point=d.bulbs[1].point,angle=0,group=0},{point=Vector2.new(1500,500),angle=0,group=0}}
 	local p=Physics.new(d)
+	p.bulbs[1].bubble=true
 	p:tick() assert(p.bulbs[1].transport and not p.transport and #p:activeBodies()==1)
+	assert(p:hasBubble(p.bulbs[1]))
 	for _=1,9 do p:tick() end
 	assert(not p.bulbs[1].transport and p.bulbs[1].pos.X==1500 and not p.retired)
+	assert(p:hasBubble(p.bulbs[1]))
 end)
 check("SleepWakeAndLightsOutLoss",function()
 	local r,layer=runtime(definition())
