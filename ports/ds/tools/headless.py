@@ -47,6 +47,7 @@ def main():
     parser.add_argument("--pagingstress", action="store_true", help="Profile-only synthetic heavy completion and captured-frame recovery test")
     parser.add_argument("--layers", action="store_true", help="Profile-only candy/Om Nom framebuffer overlap regression")
     parser.add_argument("--upper", action="store_true", help="Check dual-screen menus, HUD, flashes, flaps and tall camera")
+    parser.add_argument("--finished", action="store_true", help="Profile-only final-level popup test with synthetic completion")
     parser.add_argument("--benchmark", action="store_true", help="Measure DS update timing and host throughput without profiling overhead")
     parser.add_argument("--label", default="current", help="Benchmark output label")
     parser.add_argument("--first-box", type=int, default=1, choices=range(1,18))
@@ -55,15 +56,15 @@ def main():
     parser.add_argument("--costume", type=int, default=0, choices=range(16), help="Equip a costume through the real picker before a test")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
     args = parser.parse_args()
-    if (args.pagingstress or args.layers) and not args.profile:
-        parser.error("--pagingstress/--layers require --profile; normal ROMs have no diagnostic controls")
+    if (args.pagingstress or args.layers or args.finished) and not args.profile:
+        parser.error("--pagingstress/--layers/--finished require --profile; normal ROMs have no diagnostic controls")
     if args.profile and args.rom == str(root / "dist/cuttherope.nds"):
         args.rom = str(root / "dist/cuttherope-profile.nds")
     core = c.CDLL(args.core)
     directory = root / "build/headless" / "profile" if args.profile else root / "build/headless"
     if args.benchmark: directory=directory/"benchmarks"/args.label
     if args.profile:
-        label = "upper" if args.upper else "layers" if args.layers else f"pagingstress-{args.first_box}-{args.level_only or 23}" if args.pagingstress else f"boxes-{args.first_box}-{args.last_box}-{args.level_only or 'all'}" if args.boxes else "regressions" if args.regressions else "flow" if args.flow else "inspect"
+        label = "finished" if args.finished else "upper" if args.upper else "layers" if args.layers else f"pagingstress-{args.first_box}-{args.level_only or 23}" if args.pagingstress else f"boxes-{args.first_box}-{args.last_box}-{args.level_only or 'all'}" if args.boxes else "regressions" if args.regressions else "flow" if args.flow else "inspect"
         directory /= label + f"-costume-{args.costume}"
     directory.mkdir(parents=True, exist_ok=True)
     folder = str(directory).encode()
@@ -250,11 +251,12 @@ def main():
         keys += ["belt", "beltwraps", "belthandoffs", "beltoffset", "beltitems"]
         keys += ["mouth", "mouthtick", "nightstart"]
         keys += ["upperfault", "upperframes", "upperreads"]
+        keys += ["popup", "popupage"]
         faultsymbol = None if args.benchmark else next((line for line in symbols if line.endswith(" renderfault")), None)
         faultaddress = memory + int(faultsymbol.split()[0], 16) - 0x02000000 if faultsymbol else None
         def telemetry():
             version = struct.unpack("<I", c.string_at(memory + offset + 4, 4))[0]
-            fields = 97 if version >= 17 else 94 if version >= 16 else 91 if version >= 15 else 86 if version >= 14 else 76 if version >= 13 else 68 if version >= 12 else 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
+            fields = 99 if version >= 18 else 97 if version >= 17 else 94 if version >= 16 else 91 if version >= 15 else 86 if version >= 14 else 76 if version >= 13 else 68 if version >= 12 else 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
             result = dict(zip(keys, struct.unpack(f"<10I2f{fields}I", c.string_at(memory + offset, 48 + fields * 4))))
             for key in keys: result.setdefault(key, 0)
             return result
@@ -362,13 +364,19 @@ def main():
             import uppercheck
             uppercheck.check(run,tap,key,touch,telemetry,framebuffer,settle,snapshot,report,directory)
             return
+        if args.finished:
+            import finishedcheck
+            control = memory + int(next(line.split()[0] for line in symbols if line.endswith(" profilestress")),16)-0x02000000
+            def finish(): c.cast(control,c.POINTER(c.c_uint))[0]=4
+            finishedcheck.check(run,tap,key,touch,telemetry,framebuffer,settle,snapshot,finish,report,directory,layout)
+            return
         if args.night:
             import nightcheck
             nightcheck.check(run,tap,key,touch,telemetry,framebuffer,settle,snapshot,report,directory,args.costume)
             return
         if args.layers:
             control = memory + int(next(line.split()[0] for line in symbols if line.endswith(" profilestress")),16)-0x02000000
-            key(8); key(8); tap(66,26); settle()
+            key(8); key(8); tap(*layout["levelpositions"][0]); settle()
             c.cast(control,c.POINTER(c.c_uint))[0]=16
             run(30); snapshot("overlap-target")
             overlap=framebuffer().crop((0,192,256,384))
@@ -411,8 +419,7 @@ def main():
             for box in range(args.first_box - 1,args.last_box):
                 for level in ([args.level_only - 1] if args.level_only else range(25)):
                     assert telemetry()["view"] == 4 and telemetry()["pack"] == box
-                    tap(round(128 + (824 + (level % 5) * 228 - 1280) * 1.01846195 * 192 / 1440),
-                        round(96 + (203.5 + (level // 5) * 258 - 720) * 1.01846195 * 192 / 1440))
+                    tap(*layout["levelpositions"][level])
                     settle()
                     for _ in range(1200):
                         if not telemetry()["intro"]: break
@@ -592,12 +599,12 @@ def main():
                         run(420)
                         snapshot("valentine-result-finished")
                     if box >= 12 and level == 24 and telemetry()["view"] == 0:
-                        key(3); tap(128,72); settle()
+                        key(3); tap(*layout["gameui"]["pause"][1]); settle()
                         skipped = snapshot(f"skip-last-{box+1}")
                         assert skipped["view"] == 4 and skipped["level"] == box*25+24, skipped
                     if telemetry()["view"] == 0: key(3)
                     current = telemetry()["view"]
-                    if current == 1: tap(128,96)
+                    if current == 1: tap(*layout["gameui"]["pause"][2])
                     elif current in (2,3):
                         # Results block input while the first 32 flap frames play.
                         while telemetry()["view"] == 2 and telemetry()["menuage"] < 32: run(1)
@@ -641,10 +648,10 @@ def main():
             for _ in range(15): key(7)
             run(180)
             key(8)
-            tap(66, 26)
+            tap(*layout["levelpositions"][0])
             settle()
             assert telemetry()["view"] == 0 and telemetry()["level"] == 400, "Mechanical did not launch its own map"
-            key(3); tap(128,96); settle()
+            key(3); tap(*layout["gameui"]["pause"][2]); settle()
             key(0)
             for _ in range(16): key(6)
             run(180)
@@ -904,8 +911,8 @@ def main():
             settle()
             key(3)
             assert snapshot("source-pause")["view"] == 1
-            touch(128, 96)
-            touch(128, 96, False)
+            touch(*layout["gameui"]["pause"][2])
+            touch(*layout["gameui"]["pause"][2],False)
             closing = []
             for _ in range(80):
                 run(1)
@@ -914,8 +921,8 @@ def main():
             settle()
             assert snapshot("quit-levels")["view"] == 4
             settle()  # The grid may still be fading in after its texture pages load.
-            touch(66, 26)
-            touch(66, 26, False)
+            touch(*layout["levelpositions"][0])
+            touch(*layout["levelpositions"][0],False)
             opening = []
             openingclocks = {}
             for _ in range(360):
@@ -976,7 +983,7 @@ def main():
             run(60)
             paused = snapshot("paused")
             assert paused["paused"] == 1 and paused["ticks"] == beforepause["ticks"], paused
-            touch(128,72); touch(40,72); touch(40,72,False)
+            touch(*layout["gameui"]["pause"][1]); touch(40,87); touch(40,87,False)
             assert telemetry()["view"] == 1 and telemetry()["ticks"] == paused["ticks"], "Cancelled skip resumed gameplay"
             tap(*layout["gameui"]["pause"][4])
             tap(*layout["gameui"]["pause"][5])
@@ -1000,7 +1007,7 @@ def main():
             assert telemetry()["view"] == 0 and telemetry()["cuts"] == 1, "Cancelled HUD drag leaked into gameplay"
             tap(*hud()[:2])
             assert telemetry()["view"] == 1, "Touch pause failed"
-            tap(128, 96)
+            tap(*layout["gameui"]["pause"][2])
             settle()
             levels = snapshot("levels")
             assert levels["view"] == 4 and levels["beststars"] == 3, levels
@@ -1036,7 +1043,7 @@ def main():
             while telemetry()["menuage"] < 32: run(1)
             settle(); tap(*replaypoint); settle(); tap(*hud()[:2])
             before = telemetry()
-            tap(128,72)
+            tap(*layout["gameui"]["pause"][1])
             skipped = snapshot("pause-skip")
             assert skipped["view"] == 0 and skipped["level"] == 1 and skipped["resets"] == before["resets"]+1 and not skipped["door"] and not skipped["flash"], skipped
             final = snapshot("complete")

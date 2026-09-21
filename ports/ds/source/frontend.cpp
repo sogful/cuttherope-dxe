@@ -571,9 +571,9 @@ void prepareoverlay(const ui::controller& menu, const dx::simulation& game) {
         float width = 0;
         for (const char* p = score; *p; ++p) width += menuart::digits[menu.locale][*p - '0'].advance;
         const float right = 256 - (menu.locale == 9 ? 76 : 20) * pixels;
-        digits(menu, score, std::lround(right - width / 2), 5, false);
+        digits(menu, score, std::lround(right - width / 2), 8, false);
         const auto& best = menuart::bestlabels[menu.locale];
-        add(best.sprite, std::lround(right - width - best.advance / 2), 5);
+        add(best.sprite, std::lround(right - width - best.advance / 2), 8);
         ui::button buttons[8];
         const int size = menu.buttons(buttons);
         for (int i = 0; i < size; ++i) {
@@ -895,11 +895,12 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         const int id = game.activeid(part);
         if (!game.available(id)) continue;
         if (game.bubblefor(id) >= 0) {
-            world(menuart::bubble4 + static_cast<int>(elapsed * .016f / .05f) % 13, game.bodies[id].pos);
-            if (const auto* app = game.ghostapp(2,game.bubblefor(id))) gamevisuals::clouds(game,*app,game.bodies[id].pos,31,false,world);
+            const int alpha = id == 3 ? 31 : gamevisuals::candyalpha(game.bodies[id].pos);
+            world(menuart::bubble4 + static_cast<int>(elapsed * .016f / .05f) % 13, game.bodies[id].pos, alpha);
+            if (const auto* app = game.ghostapp(2,game.bubblefor(id))) gamevisuals::clouds(game,*app,game.bodies[id].pos,alpha,false,world);
         }
     }
-    if (game.popage * .016f < .6f) world(menuart::bubble18 + std::min(11, static_cast<int>(game.popage * .016f / .05f)), game.popposition);
+    if (game.popage * .016f < .6f) world(menuart::bubble18 + std::min(11, static_cast<int>(game.popage * .016f / .05f)), game.popposition, gamevisuals::candyalpha(game.popposition));
     gamevisuals::steam(game,true,world);
     for (int i = 0; i < game.definition.hookcount; ++i) {
         const auto& rope = game.ropes[i];
@@ -1045,7 +1046,8 @@ void draw(const ui::controller& menu) {
     case ui::view::levels:
         for (int row = 0; row < 5; ++row) {
             for (int column = 0; column < 5; ++column) {
-                const int px = x(824 + column * 228), py = y(203.5f + row * 258);
+                const auto& p = menuart::levelpositions[row * 5 + column];
+                const int px = p[0], py = p[1];
                 const bool unlocked = menu.levelopen(row * 5 + column);
                 add(unlocked ? menuart::level0 : menuart::level1, px, py);
                 if (unlocked) {
@@ -1054,8 +1056,8 @@ void draw(const ui::controller& menu) {
                 }
             }
         }
-        label(menu, menuart::count0 + menu.totalstars(menu.pack), 231, 10);
-        add(menuart::pack3, 248, 9);
+        label(menu, menuart::count0 + menu.totalstars(menu.pack), 228, 5);
+        add(menuart::levelstar, 248, 6);
         if (menu.notice) label(menu, menuart::unavailable, 128, 186);
         break;
     default: break;
@@ -1063,7 +1065,7 @@ void draw(const ui::controller& menu) {
     int index = menu.mode == ui::view::levels ? 25 : 0;
     for (const auto& item : menuart::controls) {
         if (item.view != menu.mode) continue;
-        bool pressed = menu.pressed == index || (menu.keyboard && menu.focus == index);
+        bool pressed = !menu.popup && (menu.pressed == index || (menu.keyboard && menu.focus == index));
         if (item.action == ui::action::language && item.argument == menu.locale) pressed = !pressed;
         if (item.action == ui::action::skintab && item.argument == menu.skintab) pressed = true;
         const float factor = menu.mode == ui::view::options && item.action != ui::action::back ? .85f : 1;
@@ -1079,6 +1081,17 @@ void draw(const ui::controller& menu) {
             if (!enabled) add(menuart::setting4, item.x + std::lround((item.argument == 2 ? 10 : 7)*menuart::settingszoom*factor), item.y + 6, {}, GL_FLIP_NONE, factor);
         }
         ++index;
+    }
+    if (menu.popup) {
+        rect({}, RGB15(0,0,0), 16);
+        const float scale = menu.popupscale();
+        add(menuart::popuppaper, 128, 96, {}, GL_FLIP_NONE, scale);
+        for (int i = 0; i < 3; ++i) {
+            const auto& p = menuart::popuppositions[i];
+            const int px = std::lround(128 + (p[0] - 128) * scale), py = std::lround(96 + (p[1] - 96) * scale);
+            if (i == 2) add(menu.pressed == 0 ? menuart::popupdown : menuart::popupup, px, py, {}, GL_FLIP_NONE, scale);
+            add(menuart::popuplabels[menu.locale][i], px, py, {}, GL_FLIP_NONE, scale);
+        }
     }
     upload();
     glBegin2D();

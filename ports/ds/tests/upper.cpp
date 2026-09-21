@@ -81,6 +81,50 @@ int main(int argc,char** argv) {
         }
         assert(found);
     }
+    for (bool split : {false,true}) for (int y : {-100,-300,-400,-450}) {
+        game.reset(dx::levels[split?100:0]);
+        for (int part=0;part<game.activecount();++part) {
+            const int id=game.activeid(part);
+            game.bodies[id].pos={1280,static_cast<float>(y)};
+            game.bubbleindex(id)=0;
+        }
+        game.popage=0; game.popposition={1280,static_cast<float>(y)};
+        frontend::preparegame(menu,game,0);
+        int bubbles=0, pops=0;
+        for (int i=0;i<frontend::count;++i) {
+            const auto& command=frontend::commands[i];
+            if (command.id==menuart::bubble4 || command.id==menuart::bubble18) {
+                assert(command.alpha==gamevisuals::candyalpha(game.popposition));
+                bubbles+=command.id==menuart::bubble4;
+                pops+=command.id==menuart::bubble18;
+            }
+        }
+        assert(bubbles==(y>-400?game.activecount():0) && pops==(y>-400?1:0));
+    }
+    for (int y : {-300,-450}) {
+        game.reset(dx::levels[0]); game.bubble=0;
+        game.definition.ghostcount=1; game.definition.bubblecount=1;
+        game.bubblesused[0]=true;
+        game.ghosts[0].form=2; game.ghosts[0].idleage=1;
+        game.apparitions[0]={0,2,0,1,-1,0};
+        game.bodies[0].pos={1280,static_cast<float>(y)};
+        frontend::preparegame(menu,game,0);
+        int clouds=0;
+        for (int i=0;i<frontend::count;++i) {
+            const auto& command=frontend::commands[i];
+            if (command.id>=menuart::ghost2 && command.id<=menuart::ghost6) {
+                ++clouds; assert(command.alpha==gamevisuals::candyalpha(game.candy().pos));
+            }
+        }
+        assert(clouds==(y>-400?5:0));
+    }
+    game.reset(dx::levels[375]); game.bulbbubble=0; game.bodies[3].pos={1280,-300};
+    frontend::preparegame(menu,game,0);
+    bool bulbbubble=false;
+    for (int i=0;i<frontend::count;++i) if (frontend::commands[i].id==menuart::bubble4) {
+        assert(frontend::commands[i].alpha==31); bulbbubble=true;
+    }
+    assert(bulbbubble);
     menu={}; game.reset(dx::levels[0]);
     for (int box=0;box<17;++box) for (int sections=0;sections<3;++sections) {
         const int id=upperart::worlds[box][sections];

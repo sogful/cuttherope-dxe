@@ -42,7 +42,7 @@ def check(
         if state()["view"] == 0:
             key(3)
         if state()["view"] == 1:
-            tap(128, 96)
+            tap(*layout["gameui"]["pause"][2])
         else:
             key(0)
         settle()

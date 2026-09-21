@@ -259,7 +259,7 @@ def main():
     for i in range(52):
         quad("titlecandy" + str(i), "menu_logo_new", i, mainfit*uiscale.title, group="titlecandies" + str(i // 8))
     quad("titlehand", "candy_selection_fx", 1, mainfit*uiscale.title, group="title")
-    titlepositions = [[round(128+(x-1280)*scale*mainfit*uiscale.title),round(56+(y-410)*scale*mainfit*uiscale.title)] for x,y in ((1280,410),(1423,685.5),(1603,729.5))]
+    titlepositions = [[round(128+(x-1280)*scale*mainfit*uiscale.title),round(59+(y-410)*scale*mainfit*uiscale.title)] for x,y in ((1280,410),(1423,685.5),(1603,729.5))]
     for i, name in enumerate(("longup", "longdown", "shortdown", "shortup")):
         quad(name, "menu_buttons", i)
     for i in range(11):
@@ -276,7 +276,11 @@ def main():
         quad("pack" + str(i), "menu_pack_ui", i, factor=fit*(uiscale.boxes if i in (1,2,9) else 1.3 if i in (6,7) else 1), restore=i in (1, 2))
     quad("boxstar", "menu_pack_ui", 3, factor=fit*uiscale.boxes)
     for i in range(6):
-        quad("level" + str(i), "menu_level_ui", i, restore=True)
+        quad("level" + str(i), "menu_level_ui", i, factor=fit*uiscale.levels, restore=True)
+    quad("levelstar","menu_pack_ui",3,factor=fit*uiscale.levels)
+    levelpositions=[[48+i%5*40,30+i//5*36] for i in range(25)]
+    import popup
+    popupinfo=popup.build(globals())
     configs = json.loads((content / "ctroriginal_packs.json").read_text())
     sources.add(content / "ctroriginal_packs.json")
     for i, config in enumerate(configs):
@@ -320,9 +324,10 @@ def main():
             elif key.startswith("total"):
                 value, factor = strings["TOTAL_STARS"].replace("%d", key[5:]), fit * .7
             elif key.startswith("count"):
-                value, factor = key[5:] + "/75", fit * .7
+                value, factor = key[5:] + "/75", fit * .7 * uiscale.levels
             elif key.startswith("number"):
                 value = key[6:]
+                factor *= uiscale.levels
             elif key in ("unlockall", "unavailable"):
                 value = "Unlock all levels" if key == "unlockall" else "Not ported yet"
                 small, factor = True, fit * .75
@@ -484,6 +489,8 @@ def main():
     header += ['inline constexpr int lockwidths[12][17] = {'] + ['{' + ','.join(map(str,row)) + '},' for row in lockwidths] + ['};']
     header += skins.header(skininfo, ids, fit, scale)
     header += gameui.header(gameinfo, ids)
+    header += popup.header(popupinfo,ids)
+    header += ['inline constexpr int levelpositions[25][2] = {'+','.join('{'+','.join(map(str,p))+'}' for p in levelpositions)+'};']
     header += worldart.header(rails, ids)
     header += contraptionart.header(contraptions, ids)
     header += ['inline constexpr int levelbacks[] = {' + ','.join(str(ids['levelback' + str(i)]) for i in range(17)) + '};', '}']
@@ -493,8 +500,8 @@ def main():
     manifest = dict(viewport=[256, 192], logical=[1920, 1440], design=[2560, 1440], fit=fit, mainfit=mainfit,
                     controls=controls, locales=codes, creditheights=creditheights, lockwidths=lockwidths,
                     uiscale=dict(boxes=uiscale.boxes, settings=uiscale.settings, credits=uiscale.credits, hud=uiscale.hud, creditbounds=uiscale.creditbounds,
-                                 title=uiscale.title,titlebuttons=uiscale.titlebuttons,languages=uiscale.languages,reset=uiscale.reset,results=uiscale.results,pause=uiscale.pause,picker=uiscale.picker),
-                    titlepositions=titlepositions,
+                                 title=uiscale.title,titlebuttons=uiscale.titlebuttons,languages=uiscale.languages,reset=uiscale.reset,results=uiscale.results,pause=uiscale.pause,pausebuttons=uiscale.pausebuttons,picker=uiscale.picker,levels=uiscale.levels,popup=uiscale.popup),
+                    titlepositions=titlepositions,levelpositions=levelpositions,popup=popupinfo,
                     pages=[{key: value for key, value in page.items() if key != "image"} for page in pages],
                     sprites=[{key: value for key, value in record.items() if key != "image"} for record in records],
                     sources={str(path.relative_to(content)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)})
@@ -507,6 +514,7 @@ def main():
     anchors += ["src/CutTheRopeDX.Core/GameMain/" + name + ".cs" for name in
                 ("CandySelectionView", "SkinSelectionLayout", "SkinSelectionTabLayout", "OmNomSlotPreviewLayout", "RopeColorHelper")]
     anchors += ["src/CutTheRopeDX.Core/Framework/Core/RootController.cs", "ports/roblox/src/ReplicatedStorage/SessionState.luau"]
+    anchors += ["src/CutTheRopeDX.Core/Commons/Popup.cs","src/CutTheRopeDX.Core/Commons/PopupBuilder.cs","src/CutTheRopeDX.Core/GameMain/PopUpMenu.cs","ports/roblox/src/ReplicatedStorage/FinishedPopup.luau"]
     manifest["layoutSources"] = {name: hashlib.sha256((root.parents[1] / name).read_bytes()).hexdigest() for name in anchors}
     manifest["skinSources"] = skininfo["sources"]
     manifest["gameui"] = gameinfo

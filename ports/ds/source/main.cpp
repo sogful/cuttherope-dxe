@@ -15,7 +15,7 @@
 #include <algorithm>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 17;
+    std::uint32_t magic = 0x44585250, version = 18;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -37,6 +37,7 @@ struct diagnostics {
     std::uint32_t belt = 0, beltwraps = 0, belthandoffs = 0, beltoffset = 0, beltitems = 0;
     std::uint32_t mouth = 0, mouthtick = 0, nightstart = 0;
     std::uint32_t upperfault = 0, upperframes = 0, upperreads = 0;
+    std::uint32_t popup = 0, popupage = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -244,6 +245,7 @@ int main() {
         if (menu.clicked || menu.mode != oldview) menu.persist();
         display::draw(game, frame, menu, menu.gameTouch, pointer);
         telemetry.upperfault=upper::fault(); telemetry.upperframes=upper::updates(); telemetry.upperreads=upper::reads();
+        telemetry.popup=menu.popup; telemetry.popupage=menu.popupage;
         const unsigned micros = timerTicks2usec(cpuEndTiming());
         if (micros > peak) peak = micros;
         ++total;

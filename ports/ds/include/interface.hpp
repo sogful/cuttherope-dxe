@@ -8,7 +8,7 @@ namespace ui {
 enum class view { playing, paused, results, failure, levels, home, packs, options, languages, credits, resetmenu, skins };
 enum class action { none, pause, resume, restart, skip, levels, home, effects, music, play, back, next,
                     packs, options, languages, credits, resetmenu, erase, clickcut, language, previouspack, nextpack, openpack,
-                    unlock, skinmenu, skintab, skin, unavailable };
+                    unlock, skinmenu, skintab, skin, unavailable, dismiss };
 enum key { accept = 1, cancel = 2, start = 4, previous = 8, following = 16 };
 struct input { int x = 0, y = 0, keys = 0; bool touch = false; };
 struct button {
@@ -43,6 +43,8 @@ public:
     bool improved = false;
     bool replaypanel = false;
     int resulttime = 0;
+    int popup = 0, popupage = 0;
+    float popupscale() const;
     view destination = view::levels;
     bool blocked() const { return flash != 0 || door != 0 || (mode == view::results && age < 32); }
     float white() const { return flash == 1 ? std::min(1.0f, flashframe * .016f / .15f) : flash == 2 ? std::max(0.0f, 1 - flashframe * .016f / .15f) : 0; }
@@ -64,7 +66,7 @@ public:
     void advance(const dx::simulation& game);
     static int points(int stars, int ticks);
 private:
-    bool held = false, captured = false;
+    bool held = false, captured = false, modalrelease = false;
     int armed = -1, resultage = 0;
     view returnview = view::paused;
     void enter(view target);

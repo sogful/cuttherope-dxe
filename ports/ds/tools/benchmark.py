@@ -2,9 +2,11 @@
 import json
 import statistics
 import time
+from pathlib import Path
 
 
 def check(run,tap,key,state,settle,snapshot,report,directory):
+    layout=json.loads((Path(__file__).resolve().parents[1]/"generated/menumanifest.json").read_text(encoding="utf-8"))
     results=[]
     def wait(predicate):
         for _ in range(1800):
@@ -37,12 +39,12 @@ def check(run,tap,key,state,settle,snapshot,report,directory):
     key(3); measure("pause")
     key(7); key(7); key(8); settle()
     assert state()["view"]==4
-    tap(190,96); settle(); wait(lambda s:not s["intro"])
+    tap(*layout["levelpositions"][14]); settle(); wait(lambda s:not s["intro"])
     measure("cardboard-15")
     key(3); key(7); key(7); key(8); settle(); key(0)
     for _ in range(16): key(7)
     run(120); tap(128,96); wait(lambda s:s["view"]==4); settle(); run(90)
-    tap(128,166); wait(lambda s:s["view"]==0); settle(); wait(lambda s:not s["intro"])
+    tap(*layout["levelpositions"][22]); wait(lambda s:s["view"]==0); settle(); wait(lambda s:not s["intro"])
     assert state()["level"]==422,state()
     measure("mechanical-23")
     report.update(passed=True,benchmark=results)

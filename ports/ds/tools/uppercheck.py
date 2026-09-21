@@ -3,9 +3,13 @@
 import json
 from PIL import Image, ImageChops, ImageStat
 import statistics
+from pathlib import Path
 
 
 def check(run,tap,key,touch,state,framebuffer,settle,snapshot,report,directory):
+    layout=json.loads((Path(__file__).resolve().parents[1]/"generated/menumanifest.json").read_text(encoding="utf-8"))
+    grid=layout["levelpositions"]
+    leave=layout["gameui"]["pause"][2]
     def wait(predicate,limit=1800):
         for _ in range(limit):
             if predicate(state()): return
@@ -51,7 +55,7 @@ def check(run,tap,key,touch,state,framebuffer,settle,snapshot,report,directory):
     assert top().tobytes()==closed.tobytes() and state()["upperframes"]==updates, "Closed results redrew UI on upper screen"
     key(0); settle()
     assert state()["view"]==4
-    tap(190,96)
+    tap(*grid[14])
     scrolling=[]; cameras=set()
     for _ in range(1800):
         run(1)
@@ -62,9 +66,9 @@ def check(run,tap,key,touch,state,framebuffer,settle,snapshot,report,directory):
     assert state()["level"]==14 and not state()["intro"] and len(cameras)>25
     record("upper-tall-camera",scrolling)
     snapshot("upper-tall-level")
-    key(3); tap(128,102); settle(); key(0)
+    key(3); tap(*leave); settle(); key(0)
     for _ in range(7): key(7)
-    run(120); key(8); tap(128,26); settle()
+    run(120); key(8); tap(*grid[2]); settle()
     assert state()["level"]==177
     touch(100,66); touch(155,66); touch(155,66,False)
     rising=[]; heights=[]
@@ -81,12 +85,12 @@ def check(run,tap,key,touch,state,framebuffer,settle,snapshot,report,directory):
     red=sum(r>80 and r>g*1.5 and r>b*1.5 for r,g,b in candy.getdata())
     assert red==0,("Frozen candy remained above the level",red,state())
     record("upper-candy-fade",rising)
-    key(3); tap(128,102); settle(); key(0)
+    key(3); tap(*leave); settle(); key(0)
     for _ in range(9): key(7)
-    run(120); key(8); tap(66,26); settle()
+    run(120); key(8); tap(*grid[0]); settle()
     assert state()["level"]==400
     snapshot("upper-mechanical-background")
-    key(3); touch(128,102); touch(128,102,False)
+    key(3); touch(*leave); touch(*leave,False)
     closing=[]; ages=[]
     for _ in range(180):
         run(1); closing.append(framebuffer()); ages.append(state()["doorframe"] if state()["door"]==2 else -1)

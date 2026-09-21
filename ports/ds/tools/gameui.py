@@ -17,10 +17,11 @@ def build(menu):
     center = [(min(p[a] for p in points[:12]) + max(p[a] for p in points[:12])) / 2 for a in (0, 1)]
     resultfit = fit*uiscale.results
     pausefit = fit*uiscale.pause
+    buttonfit = fit*uiscale.pausebuttons
     for i,name in enumerate(("pauseup","pausedown")):
-        quad(name,"menu_buttons",i,factor=pausefit,group="menu_buttonspause")
+        quad(name,"menu_buttons",i,factor=buttonfit,group="menu_buttonspause")
     for i in range(5):
-        quad("pauseoption"+str(i),"menu_options_packed",i,factor=pausefit,group="menu_options_packedpause")
+        quad("pauseoption"+str(i),"menu_options_packed",i,factor=buttonfit,group="menu_options_packedpause")
     info["anchors"] = [[round(128 + (p[0] - center[0]) * resultfit * scale), round(96 + (p[1] - center[1]) * resultfit * scale)] for p in points]
     for i in (13, 14, 15):
         quad("result" + str(i), "menu_results", i, factor=resultfit, group="resultart"+str(i))
@@ -63,10 +64,10 @@ def build(menu):
         digits = []
         for i, char in enumerate("0123456789:"):
             name = "digit" + code + str(i)
-            image, origin, _ = menu["textimage"](char, code, True)
+            image, origin, _ = menu["textimage"](char, code, True,factor=pausefit)
             face, _ = menu["font"](code, True)
             add(name, image, "textdigits" + code, origin)
-            digits.append((name, face.getlength(char) * fit * scale))
+            digits.append((name, face.getlength(char) * pausefit * scale))
         info["digits"].append(digits)
         digits = []
         for i,char in enumerate("0123456789:"):
@@ -77,9 +78,9 @@ def build(menu):
         info["resultdigits"].append(digits)
         name = "bestlabel" + code
         value = strings["BEST_SCORE"] + ": "
-        label(name, value, code, True, group="textpause" + code)
+        label(name, value, code, True,factor=pausefit,group="textpause" + code)
         face, _ = menu["font"](code, True)
-        info["best"].append((name, sum(face.getlength(c) for c in value) * fit * scale))
+        info["best"].append((name, sum(face.getlength(c) for c in value) * pausefit * scale))
         for level in range(boxes * 25):
             label("levelname" + str(level) + code, f"{level // 25 + 1} - {level % 25 + 1}", code, factor=fit*uiscale.hud, group="textlevel" + code + str(level // 10))
         label("levelword" + code, strings["LEVEL"], code, factor=fit * .7 * uiscale.hud, group="texthud" + code)
@@ -96,8 +97,8 @@ def build(menu):
         add(name, image, "textscoredigits", ((10 + width / 2) * resultfit * scale, 62.5 * resultfit * scale))
         info["score"].append((name, width * resultfit * scale))
     info["hud"] = []
-    info["pause"] = [(128,38+i*32) for i in range(4)]
-    info["pause"] += [(96,169),(160,169)]
+    info["pause"] = [(128,57+i*30) for i in range(4)]
+    info["pause"] += [(96,177),(160,177)]
     frames = json.loads((content / "images/hud_ui.json").read_text())["frames"]
     for q in info["hudquads"]:
         pw, ph = (frames[q]["spriteSourceSize"][key] for key in ("w", "h"))

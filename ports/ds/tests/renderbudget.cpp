@@ -37,6 +37,12 @@ int main(int argc, char** argv) {
             menu.packposition=position/4.0f; menu.pack=std::lround(menu.packposition); menu.settled=age;
             for (int pressed : {-1,0,1}) { menu.pressed=pressed; checkmenu(); }
         }
+        menu.pack=16; menu.packposition=16;
+        for (int phase : {1,2}) for (int age : {0,1,10,18,19,25,38,60}) {
+            menu.popup=phase; menu.popupage=age;
+            for (int pressed : {-1,0}) { menu.pressed=pressed; checkmenu(); }
+        }
+        menu.popup=0;
         for (auto view : {ui::view::home,ui::view::options,ui::view::languages,ui::view::resetmenu,ui::view::levels}) {
             menu.mode=view;
             for (int pressed=-1;pressed<12;++pressed) { menu.pressed=pressed; checkmenu(); }

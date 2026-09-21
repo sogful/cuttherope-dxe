@@ -106,7 +106,7 @@ int main() {
     settle();
     assert(menu.mode == ui::view::playing && menu.white() == 0);
     key(ui::cancel);
-    tap(128, 96);
+    choose(ui::action::levels);
     settle();
     assert(menu.mode == ui::view::levels);
     key(ui::cancel);
@@ -178,7 +178,50 @@ int main() {
     progression.mode=ui::view::results; progression.age=100; progression.door=0;
     progression.update(game, {158,125,0,true}); progression.update(game, {158,125,0,false});
     assert(progression.pack==16 && progression.level==0 && progression.reset);
-    progression.pack = menuart::playableboxes - 1; progression.level = 24; assert(!progression.hasnext());
+    progression.pack = menuart::playableboxes - 1; progression.level = 24; assert(progression.hasnext());
+    progression.mode=ui::view::results; progression.age=100; progression.door=0;
+    progression.saves.complete(424,5200,3);
+    progression.update(game, {158,125,0,true}); progression.update(game, {158,125,0,false});
+    assert(progression.mode==ui::view::packs && progression.popup==1 && !progression.reset && progression.levelid()==424);
+    assert(progression.packposition==16 && progression.popupscale()==0);
+    progression.update(game,{0,0,ui::accept,false});
+    assert(progression.popup==1);
+    for (int i=0;i<38;++i) progression.advance(game);
+    assert(progression.popupscale()==1);
+    progression.update(game,{128,96,0,true}); progression.update(game,{210,96,0,true}); progression.update(game,{210,96,0,false});
+    assert(progression.popup==1 && progression.packposition==16);
+    ui::button modal;
+    assert(progression.buttons(&modal)==1 && modal.enabled && modal.id==ui::action::dismiss);
+    progression.update(game,{modal.x,modal.y,0,true}); progression.update(game,{10,10,0,false});
+    assert(progression.popup==1);
+    progression.update(game,{modal.x,modal.y,0,true}); progression.update(game,{modal.x,modal.y,0,false});
+    assert(progression.popup==2);
+    for (int i=0;i<19;++i) progression.advance(game);
+    assert(!progression.popup && progression.mode==ui::view::packs && progression.saves.active().levels[424].score==5200);
+    progression.update(game,{0,0,ui::cancel,false});
+    assert(progression.mode==ui::view::home);
+    for (int key : {ui::accept,ui::cancel}) {
+        progression.mode=ui::view::packs; progression.popup=1; progression.popupage=38;
+        progression.update(game,{0,0,key,false});
+        assert(progression.popup==2);
+        for (int i=0;i<19;++i) progression.advance(game);
+        assert(!progression.popup && progression.mode==ui::view::packs);
+    }
+    progression.popup=2; progression.popupage=18;
+    progression.update(game,{128,96,0,true}); progression.advance(game);
+    progression.update(game,{128,96,0,false});
+    assert(!progression.popup && progression.mode==ui::view::packs && progression.packposition==16);
+    for (int level=0;level<25;++level) {
+        ui::controller grid;
+        grid.mode=ui::view::levels; grid.saves.unlocked=true;
+        ui::button controls[32]; const int count=grid.buttons(controls);
+        assert(count==26);
+        for (int other=0;other<count;++other)
+            assert(controls[other].contains(controls[level].x,controls[level].y)==(other==level));
+        grid.update(game,{controls[level].x,controls[level].y,0,true});
+        grid.update(game,{controls[level].x,controls[level].y,0,false});
+        assert(grid.reset && grid.mode==ui::view::playing && grid.level==level);
+    }
     int previous = 0;
     for (int i = 0; i < 360; ++i) {
         const auto state = ui::resultat(i * .016f, 3, 5200, 500);
@@ -207,12 +250,12 @@ int main() {
     }
     ui::controller skip;
     skip.mode = ui::view::paused;
-    skip.update(game,{128,72,0,true}); skip.update(game,{128,72,0,false});
+    skip.update(game,{128,87,0,true}); skip.update(game,{128,87,0,false});
     assert(skip.mode==ui::view::playing && skip.level==1 && skip.reset && !skip.door && !skip.flash);
     assert(skip.levelopen(1) && !skip.levelopen(2) && skip.totalstars()==0);
     assert(skip.saves.active().levels[0].completed==0 && skip.saves.active().levels[1].completed==2);
     skip.mode = ui::view::paused; skip.level = 24;
-    skip.update(game,{128,72,0,true}); skip.update(game,{128,72,0,false});
+    skip.update(game,{128,87,0,true}); skip.update(game,{128,87,0,false});
     assert(skip.door==2 && skip.pack==0 && !skip.reset);
     for (int i=0;i<32;++i) skip.advance(game);
     assert(skip.mode==ui::view::levels);

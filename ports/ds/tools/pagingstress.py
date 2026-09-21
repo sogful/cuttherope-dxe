@@ -6,6 +6,7 @@ from PIL import ImageStat
 
 
 def check(run, tap, key, state, framebuffer, settle, stress, profiler, report, directory, box=1, level=23):
+    layout=json.loads((Path(__file__).resolve().parents[1]/"generated/menumanifest.json").read_text(encoding="utf-8"))
     def wait(predicate, limit=2400):
         for _ in range(limit):
             if predicate(state()):
@@ -21,8 +22,7 @@ def check(run, tap, key, state, framebuffer, settle, stress, profiler, report, d
     run(180)
     key(8)
     level -= 1
-    tap(round(128 + (824 + level % 5 * 228 - 1280) * 1.01846195 * 192 / 1440),
-        round(96 + (203.5 + level // 5 * 258 - 720) * 1.01846195 * 192 / 1440))
+    tap(*layout["levelpositions"][level])
     settle()
     wait(lambda s: s["ticks"] >= 40)
     assert state()["level"] == (box - 1) * 25 + level
@@ -44,7 +44,6 @@ def check(run, tap, key, state, framebuffer, settle, stress, profiler, report, d
     assert repeated and state()["view"] == 2 and state()["menuage"] >= 360
     framebuffer().save(directory/"heavy-closed-dual.png")
     before = state()["resets"]
-    layout=json.loads((Path(__file__).resolve().parents[1]/"generated/menumanifest.json").read_text(encoding="utf-8"))
     tap(*layout["gameui"]["anchors"][11])
     settle()
     run(90)

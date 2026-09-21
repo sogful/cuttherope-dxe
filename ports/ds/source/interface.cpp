@@ -31,7 +31,17 @@ bool controller::levelopen(int index) const {
     const auto& records = saves.active().levels;
     return unlockall() || index == 0 || records[pack * 25 + index].completed || (records[pack * 25 + index - 1].completed & 1);
 }
-bool controller::hasnext() const { return levelid() < menuart::playableboxes * 25 - 1 && (level < 24 || packopen(pack + 1)); }
+bool controller::hasnext() const {
+    return levelid() >= 0 && levelid() < menuart::playableboxes * 25 &&
+        (levelid() == menuart::playableboxes * 25 - 1 || level < 24 || packopen(pack + 1));
+}
+float controller::popupscale() const {
+    const float time = popupage * .016f;
+    if (popup == 2) return std::max(0.0f, 1 - time / .3f);
+    if (time < .3f) return time / .3f * 1.1f;
+    if (time < .4f) return 1.1f - (time - .3f) / .1f * .2f;
+    return .9f + std::min(1.0f, (time - .4f) / .2f) * .1f;
+}
 void controller::persist() {
     auto& settings = saves.preferences;
     settings.effects = effects; settings.music = music; settings.locale = locale; settings.clickcut = clickcut;
@@ -66,12 +76,17 @@ int controller::points(int stars, int ticks) {
 
 int controller::buttons(button* out) const {
     int count = 0;
+    if (popup) {
+        const auto& sprite = menuart::sprites[menuart::popupup];
+        out[0] = {action::dismiss, menuart::popuppositions[2][0], menuart::popuppositions[2][1], sprite.w, sprite.h, "", popup == 1 && popupage >= 38};
+        return 1;
+    }
     if (frontend()) {
         if (mode == view::levels) {
             for (int i = 0; i < 25; ++i) {
-                const int px = std::lround(128 + (824 + (i % 5) * 228 - 1280) * menuart::fit * (192.0f / 1440));
-                const int py = std::lround(96 + (203.5f + (i / 5) * 258 - 720) * menuart::fit * (192.0f / 1440));
-                out[count++] = {pack < menuart::playableboxes ? action::play : action::unavailable, px, py, 29, 29, "", levelopen(i), i};
+                const auto& p = menuart::levelpositions[i];
+                const auto& sprite = menuart::sprites[menuart::level0];
+                out[count++] = {pack < menuart::playableboxes ? action::play : action::unavailable, p[0], p[1], sprite.w, sprite.h, "", levelopen(i), i};
             }
         }
         for (const auto& item : menuart::controls) {
@@ -144,6 +159,17 @@ void controller::activate(action command, int argument) {
     case action::next:
         if (command == action::next) {
             if (!hasnext()) break;
+            if (levelid() == menuart::playableboxes * 25 - 1) {
+                enter(view::packs);
+                strip = scroller{};
+                strip.selected = pack;
+                strip.x = strip.target = -pack * 640;
+                packposition = pack;
+                settled = 100;
+                replaypanel = false;
+                popup = 1; popupage = 0;
+                break;
+            }
             if (++level == 25) { level = 0; ++pack; strip.moveto(pack); packposition = pack; }
         } else if (command == action::play) level = argument;
         best();
@@ -190,6 +216,7 @@ void controller::activate(action command, int argument) {
     case action::skintab: skintab = argument; skinage = 0; skinvelocity = 0; break;
     case action::skin: skins[skintab] = argument; skinage = 0; break;
     case action::unavailable: notice = 120; break;
+    case action::dismiss: popup = 2; popupage = 0; pressed = armed = -1; break;
     case action::clickcut: clickcut = !clickcut; break;
     case action::language: locale = argument; break;
     case action::previouspack: strip.moveto(pack - 1); pack = strip.selected; settled = 100; break;
@@ -206,7 +233,20 @@ void controller::activate(action command, int argument) {
 
 void controller::update(const dx::simulation& game, input current) {
     reset = clicked = gameTouch = false;
+    if (modalrelease) { suspend(current); modalrelease = current.touch; return; }
     if (blocked()) { suspend(current); return; }
+    if (popup) {
+        if (popup != 1 || popupage < 38) { suspend(current); return; }
+        button item;
+        buttons(&item);
+        if (current.touch && !held) armed = item.contains(current.x, current.y) ? 0 : -1;
+        pressed = current.touch && armed == 0 && item.contains(current.x, current.y) ? 0 : -1;
+        if ((!current.touch && held && armed == 0 && item.contains(current.x, current.y)) || (current.keys & (accept | cancel))) activate(action::dismiss);
+        if (!current.touch) armed = pressed = -1;
+        held = current.touch;
+        captured = true;
+        return;
+    }
     if (frontend()) { frontinput(current); return; }
     button list[32];
     const int count = buttons(list);
@@ -331,6 +371,10 @@ void controller::frontinput(input current) {
 }
 
 void controller::advance(const dx::simulation& game) {
+    if (popup) {
+        ++popupage;
+        if (popup == 2 && popupage >= 19) { popup = popupage = 0; modalrelease = held; }
+    }
     if (flash) {
         if (++flashframe * .016f >= .15f) {
             if (flash == 1) {

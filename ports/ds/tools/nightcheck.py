@@ -1,11 +1,13 @@
 """Pillow 16-1 sleep, illumination and feeding, using only real controls."""
 import json
+from pathlib import Path
 
 
 def check(run, tap, key, touch, state, framebuffer, settle, snapshot, report, directory, costume):
+    layout=json.loads((Path(__file__).resolve().parents[1]/"generated/menumanifest.json").read_text(encoding="utf-8"))
     tap(128,170); tap(131,186); key(0); key(8)
     for _ in range(15): key(7)
-    run(180); key(8); tap(66,26); settle()
+    run(180); key(8); tap(*layout["levelpositions"][0]); settle()
     assert state()["level"] == 375
     frames, rows = [], []
 

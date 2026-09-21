@@ -31,8 +31,10 @@ for item in manifest["sprites"]:
         assert not page["dither"], "UI scaling must not introduce dithering into fonts"
     if item["group"].startswith("menu_buttons"):
         assert page["dither"] == "low", "Scaled buttons must retain low dithering"
-    if re.fullmatch(r"level[0-5]",item["name"]) or item["name"]=="pack3":
-        assert source["factor"]==manifest["fit"], "Level selection must retain its original scale"
+    if re.fullmatch(r"level[0-5]",item["name"]) or item["name"]=="levelstar":
+        assert source["factor"]==manifest["fit"]*manifest["uiscale"]["levels"]
+    if item["name"]=="pack3":
+        assert source["factor"]==manifest["fit"]
     if item["name"].endswith("HARDEST_LABEL"):
         assert source["rotation"]==16 and abs(source["factor"]-manifest["fit"]*.35*manifest["uiscale"]["boxes"])<1e-8
         assert not manifest["pages"][item["page"]]["dither"], "Rotated label is still font art"
@@ -201,6 +203,36 @@ for actual,config in zip(sleeptrim,configs):
 def generatedpoints(name):
     body = re.search(r"inline constexpr int " + name + r"\[[^;]+?= \{(.*?)\};", header, re.S).group(1)
     return [tuple(map(int, pair.split(","))) for pair in re.findall(r"\{([\d, -]+)\}", body)]
+
+sprites={item["name"]:item for item in manifest["sprites"]}
+assert len(manifest["levelpositions"])==25
+assert generatedpoints("levelpositions")==[tuple(p) for p in manifest["levelpositions"]]
+level= sprites["level0"]
+for x,y in manifest["levelpositions"]:
+    assert 0<=x+level["ox"] and x+level["ox"]+level["w"]<=256
+    assert 0<=y+level["oy"] and y+level["oy"]+level["h"]<=192
+assert level["w"]<=40 and level["h"]<=36
+assert manifest["uiscale"]["creditbounds"][0]+manifest["uiscale"]["creditbounds"][2]==256
+for i,(x,y) in enumerate(manifest["gameui"]["pause"]):
+    item=sprites["pauseup" if i<4 else "pauseoption0"]
+    assert y+item["oy"]>=sprites["pauseplate"]["h"]
+    assert y+item["oy"]+item["h"]<=192
+assert sprites["popuppaper"]["source"]["resource"]=="menu_popup"
+assert len(manifest["popup"]["labels"])==12
+for code,row in zip(manifest["locales"],manifest["popup"]["labels"]):
+    strings={**json.loads((repo/"content/locales/en.json").read_text(encoding="utf-8")),
+             **json.loads((repo/f"content/locales/{code}.json").read_text(encoding="utf-8"))}
+    for name,key in zip(row,("GAME_FINISHED_TEXT","GAME_FINISHED_THANKS","OK")):
+        assert sprites[name]["source"]["text"]==strings[key]
+    previousbottom=0
+    for i,name in enumerate(row):
+        item=sprites[name]; x,y=manifest["popup"]["positions"][i]
+        assert 0<=x+item["ox"] and x+item["ox"]+item["w"]<=256
+        assert previousbottom<=y+item["oy"] and y+item["oy"]+item["h"]<=192
+        previousbottom=y+item["oy"]+item["h"]
+for actual,(x,y) in zip(manifest["titlepositions"],((1280,410),(1423,685.5),(1603,729.5))):
+    factor=192/1440*manifest["mainfit"]*manifest["uiscale"]["title"]
+    assert actual==[round(128+(x-1280)*factor),round(59+(y-410)*factor)]
 
 markers = json.loads((repo / "content/images/menu_results.json").read_text())["frames"]
 markers = [(f["spriteSourceSize"]["x"], f["spriteSourceSize"]["y"]) for f in markers[:13]]
