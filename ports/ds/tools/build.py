@@ -12,7 +12,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--assets", action="store_true", help="Rebuild converted assets")
     variant = parser.add_mutually_exclusive_group()
-    variant.add_argument("--bootcheck", action="store_true", help="Build a minimal emulator/toolchain compatibility probe")
+    variant.add_argument("--bootcheck", action="store_true", help="Build a separate on-screen/SD-log loader and ROM filesystem probe")
     variant.add_argument("--profile", action="store_true", help="Build separate instrumented ROM without replacing the normal ROM")
     args = parser.parse_args()
     wonderful = root / ".tools/msys64/opt/wonderful"
@@ -35,6 +35,11 @@ def main():
     dist = root / "dist"
     build.mkdir(parents=True, exist_ok=True)
     dist.mkdir(exist_ok=True)
+    import banner
+    icon = banner.update()
+    if args.bootcheck:
+        import bootassets
+        bootassets.build(root/"generated")
     environment = os.environ.copy()
     environment["BLOCKSDS"] = sdk.as_posix()
     environment["PATH"] = str(wonderful / "bin") + os.pathsep + str(wonderful / "runtime/gcc-libs/bin") + os.pathsep + environment["PATH"]
@@ -79,10 +84,12 @@ def main():
         assert free >= 128*1024, f"Only {free:,} heap bytes remain in original DS mode"
         print(f"Original DS heap headroom: {free:,} bytes",flush=True)
     rom = dist / (name + ".nds")
-    subprocess.run([str(sdk / "tools/ndstool/ndstool.exe"), "-c", str(rom), "-uc", "0",
+    subprocess.run([str(sdk / "tools/ndstool/ndstool.exe"), "-c", str(rom), "-uc", "2", "-u", "00030000",
                     "-9", str(elf), "-7", str(sdk / "sys/arm7/main_core/arm7_maxmod.elf"),
                     "-d", str(root / "generated/nitro"),
-                    "-b", str(sdk / "sys/icon.bmp"), "Cut the Rope DX;DS feasibility slice;DX Extended"], check=True, env=environment)
+                    "-b", str(icon), banner.title+(";Boot diagnostics" if args.bootcheck else "")], check=True, env=environment)
+    import romheader
+    romheader.validate(rom.read_bytes())
     size = compiler.with_name("arm-none-eabi-size.exe")
     subprocess.run([str(size), str(elf)], check=True, env=environment)
     (build / ("bootsymbols.txt" if args.bootcheck else "symbols.txt")).write_text(symbols, encoding="utf-8")

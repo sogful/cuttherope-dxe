@@ -35,6 +35,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--core", default=str(root / ".tools/libretro/melondsds_libretro.dll"))
     parser.add_argument("--rom", default=str(root / "dist/cuttherope.nds"))
+    parser.add_argument("--bootcheck", action="store_true", help="Check the separate hardware startup/filesystem probe")
     parser.add_argument("--inspect", action="store_true")
     parser.add_argument("--menus", action="store_true", help="Check source-shaped title, packs, settings, languages and credits")
     parser.add_argument("--skins", action="store_true", help="Check fades, isolated unlock mode, picker scrolling, all cosmetic tabs and equipped gameplay")
@@ -57,6 +58,8 @@ def main():
     parser.add_argument("--costume", type=int, default=0, choices=range(16), help="Equip a costume through the real picker before a test")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
     args = parser.parse_args()
+    if args.bootcheck and args.rom == str(root / "dist/cuttherope.nds"):
+        args.rom = str(root / "dist/bootcheck.nds")
     if (args.pagingstress or args.layers or args.finished) and not args.profile:
         parser.error("--pagingstress/--layers/--finished require --profile; normal ROMs have no diagnostic controls")
     if args.profile and args.rom == str(root / "dist/cuttherope.nds"):
@@ -64,6 +67,7 @@ def main():
     core = c.CDLL(args.core)
     directory = root / "build/headless" / "profile" if args.profile else root / "build/headless"
     if args.benchmark: directory=directory/"benchmarks"/args.label
+    if args.bootcheck: directory=directory/"bootchecks"/args.label
     if args.profile:
         label = "finished" if args.finished else "upper" if args.upper else "layers" if args.layers else f"pagingstress-{args.first_box}-{args.level_only or 23}" if args.pagingstress else f"boxes-{args.first_box}-{args.last_box}-{args.level_only or 'all'}" if args.boxes else "regressions" if args.regressions else "flow" if args.flow else "inspect"
         directory /= label + f"-costume-{args.costume}"
@@ -187,7 +191,10 @@ def main():
     try:
         path = Path(args.rom)
         rom = c.create_string_buffer(path.read_bytes())
-        assert rom.raw[0x12] == 0, "The feasibility build must have a DS-only ROM header"
+        assert rom.raw[0x12] in (0, 2), "The ROM must support original DS hardware"
+        if rom.raw[0x12] == 2:
+            import romheader
+            romheader.validate(rom.raw[:-1])
         info = gameinfo(str(path).encode(), c.cast(rom, c.c_void_p), len(rom) - 1, None)
         loaded = core.retro_load_game(c.byref(info))
         if not loaded:
@@ -197,6 +204,10 @@ def main():
                 raise RuntimeError("No video frames")
             data, width, height, pitch = frame
             return Image.frombytes("RGB", (width, height), data, "raw", "BGRX", pitch)
+        if args.bootcheck:
+            import bootcheck
+            bootcheck.check(core,root,directory,path,framebuffer)
+            return
         def capture(label):
             image = framebuffer()
             assert image.size == (256, 384), image.size
