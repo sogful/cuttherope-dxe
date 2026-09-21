@@ -1,6 +1,7 @@
 #include "../source/frontend.cpp"
 #include "level.hpp"
 #include <cassert>
+#include <vector>
 namespace trace { system trail; }
 int main(int argc, char** argv) {
     assert(argc==2 || argc==3);
@@ -14,6 +15,30 @@ int main(int argc, char** argv) {
     constexpr unsigned reserved = 144384;
 
     frontend::reserve(reserved);
+    {
+        auto data=dx::levels[410]; data.tubecount=1; data.beltcount=0;
+        game.reset(data); game.steamtime=.3f;
+        struct piece { int sprite; dx::point position; float size; };
+        std::vector<piece> normal, carried;
+        auto record=[&](std::vector<piece>& pieces) {
+            for (bool front : {false,true}) gamevisuals::steam(game,front,[&](int sprite,dx::point position,int,float,float size) {
+                pieces.push_back({sprite,position,size});
+            });
+        };
+        record(normal);
+        game.beltitemsused=1; game.beltitems[0]={};
+        game.beltitems[0].kind=4; game.beltitems[0].scale=.7f;
+        record(carried);
+        assert(normal.size()==carried.size() && normal.size()>2);
+        for (unsigned i=0;i<normal.size();++i) {
+            const auto& a=normal[i]; const auto& b=carried[i];
+            const auto expected=data.tubes[0].position+(a.position-data.tubes[0].position)*.7f;
+            assert(a.sprite==b.sprite && std::abs(expected.x-b.position.x)<.001f && std::abs(expected.y-b.position.y)<.001f);
+            const float factor=a.sprite==menuart::pipe0 || a.sprite==menuart::pipe1?.49f:.7f;
+            assert(std::abs(a.size*factor-b.size)<.00001f);
+        }
+        std::puts("PASS: conveyor-carried steam applies source parent/child scales without changing force height");
+    }
     game.reset(dx::levels[0]);
     for (int mode = 0; mode < 3; ++mode) for (int door = 0; door < 3; ++door) {
         menu.mode = mode == 0 ? ui::view::playing : mode == 1 ? ui::view::paused : ui::view::results;
@@ -88,9 +113,13 @@ int main(int argc, char** argv) {
         int combinations=1;
         for (int i=0; i<data.ghostcount; ++i) combinations*=3;
         if (data.disccount) combinations=data.disccount*4;
-        if (data.tubecount || data.lanterncount || data.mousecount || data.night) combinations=std::max(combinations,36);
+        if (data.tubecount || data.lanterncount || data.mousecount || data.night || data.beltcount) combinations=std::max(combinations,36);
         for (int combination=0; combination<combinations; ++combination) {
             game.reset(data); game.introduction=false;
+            for (int i=0;i<data.beltcount;++i) {
+                game.belts[i].offset=combination*1.75f;
+                game.belts[i].activation=(i+combination)%data.beltcount;
+            }
             if (data.mousecount) {
                 game.activemouse=combination%data.mousecount;
                 auto& mouse=game.mice[game.activemouse]; mouse.phase=combination%7; mouse.quad=combination%29;

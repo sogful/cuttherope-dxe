@@ -43,11 +43,15 @@ def build(menu):
                     area = [float(v) for v in node.get("inArea", "0,0,0,0").split(",")]
                     if node.get("inArea"):
                         area = [area[0] * 3 + left, area[1] * 3 + top, area[2] * 3, area[3] * 3]
-                    pathvalues = [float(v) for v in node.get("path", "0,0,0,0").split(",")]
+                    pathvalues = [float(v) for v in node.get("path", "0,0,0,0").rstrip(",").split(",")]
+                    mover = bool(node.get("path")) and not any(node.get(key) is not None for key in ("ease","moveDelay","repeat"))
+                    if mover:
+                        assert len(pathvalues)==2, (path,node.attrib)
+                        pathvalues = [v*3 for v in pathvalues]+[0,0]
                     assert len(pathvalues) == 4
                     info["items"].append([name, x, y, float(node.get("angle", 0)), float(node.get("fadeIn", 1)),
                         float(node.get("duration", 5)), float(node.get("fadeOut", .5)), int(node.get("repeat", 1)),
-                        float(node.get("moveDelay", 0)), float(node.get("moveSpeed", 0)) if node.get("path") else 0,
+                        -1 if mover else float(node.get("moveDelay", 0)), int(float(node.get("moveSpeed", 100))*3.3) if mover else float(node.get("moveSpeed", 0)) if node.get("path") else 0,
                         {"bubbled":1,"lanternCatch":2,"steamBurst":3,"mouseGrab":4}.get(node.get("showOn"),0), *area, *pathvalues])
                 assert len(info["items"]) - first <= 32, (path, code, "Tutorial runtime capacity")
                 rows.append([first, len(info["items"]) - first])

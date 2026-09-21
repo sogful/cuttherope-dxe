@@ -5,8 +5,9 @@
 
 namespace dx {
 bool simulation::drag(point position, bool held) {
-    if (state != outcome::playing || introduction) { draghook = dragwheel = dragswitch = dragspike = dragdisc = -1; return false; }
+    if (state != outcome::playing || introduction) { draghook = dragwheel = dragswitch = dragspike = dragdisc = -1; cancelbelts(); return false; }
     if (!held) {
+        releasebelt(position);
         if (dragspike >= 0 && spikehit(dragspike, position)) rotatespikes(definition.spikes[dragspike].group);
         if (dragswitch >= 0) {
             const auto d = position - definition.switches[dragswitch];
@@ -15,6 +16,7 @@ bool simulation::drag(point position, bool held) {
         draghook = dragwheel = dragswitch = dragspike = dragdisc = -1;
         return false;
     }
+    if (heldbelt >= 0) return dragbelt(position);
     if (dragdisc >= 0) { rotatedisc(position); return true; }
     if (dragspike >= 0) { if (!spikehit(dragspike, position)) dragspike = -1; return true; }
     if (dragswitch >= 0) return true;

@@ -86,6 +86,7 @@ void simulation::reset(const level& data) {
         ropes[index].spiderpos = source.anchor;
         if (source.radius < 0 && !inlantern) attach(index, source.length, source.bulb ? 3 : split ? 1 + source.part : 0);
     }
+    resetbelts();
 }
 
 void simulation::attach(int index, float length, int candy) {
@@ -227,6 +228,7 @@ DS_HOT void simulation::ropephysics() {
     for (int index = 0; index < definition.hookcount; ++index) {
         movebee(index);
         rope& item = ropes[index];
+        if (item.count && definition.beltcount) bodies[item.bodies[0]].pin = bodies[item.bodies[0]].pos = anchors[index];
         if (item.count && (!item.cut || item.remaining > 0)) {
             DS_PROFILE_DO(profiling::data[profiling::bodies] += item.count * 30);
             if (item.cut) {
@@ -261,7 +263,7 @@ void simulation::tick(bool suppress) {
     advanceghosts(4);
     ropephysics();
     if (state != outcome::playing && failreason != 4 && !bulbalive && !(state == outcome::lost && split && activecount())) {
-        advanceghosts(2); advanceghosts(8); updateghosts(); updatedevices(); stopmice(); updatemice(); return;
+        updatebelts(); advanceghosts(2); advanceghosts(8); updateghosts(); updatedevices(); stopmice(); updatemice(); return;
     }
     ++ticks;
     const float step = delta * definition.speed;
@@ -289,15 +291,17 @@ void simulation::tick(bool suppress) {
     const point pos = candy().pos;
     const point distance = pos - definition.target;
     updatelight();
+    updatebelts();
     if (!split && !hidden() && (!definition.night || awake) && !mouth && distance.length() < 200) { mouth = true; mouthtick = ticks; }
     else if (mouth && distance.length() >= 220) mouth = false;
     for (int index = 0; index < 3; ++index) {
         const float timeout = definition.timeouts[index];
-        if (timeout > 0 && ticks * delta >= timeout) expired[index] = true;
+        if (timeout > 0 && ticks * delta >= timeout) { expired[index] = true; removebeltitem(1,index); }
         for (int part = 0; part < candycount() && (state == outcome::playing || failreason == 4) && !hidden() && (!definition.night || starlit[index]); ++part) {
             const point difference = bodies[activeid(part)].pos + (split ? point{-1,14} : point{}) - starpositions[index];
             if (!stars[index] && !expired[index] && std::abs(difference.x) < (split ? 98 : 97) && std::abs(difference.y) < (split ? 89 : 93)) {
                 stars[index] = true;
+                removebeltitem(1,index);
                 collectedat[index] = visuals;
                 ++count;
             }
@@ -314,6 +318,7 @@ void simulation::tick(bool suppress) {
                 if (bubblefor(id) >= 0) burst(id);
                 bubbleindex(id) = i;
                 bubblesused[i] = true;
+                removebeltitem(0,i);
                 for (auto& app : apparitions) if (app.form == 2 && app.index == i) app.owner = id;
                 ++bubbleevents;
                 captured = true;
@@ -339,6 +344,7 @@ void simulation::tick(bool suppress) {
     if (!suppressoutcome && state == outcome::playing && !split && !hidden() && (!definition.night || awake) && mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
         releasecandy(0);
         state = outcome::won;
+        cancelbelts();
         stopmice();
         resulttick = ticks;
         resultvisual = visuals;

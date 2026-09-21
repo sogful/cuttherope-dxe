@@ -82,7 +82,7 @@ void simulation::animate() {
         time += std::clamp(-time, -delta, delta);
         if (time == 0) { electric[i] = !electric[i]; time = electric[i] ? definition.spikes[i].on : definition.spikes[i].off; }
     }
-    for (int i = 0; i < 3; ++i) if (!stars[i] && !expired[i]) starpositions[i] = definition.stars[i] + definition.starmotions[i].at(visuals * delta);
+    for (int i = 0; i < 3; ++i) if (!stars[i] && !expired[i] && !belted(1,i)) starpositions[i] = definition.stars[i] + definition.starmotions[i].at(visuals * delta);
 }
 void simulation::camera() {
     const float target = std::clamp(candy().pos.y - 720, 0.0f, std::max(0.0f, definition.height - 1440));
@@ -154,18 +154,19 @@ bool simulation::interact(point position) {
         }
         return true;
     }
-    return false;
+    return pressbelt(position);
 }
 void simulation::retirehalf(int id, int reason) {
     if (suppressoutcome || !id || !halfalive[id-1]) return;
     releasecandy(id); burst(id); halfalive[id-1] = false;
     bodies[id].pin = bodies[id].pos; bodies[id].pinned = true;
-    if (state == outcome::playing) { state = outcome::lost; failreason = reason; resulttick = ticks; resultvisual = visuals; }
+    if (state == outcome::playing) { cancelbelts(); state = outcome::lost; failreason = reason; resulttick = ticks; resultvisual = visuals; }
 }
 void simulation::fail(int reason) {
     if (suppressoutcome || state != outcome::playing) return;
     removelantern();
     stopmice();
+    cancelbelts();
     for (int part = 0; part < activecount(); ++part) releasecandy(activeid(part));
     state = outcome::lost;
     failreason = reason;

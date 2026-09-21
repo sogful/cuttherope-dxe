@@ -62,7 +62,8 @@ def build(content, output, sources):
             )
         rows.append(row)
     effects = []
-    for resource in ("mouse_rustle", "mouse_idle", "mouse_tap", "star_light01", "star_light02"):
+    for resource in ("mouse_rustle", "mouse_idle", "mouse_tap", "star_light01", "star_light02",
+                     "transporter_drop", "transporter_move", "con01", "con02", "con03", "con04"):
         path = content / "sounds/sfx" / (resource + ".wav")
         sources.add(path)
         with wave.open(str(path), "rb") as sound:

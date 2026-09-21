@@ -26,6 +26,9 @@ struct hook { point anchor; float length; float radius = -1; bool spider = false
 struct mouse { point position{}; float angle = 0, radius = 240, duration = 3; int index = 1; };
 struct mousestate { point offset{}; std::array<point,4> entry{}; std::array<point,3> exit{}; float elapsed = 0, age = 0, pathage = 0, bounce = -1, eyes = -1; int phase = 6, quad = 18, path = 0; bool active = false, retreat = false, grabbing = false, carry = false, container = false; };
 struct lightbulb { point position{}; float radius = 225; };
+struct conveyor { point position{}; float length = 0, width = 0, angle = 0, velocity = 0; bool manual = false; };
+struct beltstate { float c = 1, s = 0, pc = 0, ps = -1, offset = 0, delta = 0, travel = 0; point last{}; int activation = 0, alignment = 0, count = 0; bool active = false, distributed = false; std::array<int,64> items{}; };
+struct beltitem { int kind = 0, index = 0, belt = -1; float radius = 0, minimum = .5f, maximum = 1, scale = 1, position = 0; };
 struct spike { point anchor{}; motion path{}; float angle = 0; int size = 1; float on = 0, off = 0, delay = 0; int group = -1; };
 struct pump { point position{}; float angle = 0; };
 struct hat { point position{}; motion path{}; float angle = 0; int group = 0; bool resetangle = false; };
@@ -66,13 +69,15 @@ struct level {
     std::array<disc, 4> discs{};
     std::array<ghost, 4> ghosts{};
     int disccount = 0, ghostcount = 0;
-    std::array<tube, 6> tubes{};
+    std::array<tube, 7> tubes{};
     std::array<lantern, 6> lanterns{};
     int tubecount = 0, lanterncount = 0;
     std::array<mouse,5> mice{};
     std::array<lightbulb,1> bulbs{};
     int mousecount = 0, bulbcount = 0;
     bool night = false;
+    std::array<conveyor,4> belts{};
+    int beltcount = 0;
 };
 const level& loadlevel(int index);
 struct constraint { int other = 0; float length = 0; bool active = false, maximum = false; };
@@ -125,7 +130,7 @@ public:
     bool lanterntap(int index);
     float steamheight(int index) const;
     point valvepoint(int index) const;
-    std::array<tubestate, 6> tubes{};
+    std::array<tubestate, 7> tubes{};
     std::array<lanternstate, 6> lanterns{};
     int steamevents = 0, steamstate = 0, captures = 0, releases = 0, pendinglantern = -1;
     float steamtime = 0, capturetimer = -1, captureage = 1;
@@ -154,6 +159,20 @@ public:
     bool hidden() const { return transit >= 0 || inlantern; }
     bool mousepress(point position);
     bool illuminated(point position) const;
+    bool pressbelt(point position);
+    bool dragbelt(point position);
+    void releasebelt(point position);
+    void cancelbelts();
+    point beltlocal(int index, point position) const;
+    point beltworld(int index, float x, float y) const;
+    point beltpoint(const beltitem& item) const;
+    void removebeltitem(int kind, int index);
+    float beltscale(int kind, int index) const;
+    bool belted(int kind, int index) const;
+    std::array<beltstate,4> belts{};
+    std::array<beltitem,64> beltitems{};
+    std::array<int,4> beltorder{};
+    int beltitemsused = 0, heldbelt = -1, beltrevision = 0, beltwraps = 0, belthandoffs = 0, beltevents = 0, beltsound = 0;
     std::array<mousestate,5> mice{};
     int activemouse = -1, mousecaptures = 0, mousereleases = 0, mousehandoffs = 0, mouseevents = 0, mousesound = 0;
     bool micelocked = false;
@@ -207,6 +226,14 @@ public:
     int dragspike = -1, spikeevents = 0, spiderfalls = 0, spideractivations = 0;
     bool spikedirection = false;
 private:
+    void resetbelts();
+    void updatebelts();
+    void sortbelts();
+    void movebelt(int index, float delta);
+    void alignbelt(int index);
+    void bindbelt(int index, int item);
+    void setbeltpoint(beltitem& item, point position);
+    bool belthit(int index, point position, float radius) const;
     void resetnocturnal();
     void updatemice();
     void spawnmouse(int index, bool carry);

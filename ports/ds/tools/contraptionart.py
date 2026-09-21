@@ -6,6 +6,8 @@ from PIL import Image, ImageDraw
 
 def build(menu):
     quad, add, scale = menu["quad"], menu["add"], menu["scale"]
+    for i in range(7):
+        quad("belt"+str(i),"obj_conveyor",i,factor=1,group="conveyor")
     for i in range(29):
         quad("mouse"+str(i),"obj_mouse",i,factor=1,restore=True,group="mouse"+str(i//8))
     for i in range(43):

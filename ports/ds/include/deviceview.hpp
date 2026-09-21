@@ -12,15 +12,17 @@ template<class draw> void steam(const dx::simulation& game, bool front, draw wor
         auto place = [&](int sprite, dx::point offset, float scale = 1, float spin = 0) {
             world(sprite,source.position+dx::point{offset.x*axis.x-offset.y*axis.y,offset.x*axis.y+offset.y*axis.x},31,source.angle+spin,scale);
         };
+        const float size=game.beltscale(4,i);
         if (!front) {
-            place(menuart::pipe0,{.5f,84});
-            place(menuart::pipe1,{0,27*source.scale+.5f},1,tube.valve);
+            // SetTransporterScale affects both the parent and the pipe/valve children.
+            place(menuart::pipe0,{.5f*size,84*size},size*size);
+            place(menuart::pipe1,{0,(27*source.scale+.5f)*size},size*size,tube.valve);
         }
         for (const auto& p : tube.puffs) {
             const float age = game.steamtime-p.start;
             if (p.start == -100 || age < 0 || (p.stop >= 0 && game.steamtime >= p.stop) || front == (p.variant == 2)) continue;
             const float progress = std::fmod(age,.6f)/.6f, ease = 1-(1-progress)*(1-progress), scale = 1+.5f*progress;
-            place(menuart::pipe2+p.variant*11+std::min(10,static_cast<int>(progress*11)),{p.horizontal*ease,p.height*ease+.5f*scale},scale);
+            place(menuart::pipe2+p.variant*11+std::min(10,static_cast<int>(progress*11)),{p.horizontal*ease*size,(p.height*ease+.5f*scale)*size},scale*size);
         }
     }
 }

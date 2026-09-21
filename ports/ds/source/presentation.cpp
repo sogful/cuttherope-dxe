@@ -23,14 +23,15 @@ static int backgroundoffset(float position) { return static_cast<int>(std::round
 static dx::point screen(dx::point position) { return {128 + (position.x - 1280) * scale, (position.y - cameray) * scale}; }
 dx::point world(int x, int y) { return {1280 + (x - 128) / scale, y / scale + cameray}; }
 
-static void image(int id, dx::point point, bool absolute = false, int alpha = 31) {
+static void image(int id, dx::point point, bool absolute = false, int alpha = 31, float size = 1) {
     const art::sprite& definition = art::sprites[id];
     const dx::point origin = absolute ? point : screen(point);
     glColor(RGB15(31, 31, 31));
     polygon = polygon % 48 + 1;
     glPolyFmt(POLY_ALPHA(alpha) | POLY_CULL_NONE | POLY_ID(polygon));
-    glSprite(static_cast<int>(std::round(origin.x)) + definition.ox,
-             static_cast<int>(std::round(origin.y)) + definition.oy, GL_FLIP_NONE, &sprites[id]);
+    const int x=std::lround(origin.x)+std::lround(definition.ox*size), y=std::lround(origin.y)+std::lround(definition.oy*size);
+    if (size==1) glSprite(x,y,GL_FLIP_NONE,&sprites[id]);
+    else glSpriteScaleXY(x,y,floattof32(size),floattof32(size),GL_FLIP_NONE,&sprites[id]);
 }
 
 
@@ -151,7 +152,7 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
     const int backgroundy = backgroundtop - static_cast<int>(std::round(cameray * scale));
     glSprite(0, backgroundy, GL_FLIP_NONE, &background);
     frontend::render(false, true);
-    for (int index = 0; index < game.definition.hookcount; ++index) if (!game.definition.hooks[index].rail && !game.ghostapp(4,index)) image(art::hookback, game.anchors[index]);
+    for (int index = 0; index < game.definition.hookcount; ++index) if (!game.definition.hooks[index].rail && !game.ghostapp(4,index)) image(art::hookback, game.anchors[index],false,31,game.beltscale(6,index));
     for (int index = 0; index < game.definition.hookcount; ++index) {
         const dx::rope& item = game.ropes[index];
         const auto& hook = game.definition.hooks[index];
@@ -160,14 +161,14 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
             strand(game, index, 0, item.split, menu.skins[1]);
             if (!item.hidetail) strand(game, index, item.split, item.count - item.split, menu.skins[1]);
         }
-        if (!hook.rail && !game.ghostapp(4,index)) image(art::hookfront, game.anchors[index]);
+        if (!hook.rail && !game.ghostapp(4,index)) image(art::hookfront, game.anchors[index],false,31,game.beltscale(6,index));
     }
     frontend::render(false, false, 1);
     for (int index = 0; index < 3; ++index) {
         if (game.stars[index] || game.expired[index]) continue;
-        if (!game.definition.night) image(art::star0, game.starpositions[index], false, 12);
+        if (!game.definition.night) image(art::star0, game.starpositions[index], false, 12,game.beltscale(1,index));
         const int alpha = game.definition.night ? std::lround(game.lightalpha[index]*31) : 31;
-        if (alpha) image(art::star1 + (frame / 3 + index * 5) % 18, game.starpositions[index],false,alpha);
+        if (alpha) image(art::star1 + (frame / 3 + index * 5) % 18, game.starpositions[index],false,alpha,game.beltscale(1,index));
     }
     frontend::render(false, false, 2);
     if (!game.split && !game.hidden() && menu.skins[0] == 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {

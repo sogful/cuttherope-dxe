@@ -70,6 +70,20 @@ for skin, config in enumerate(configs):
         assert data[entry["offset"] : entry["offset"] + entry["size"]] == pcm
         assert entry["size"] <= voice["maximum"]
 backgrounds = json.loads((generated / "backgroundmanifest.json").read_text())
+effectnames = ("mouse_rustle", "mouse_idle", "mouse_tap", "star_light01", "star_light02",
+               "transporter_drop", "transporter_move", "con01", "con02", "con03", "con04")
+effecttable = re.search(r"streameffects\[\] = \{(.*?)\};", (generated / "assets.hpp").read_text()).group(1)
+effects = [tuple(map(int, pair)) for pair in re.findall(r"\{(\d+),(\d+)\}", effecttable)]
+assert len(effects) == len(effectnames)
+for name, (offset, size) in zip(effectnames, effects):
+    with wave.open(str(content / "sounds/sfx" / (name + ".wav")), "rb") as sound:
+        pcm = sound.readframes(sound.getnframes()); width = sound.getsampwidth()
+        if sound.getnchannels() == 2: pcm = audioop.tomono(pcm, width, .5, .5)
+        pcm, _ = audioop.ratecv(pcm, width, 1, sound.getframerate(), 16000, None)
+        pcm = audioop.lin2lin(pcm, width, 2)
+    pcm += b"\0" * (-len(pcm) % 4)
+    assert data[offset:offset + size] == pcm, name
+    assert size <= voice["maximum"]
 world = (generated / "nitro/world.bin").read_bytes()
 packs = json.loads((content / "ctroriginal_packs.json").read_text())
 for entry in backgrounds:
@@ -114,5 +128,5 @@ assert len(menus["lockwidths"]) == 12 and all(
     len(row) == 17 for row in menus["lockwidths"]
 )
 print(
-    f"PASS: {len(records)} exact source voice clips/fallbacks, {len(backgrounds)} seam composites, {boxes * 25} background windows, 13 restored sparkle frames and 12 lock-width tables"
+    f"PASS: {len(records)} exact source voice clips/fallbacks, {len(effects)} streamed effects, {len(backgrounds)} seam composites, {boxes * 25} background windows, 13 restored sparkle frames and 12 lock-width tables"
 )

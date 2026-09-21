@@ -14,7 +14,7 @@
 #include <algorithm>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 14;
+    std::uint32_t magic = 0x44585250, version = 15;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -33,6 +33,7 @@ struct diagnostics {
     std::uint32_t steamevents = 0, steamstates = 0, captures = 0, releases = 0, occupied = 0, shared = 0, lanternx = 0, lanterny = 0;
     std::uint32_t mouse = 0, mousecaptures = 0, mousereleases = 0, mousehandoffs = 0, mousecarry = 0;
     std::uint32_t bulb = 0, bulbx = 0, bulby = 0, awake = 0, lit = 0;
+    std::uint32_t belt = 0, beltwraps = 0, belthandoffs = 0, beltoffset = 0, beltitems = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -70,6 +71,7 @@ int main() {
     int showndiscs = 0, shownghosts = 0;
     int shownsteam = 0, showncaptures = 0, shownreleases = 0;
     int shownmice = 0, shownsleep = 0, shownlight[3] = {-1000,-1000,-1000};
+    int shownbelts = 0;
     bool shownmouth = false, shownresult = false;
     bool greeting = false;
     unsigned total = 0, peak = 0, late = 0;
@@ -83,6 +85,7 @@ int main() {
         shownspikes = shownspiderfalls = shownspideractivations = 0;
         showndiscs = shownghosts = 0;
         shownsteam = showncaptures = shownreleases = 0;
+        shownbelts = 0;
         shownmice = shownsleep = 0; std::fill(std::begin(shownlight),std::end(shownlight),-1000);
         telemetry.resets = telemetry.resets + 1;
         trace::trail.reset();
@@ -181,6 +184,7 @@ int main() {
         if (game.captures != showncaptures) { audio::effect(lanternteleportindata,lanternteleportinbytes); showncaptures = game.captures; }
         if (game.releases != shownreleases) { audio::effect(lanternteleportoutdata,lanternteleportoutbytes); shownreleases = game.releases; }
         if (game.mouseevents != shownmice) { audio::stream(game.mousesound); shownmice = game.mouseevents; }
+        if (game.beltevents != shownbelts) { audio::stream(5+game.beltsound); shownbelts = game.beltevents; }
         if (game.sleepevents != shownsleep) { audio::speak(menu.skins[2],static_cast<audio::voice>(6+game.sleepevents%3)); shownsleep = game.sleepevents; }
         for (int i=0;i<3;++i) if (game.lightchange[i] != shownlight[i]) {
             if (game.starlit[i] && game.lightchange[i] > 1) audio::stream(3+i%2);
@@ -304,6 +308,9 @@ int main() {
         telemetry.mousehandoffs = game.mousehandoffs; telemetry.mousecarry = game.activemouse >= 0 && game.mice[game.activemouse].carry;
         telemetry.bulb = game.definition.bulbcount && game.available(3); telemetry.bulbx = game.bodies[3].pos.x; telemetry.bulby = game.bodies[3].pos.y;
         telemetry.awake = game.awake; telemetry.lit = game.starlit[0] | (game.starlit[1]<<1) | (game.starlit[2]<<2);
+        telemetry.belt = game.heldbelt+1; telemetry.beltwraps = game.beltwraps; telemetry.belthandoffs = game.belthandoffs;
+        telemetry.beltoffset = game.belts[0].offset*100; telemetry.beltitems = 0;
+        for (int i=0;i<game.beltitemsused;++i) if (game.beltitems[i].belt>=0) ++telemetry.beltitems;
         telemetry.spikeevents = game.spikeevents; telemetry.spikebutton = game.dragspike + 1;
         telemetry.beex = telemetry.beey = 0;
         telemetry.spiderfalls = game.spiderfalls; telemetry.spiderclimbers = 0;

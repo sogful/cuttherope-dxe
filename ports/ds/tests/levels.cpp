@@ -11,6 +11,11 @@ static void decoded(const dx::level& a, const dx::level& b) {
     assert(a.disccount == b.disccount && a.ghostcount == b.ghostcount);
     assert(a.tubecount == b.tubecount && a.lanterncount == b.lanterncount);
     assert(a.mousecount == b.mousecount && a.bulbcount == b.bulbcount && a.night == b.night);
+    assert(a.beltcount == b.beltcount);
+    for (int i=0;i<a.beltcount;++i) {
+        const auto& x=a.belts[i]; const auto& y=b.belts[i]; same(x.position,y.position);
+        assert(x.length==y.length && x.width==y.width && x.angle==y.angle && x.velocity==y.velocity && x.manual==y.manual);
+    }
     for (int i=0;i<a.mousecount;++i) {
         const auto& x=a.mice[i]; const auto& y=b.mice[i]; same(x.position,y.position);
         assert(x.angle==y.angle && x.radius==y.radius && x.duration==y.duration && x.index==y.index);

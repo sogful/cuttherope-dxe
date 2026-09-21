@@ -64,6 +64,11 @@ const level& loadlevel(int index) {
     }
     data.bulbcount = scalar();
     for (int i = 0; i < data.bulbcount; ++i) { data.bulbs[i].position = vector(); data.bulbs[i].radius = scalar(); }
+    data.beltcount = scalar();
+    for (int i = 0; i < data.beltcount; ++i) {
+        auto& item = data.belts[i]; item.position = vector(); item.length = scalar(); item.width = scalar();
+        item.angle = scalar(); item.velocity = scalar(); item.manual = scalar();
+    }
     return data;
 }
 }

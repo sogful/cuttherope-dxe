@@ -16,6 +16,13 @@ generated = root / "generated"
 manifest = json.loads((generated / "menumanifest.json").read_text(encoding="utf-8"))
 assert manifest["viewport"] == [256, 192] and manifest["logical"] == [1920, 1440]
 assert len(manifest["locales"]) == 12
+tutorials = manifest["gameui"]["tutorials"]
+for first, count in tutorials["spans"][400]:
+    hands = [row for row in tutorials["items"][first:first + count] if row[0] == "hintsign9"]
+    assert len(hands) == 1 and hands[0][8:10] == [-1, 330] and hands[0][15:19] == [-285, 147, 0, 0]
+belts = [item for item in manifest["sprites"] if re.fullmatch(r"belt[0-6]", item["name"])]
+assert len(belts) == 7 and [item["source"]["quad"] for item in belts] == list(range(7))
+assert all(item["source"]["resource"] == "obj_conveyor" for item in belts)
 for name, digest in manifest["sources"].items():
     assert hashlib.sha256((repo / "content" / name).read_bytes()).hexdigest() == digest, name
 for name, digest in manifest["layoutSources"].items():

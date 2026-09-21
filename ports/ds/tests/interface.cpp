@@ -169,6 +169,10 @@ int main() {
     assert(progression.hasnext());
     progression.pack = 5; progression.level = 24; assert(progression.hasnext());
     progression.pack = 7; progression.level = 24; assert(progression.hasnext());
+    progression.pack = 15; progression.level = 24; assert(progression.hasnext());
+    progression.mode=ui::view::results; progression.age=100; progression.door=0;
+    progression.update(game, {158,125,0,true}); progression.update(game, {158,125,0,false});
+    assert(progression.pack==16 && progression.level==0 && progression.reset);
     progression.pack = menuart::playableboxes - 1; progression.level = 24; assert(!progression.hasnext());
     int previous = 0;
     for (int i = 0; i < 360; ++i) {

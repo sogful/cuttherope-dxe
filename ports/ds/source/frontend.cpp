@@ -10,6 +10,7 @@
 #include "contraptionview.hpp"
 #include "deviceview.hpp"
 #include "nocturnalview.hpp"
+#include "conveyorview.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -449,7 +450,7 @@ static void doors(float progress, bool opening, bool loading, int box) {
     piece(menuart::doorshade, (opening ? -t : t - 1) * 891 * 4 * pixels + base, 0, 891 * 4 * pixels, 400 * 4 * pixels);
     const float leftside = opening ? (1280 - 12) * (1 - t) - 25 * t : -13 * (1 - t) + (1293 - 16) * t;
     const float rightside = opening ? (1280 + 14) * (1 - t) + 2560 * t : (2560 - 40) * (1 - t) + (1280 + 20) * t;
-    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0, menuart::boxcover7x0, menuart::boxcover8x0, menuart::boxcover9x0, menuart::boxcover10x0, menuart::boxcover11x0, menuart::boxcover12x0, menuart::boxcover13x0, menuart::boxcover14x0, menuart::boxcover15x0, menuart::boxcover16x0};
+    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0, menuart::boxcover7x0, menuart::boxcover8x0, menuart::boxcover9x0, menuart::boxcover10x0, menuart::boxcover11x0, menuart::boxcover12x0, menuart::boxcover13x0, menuart::boxcover14x0, menuart::boxcover15x0, menuart::boxcover16x0, menuart::boxcover17x0};
     static_assert(std::size(covers) == menuart::playableboxes, "Every playable box needs its authored flaps");
     const int cover = covers[box];
     piece(cover + 1, base + leftside * pixels, 0, side, 192 * (1 + .3f * closed));
@@ -711,7 +712,11 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         t = std::fmod(t, period);
         const float alpha = t < item.fadein ? unit(t / item.fadein) : t > item.fadein + item.hold ? 1 - unit((t - item.fadein - item.hold) / item.fadeout) : 1;
         dx::point position{item.x, item.y};
-        if (item.speed > 0 && t > item.delay) {
+        if (item.speed > 0 && item.delay < 0) {
+            const dx::point destination{item.firstx,item.firsty};
+            const float distance=destination.length();
+            if (distance>0) { const float phase=std::fmod(time*item.speed/distance,2.0f); position=position+destination*(phase<=1?phase:2-phase); }
+        } else if (item.speed > 0 && t > item.delay) {
             const dx::point first{item.firstx, item.firsty}, last{item.lastx, item.lasty};
             const float firsttime = first.length() / item.speed, secondtime = (last - first).length() / item.speed;
             float f = unit((t - item.delay) / firsttime);
@@ -721,20 +726,21 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         world(item.sprite, position, std::lround(alpha * 31), item.angle);
     }
     gamevisuals::discs(game,world);
+    gamevisuals::conveyors(game,world);
     for (int i = 0; i < game.definition.bubblecount; ++i) {
         const auto* app = game.ghostapp(2,i);
         const int alpha = std::lround(game.ghostalpha(2,i)*31);
         if (app) world(menuart::bubble1+i%3,game.definition.bubbles[i],alpha);
         if (!game.bubblesused[i]) {
-            if (!app) world(menuart::bubble1 + i % 3, game.definition.bubbles[i]);
-            world(menuart::bubble0, game.definition.bubbles[i],alpha);
+            if (!app) world(menuart::bubble1 + i % 3, game.definition.bubbles[i],31,0,game.beltscale(0,i));
+            world(menuart::bubble0, game.definition.bubbles[i],alpha,0,game.beltscale(0,i));
             if (app) gamevisuals::clouds(game,*app,game.definition.bubbles[i],alpha,false,world);
         }
     }
     for (int i = 0; i < game.definition.pumpcount; ++i) {
         const auto& pump = game.definition.pumps[i];
         const int phase = game.pumpages[i] * .016f / .05f;
-        world(menuart::pump0 + 2 * (phase < 3 ? phase + 1 : 0), pump.position, 31, pump.angle);
+        world(menuart::pump0 + 2 * (phase < 3 ? phase + 1 : 0), pump.position, 31, pump.angle,game.beltscale(5,i));
     }
     for (int i = 0; i < game.definition.spikecount; ++i) {
         const auto& spike = game.definition.spikes[i];
@@ -751,7 +757,7 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         const auto* app = game.ghostapp(8,i);
         const int alpha = std::lround(game.ghostalpha(8,i)*31);
         if (app) gamevisuals::clouds(game,*app,item.position,alpha,true,world);
-        world(menuart::bouncer0 + (item.size - 1) * 5 + (frame < 5 ? frame : 0), item.position + item.path.at(elapsed * .016f), alpha, item.path.angle(item.angle, elapsed * .016f));
+        world(menuart::bouncer0 + (item.size - 1) * 5 + (frame < 5 ? frame : 0), item.position + item.path.at(elapsed * .016f), alpha, item.path.angle(item.angle, elapsed * .016f),game.beltscale(2,i));
         if (app) gamevisuals::clouds(game,*app,item.position,alpha,false,world);
     }
     gamevisuals::mice(game,world);
@@ -759,8 +765,9 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         const auto& hat = game.definition.hats[i];
         const auto position = hat.position + hat.path.at(elapsed * .016f) + dx::point{0, -.5f};
         const float angle = hat.path.angle(hat.angle, elapsed * .016f, hat.resetangle);
-        world(menuart::hat0 + hat.group % 2, position, 31, angle);
-        if (game.hatages[i] * .016f < .2f) world(menuart::hat2 + std::min(2, static_cast<int>(game.hatages[i] * .016f / .05f)), position, 31, angle);
+        const float hatscale=game.beltscale(3,i), size=hatscale==1?1:hatscale/.7f;
+        world(menuart::hat0 + hat.group % 2, position, 31, angle,size);
+        if (game.hatages[i] * .016f < .2f) world(menuart::hat2 + std::min(2, static_cast<int>(game.hatages[i] * .016f / .05f)), position, 31, angle,size);
     }
     gamevisuals::steam(game,false,world);
     gamevisuals::lanterns(game,menu.skins[0],world);

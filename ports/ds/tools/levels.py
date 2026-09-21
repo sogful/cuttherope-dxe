@@ -5,7 +5,7 @@ import math
 import struct
 import xml.etree.ElementTree as xml
 
-boxes = 16
+boxes = 17
 
 
 def build(content, output, sources):
@@ -32,7 +32,7 @@ def build(content, output, sources):
              f'inline constexpr std::array<level, {total}> levels = [] {{ std::array<level, {total}> items{{}};']
     audit, packed, offsets, routes, routepoints = [], [], [], [], []
     f = lambda value: struct.unpack("<f", struct.pack("<f", value))[0]
-    limits = dict(hooks=16, bubbles=32, spikes=16, pumps=8, hats=8, bouncers=16, switches=4, discs=4, ghosts=4, tubes=6, lanterns=6, mice=5, bulbs=1)
+    limits = dict(hooks=16, bubbles=32, spikes=16, pumps=8, hats=8, bouncers=16, switches=4, discs=4, ghosts=4, tubes=7, lanterns=6, mice=5, bulbs=1, belts=4)
     for box in range(1, boxes + 1):
         for index in range(1, 26):
             path = content / "maps" / f"{box}_{index}.xml"
@@ -160,6 +160,9 @@ def build(content, output, sources):
                 elif node.tag == "lightBulb":
                     assert node.get("bulbNumber") == "first", (path,node.attrib)
                     records["bulbs"].append([position(node), number(node.get("litRadius",0))*3])
+                elif node.tag == "transporter":
+                    records["belts"].append([position(node), number(node.get("length",0))*3, number(node.get("width",0))*3,
+                        number(node.get("angle",0)), number(node.get("velocity",0))*3*(-1 if node.get("direction")=="forward" else 1), node.get("type")=="manual"])
                 elif node.tag in ("hidden02", "hidden03", "hiddenElement", "spikesSwitch"):
                     pass  # The C# LoadObjects switch also ignores this legacy map tag.
                 else:
@@ -180,7 +183,7 @@ def build(content, output, sources):
             packed += flatten([left,width,height,speed,box-1,index-1,candy,target,split,halves,
                 float(design.get("globalGravityX", 0)),float(design.get("globalGravityY", 784)),design.get("nightLevel") == "true"])
             for i in range(3): packed += flatten([stars[i], timeouts[i], motions[i]])
-            countnames = dict(hooks="hookcount",bubbles="bubblecount",spikes="spikecount",pumps="pumpcount",hats="hatcount",bouncers="bouncercount",switches="switchcount",discs="disccount",ghosts="ghostcount",tubes="tubecount",lanterns="lanterncount",mice="mousecount",bulbs="bulbcount")
+            countnames = dict(hooks="hookcount",bubbles="bubblecount",spikes="spikecount",pumps="pumpcount",hats="hatcount",bouncers="bouncercount",switches="switchcount",discs="disccount",ghosts="ghostcount",tubes="tubecount",lanterns="lanterncount",mice="mousecount",bulbs="bulbcount",belts="beltcount")
             for key, capacity in limits.items():
                 assert len(records[key]) <= capacity, (path,key,len(records[key]),capacity)
                 lines.append(f"value.{countnames[key]} = {len(records[key])};")
