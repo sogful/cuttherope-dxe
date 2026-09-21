@@ -36,6 +36,8 @@ def main():
     parser.add_argument("--core", default=str(root / ".tools/libretro/melondsds_libretro.dll"))
     parser.add_argument("--rom", default=str(root / "dist/cuttherope.nds"))
     parser.add_argument("--bootcheck", action="store_true", help="Check the separate hardware startup/filesystem probe")
+    parser.add_argument("--logging", action="store_true", help="Test the separate full-game logging build")
+    parser.add_argument("--menustress", action="store_true", help="Exercise quick and overlapping menu inputs")
     parser.add_argument("--inspect", action="store_true")
     parser.add_argument("--menus", action="store_true", help="Check source-shaped title, packs, settings, languages and credits")
     parser.add_argument("--skins", action="store_true", help="Check fades, isolated unlock mode, picker scrolling, all cosmetic tabs and equipped gameplay")
@@ -60,12 +62,16 @@ def main():
     args = parser.parse_args()
     if args.bootcheck and args.rom == str(root / "dist/cuttherope.nds"):
         args.rom = str(root / "dist/bootcheck.nds")
+    if args.logging and args.rom == str(root / "dist/cuttherope.nds"):
+        args.rom = str(root / "dist/cuttherope-logging.nds")
     if (args.pagingstress or args.layers or args.finished) and not args.profile:
         parser.error("--pagingstress/--layers/--finished require --profile; normal ROMs have no diagnostic controls")
     if args.profile and args.rom == str(root / "dist/cuttherope.nds"):
         args.rom = str(root / "dist/cuttherope-profile.nds")
     core = c.CDLL(args.core)
     directory = root / "build/headless" / "profile" if args.profile else root / "build/headless"
+    if args.logging: directory=directory/"logging"
+    if args.menustress: directory=directory/"menustress"
     if args.benchmark: directory=directory/"benchmarks"/args.label
     if args.bootcheck: directory=directory/"bootchecks"/args.label
     if args.profile:
@@ -220,7 +226,7 @@ def main():
             image.save(directory / (label + ".png"))
             image.crop((0,0,256,192)).save(directory/(label+"-upper.png"))
             image.crop((0, 192, 256, 384)).save(directory / (label + "-game.png"))
-        symbols = (root / ("build/profile/symbols.txt" if args.profile else "build/symbols.txt")).read_text().splitlines()
+        symbols = (root / ("build/logging/symbols.txt" if args.logging else "build/profile/symbols.txt" if args.profile else "build/symbols.txt")).read_text().splitlines()
         address = int(next(line.split()[0] for line in symbols if line.endswith(" telemetry")), 16)
         if args.benchmark:
             for _ in range(60): core.retro_run()
@@ -368,6 +374,10 @@ def main():
             assert telemetry()["costume"] == args.costume
             key(0)
         assert title["view"] == 5 and title["ticks"] == 0 and title["frames"] > 40, title
+        if args.menustress:
+            import menustress
+            menustress.check(run,tap,key,telemetry,settle,snapshot,control,pointer,buttons,report,directory)
+            return
         if args.benchmark:
             import benchmark
             benchmark.check(run,tap,key,telemetry,settle,snapshot,report,directory,args.ropebench)

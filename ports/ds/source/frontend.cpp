@@ -10,6 +10,7 @@
 #include "geometry.hpp"
 #include "assets.hpp"
 #include "profiling.hpp"
+#include "gamelog.hpp"
 #include "routes.hpp"
 #include "contraptionview.hpp"
 #include "deviceview.hpp"
@@ -56,9 +57,12 @@ void capture() {
 }
 static FILE* catalog;
 void initialize() {
+    gamelog::event("nitrofs.initialize.begin");
     if (nitroFSInit(nullptr)) catalog = std::fopen("nitro:/menu.bin", "rb");
+    gamelog::event("nitrofs.initialize.end menu=%d",catalog!=nullptr);
     if (!catalog) {
         nocashMessage("CTRD DS: ROM filesystem unavailable");
+        gamelog::fatal("ROM filesystem unavailable");
         while (true) swiWaitForVBlank();
     }
 }
@@ -125,6 +129,7 @@ static bool visible(const command& item,bool* above=nullptr) {
 }
 
 void reset() {
+    gamelog::event("textures.reset bytes=%u transfers=%u",occupied,transfercount);
     stagedbytes = transfercount = 0;
     glResetTextures();
     gCurrentTexture = -1;
@@ -140,6 +145,7 @@ unsigned cachefault() { return renderfault; }
 
 // Keep gameplay atlas/background handles alive during results/replay.
 static void repack() {
+    gamelog::event("textures.repack bytes=%u count=%u",occupied,repacks);
     for (int& texture : textures) {
         if (texture) glDeleteTextures(1, &texture);
         texture = 0;
@@ -153,6 +159,7 @@ static void enqueue(void* destination, const void* source, unsigned size) {
     if (!destination || transfercount >= std::size(transfers)) {
         renderfault = 0x20000000;
         nocashMessage("CTRD DS: invalid texture transfer");
+        gamelog::fatal("Invalid texture transfer",transfercount);
         while (true) swiWaitForVBlank();
     }
     transfers[transfercount++] = {destination, source, size};
@@ -171,6 +178,7 @@ static unsigned char* staging(unsigned size) {
     if (size > sizeof(staged) - stagedbytes) {
         renderfault = 0x30000000 | (stagedbytes + size);
         nocashMessage("CTRD DS: staging capacity exceeded");
+        gamelog::fatal("Staging capacity exceeded",stagedbytes+size);
         while (true) swiWaitForVBlank();
     }
     unsigned char* result = staged + stagedbytes;
@@ -199,12 +207,17 @@ void present(bool synchronize) {
         DC_FlushRange(transfers[i].source, transfers[i].bytes);
         bytes += transfers[i].bytes;
     }
+    gamelog::event("present.begin transfers=%u bytes=%u captured=%d armed=%d frozen=%d sync=%d",transfercount,bytes,captured,armed,frozen,synchronize);
+    const unsigned waiting=gamelog::now();
     {
         DS_SCOPE(wait);
-        while (GFX_BUSY) {}
-        while (REG_VCOUNT < 148 || REG_VCOUNT > 188) swiIntrWait(1, IRQ_VCOUNT);
+        gamelog::mark("present.gpu",bytes);
+        while (GFX_BUSY) { gamelog::checkwait(waiting); }
+        gamelog::mark("present.vcount",bytes);
+        while (REG_VCOUNT < 148 || REG_VCOUNT > 188) { gamelog::checkwait(waiting); swiIntrWait(1, IRQ_VCOUNT); }
         // The old frame must have finished rendering, including its buffered tail.
-        while (REG_VCOUNT < 192 && (GFX_RDLINES_COUNT & 0x3f) < 192u - REG_VCOUNT) {}
+        gamelog::mark("present.scanlines",bytes);
+        while (REG_VCOUNT < 192 && (GFX_RDLINES_COUNT & 0x3f) < 192u - REG_VCOUNT) { gamelog::checkwait(waiting); }
     }
     const unsigned lines = (bytes + 2303) / 2304 + transfercount / 4 + 4;
     const bool hidden = (REG_MASTER_BRIGHT & 0xc01f) == 0x8010;
@@ -212,7 +225,8 @@ void present(bool synchronize) {
     DS_PROFILE_DO(if (profilestress & 1) { hold = true; profilestress = profilestress & ~1u; });
     if (hold) {
         DS_SCOPE(wait);
-        do { swiWaitForVBlank(); } while (!captured);
+        gamelog::mark("present.capture",bytes);
+        do { gamelog::checkwait(waiting); swiWaitForVBlank(); } while (!captured);
         frozen = true;
         REG_DISPCAPCNT = 0;
         // Capture is RGB5, so this rare held frame loses the 3D output's low color bit.
@@ -222,6 +236,7 @@ void present(bool synchronize) {
     } else glFlush(GL_TRANS_MANUALSORT);
     {
         DS_SCOPE(transfer);
+        gamelog::mark("present.dma",bytes);
         DS_PROFILE_DO(profiling::data[profiling::uploadstart] = REG_VCOUNT);
         const int interrupts = enterCriticalSection();
         const auto a = VRAM_A_CR, b = VRAM_B_CR, d = VRAM_D_CR, e = VRAM_E_CR;
@@ -239,6 +254,7 @@ void present(bool synchronize) {
     }
     if (hold) {
         DS_SCOPE(wait);
+        gamelog::mark("present.restore",bytes);
         glFlush(GL_TRANS_MANUALSORT);
         swiWaitForVBlank();
         swiWaitForVBlank();
@@ -247,6 +263,7 @@ void present(bool synchronize) {
         frozen = false;
         capture();
     }
+    gamelog::event("present.end hold=%d transfers=%u bytes=%u",hold,transfercount,bytes);
 #else
     glFlush(GL_TRANS_MANUALSORT);
 #endif
@@ -255,16 +272,18 @@ void present(bool synchronize) {
 }
 
 int background(int box, int sections, int top, int texture) {
+    gamelog::event("world.read.begin box=%d sections=%d top=%d",box,sections,top);
     static FILE* file = std::fopen("nitro:/world.bin", "rb");
     const unsigned offset = art::backgrounds[box][std::clamp(sections, 1, 3) - 1] + top * 512;
     auto* pixels = staging(131072);
     const bool valid = file && paged::read(backgroundstore::worldpages,backgroundstore::worldshift,offset,pixels,131072,
         [&](unsigned physical,void* target,unsigned bytes) { return !std::fseek(file,physical,SEEK_SET) && std::fread(target,1,bytes,file)==bytes; });
-    if (!valid) { nocashMessage("CTRD DS: background read failed"); while (true) swiWaitForVBlank(); }
+    if (!valid) { nocashMessage("CTRD DS: background read failed"); gamelog::fatal("Background read failed",offset); while (true) swiWaitForVBlank(); }
+    gamelog::event("world.read.end");
     if (!texture) glGenTextures(1, &texture);
     glBindTexture(0, texture);
     if (!glTexImage2D(0, 0, GL_RGBA, TEXTURE_SIZE_256, TEXTURE_SIZE_256, 0, TEXGEN_OFF, nullptr)) {
-        nocashMessage("CTRD DS: background allocation failed"); while (true) swiWaitForVBlank();
+        nocashMessage("CTRD DS: background allocation failed"); gamelog::fatal("Background allocation failed"); while (true) swiWaitForVBlank();
     }
     stage(texture, pixels, 131072);
     gCurrentTexture = -1;
@@ -291,6 +310,7 @@ static void upload(bool repacked = false) {
     if (required + reserved > 384 * 1024) {
         renderfault = required + reserved;
         nocashMessage("CTRD DS: menu working set exceeds texture VRAM");
+        gamelog::fatal("Menu working set exceeds texture VRAM",required+reserved);
         while (true) swiWaitForVBlank();
     }
     if (!missing) return;
@@ -312,6 +332,8 @@ static void upload(bool repacked = false) {
     std::sort(order.begin(), order.end(), [](int a, int b) { return bytes(a) > bytes(b); });
     for (int index : order) {
         if (!needed[index] || textures[index]) continue;
+        gamelog::event("texture.load.begin page=%d bytes=%u occupied=%u reserved=%u",index,bytes(index),occupied,reserved);
+        gamelog::mark("texture.allocate",index);
         while (occupied + reserved + bytes(index) > 384 * 1024) {
             if (!evict()) break;
         }
@@ -331,6 +353,7 @@ static void upload(bool repacked = false) {
                 }
                 renderfault = 0x10000000 | index;
                 nocashMessage("CTRD DS: menu texture allocation failed");
+                gamelog::fatal("Menu texture allocation failed",index);
                 while (true) swiWaitForVBlank();
             }
             glBindTexture(0, textures[index]);
@@ -351,16 +374,19 @@ static void upload(bool repacked = false) {
         };
         {
             DS_SCOPE(decode);
+            gamelog::mark("texture.read",index);
             bool valid = !std::fseek(catalog, page.offset, SEEK_SET);
             for (int i=0;i<colors*2 && valid;++i) { const int value=next(); valid=value>=0; palette[i]=value; }
             if (!valid || !packed::stream(next, pixels, bytes(index))) {
                 nocashMessage("CTRD DS: invalid packed menu texture");
+                gamelog::fatal("Invalid packed menu texture",index);
                 while (true) swiWaitForVBlank();
             }
         }
         stage(textures[index], pixels, bytes(index), palette, colors);
         DS_PROFILE_DO(++profiling::data[profiling::uploads]; profiling::data[profiling::uploadbytes] += bytes(index));
         occupied += bytes(index);
+        gamelog::event("texture.load.end page=%d occupied=%u",index,occupied);
     }
     // Raw libnds uploads do not update gl2d's binding cache.
     gCurrentTexture = -1;

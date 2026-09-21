@@ -14,6 +14,7 @@ def main():
     variant = parser.add_mutually_exclusive_group()
     variant.add_argument("--bootcheck", action="store_true", help="Build a separate on-screen/SD-log loader and ROM filesystem probe")
     variant.add_argument("--profile", action="store_true", help="Build separate instrumented ROM without replacing the normal ROM")
+    variant.add_argument("--logging", action="store_true", help="Build the full game with persistent hardware diagnostic logs")
     args = parser.parse_args()
     wonderful = root / ".tools/msys64/opt/wonderful"
     sdk = Path(os.environ.get("BLOCKSDS", str(wonderful / "thirdparty/blocksds/core")))
@@ -29,7 +30,7 @@ def main():
     if args.assets or not upper.exists() or any(path.stat().st_mtime > upper.stat().st_mtime for path in
             (root/"tools/upperart.py",root/"tools/upperhud.py",root/"tools/uppermotion.py",root/"assets/feedcandy.png",root/"generated/menumanifest.json")):
         subprocess.run([sys.executable, "tools/upperart.py"], check=True)
-    build = root / "build" / "profile" if args.profile else root / "build"
+    build = root / "build" / "logging" if args.logging else root / "build" / "profile" if args.profile else root / "build"
     import backgroundstore
     backgroundstore.update(root/"generated")
     dist = root / "dist"
@@ -49,6 +50,8 @@ def main():
     objects = []
     if args.profile:
         flags.append("-DDS_PROFILE")
+    if args.logging:
+        flags.append("-DDS_LOGGING")
     sources = [root / "tests/boot.cpp"] if args.bootcheck else sorted((root / "source").glob("*.cpp"))
     for source in sources:
         target = build / (source.stem + ".o")
@@ -71,7 +74,7 @@ def main():
             target = build / (Path(member).stem + ".itcm.o")
             subprocess.run([str(compiler.with_name("arm-none-eabi-objcopy.exe")), str(build / member), str(target)], env=environment, check=True)
             objects.append(str(target))
-    name = "bootcheck" if args.bootcheck else "cuttherope-profile" if args.profile else "cuttherope"
+    name = "bootcheck" if args.bootcheck else "cuttherope-logging" if args.logging else "cuttherope-profile" if args.profile else "cuttherope"
     elf = build / (name + ".elf")
     subprocess.run([str(compiler.with_name("arm-none-eabi-gcc.exe")), *flags, *objects, "-L" + str(sdk / "libs/libnds/lib"),
                     "-Wl,-Map=" + str(build / (name + ".map")), "-Wl,--start-group", "-lnds9", "-lstdc++", "-lc", "-lm", "-Wl,--end-group",

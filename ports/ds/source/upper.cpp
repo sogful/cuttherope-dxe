@@ -7,6 +7,7 @@
 #include "paged.hpp"
 #include "upperbgstore.hpp"
 #include "profiling.hpp"
+#include "gamelog.hpp"
 #include <nds.h>
 #include <algorithm>
 #include <array>
@@ -67,7 +68,7 @@ void shade(int value) { brightness = std::clamp(value,0,31); }
 void transient(bool enabled) { moving=enabled; }
 void cutout(bool enabled) { photograph=enabled; }
 void mirror(bool enabled) { mirrored=enabled; }
-static void fail(unsigned value) { error = value; nocashMessage("CTRD DS: upper-screen asset error"); }
+static void fail(unsigned value) { error = value; nocashMessage("CTRD DS: upper-screen asset error"); gamelog::event("upper.error code=%u",value); }
 static bool read(FILE* file, unsigned offset, void* destination, unsigned bytes) {
     readbytes += bytes;
     DS_PROFILE_DO(profiling::data[profiling::upperreads] += bytes);
@@ -95,6 +96,7 @@ static bool keyframe(unsigned position, unsigned char* destination) {
 }
 
 void initialize(const char* prefix) {
+    gamelog::event("upper.initialize.begin");
     // The final-size score no longer needs a third 64 KiB font blend table.
     // Reuse that upload workspace for the palette LUT, saving 32 KiB of RAM.
     lookup=frontend::workspace()+196608;
@@ -109,6 +111,7 @@ void initialize(const char* prefix) {
     if (!backgroundfile || !palettefile || !menufile || !photofile || !hudfile || !motionfile) fail(2);
     for (auto& item : cache) item.id = -1;
     backgroundid = backgroundtop = paletteid = -1;
+    gamelog::event("upper.initialize.end error=%u",error);
 }
 
 void begin(int id, int top) {
@@ -250,6 +253,8 @@ bool menu(int id,unsigned frame) {
 
 static entry* load(int id, unsigned size) {
     for (auto& item : cache) if (item.id==id) { item.touched=age; return &item; }
+    gamelog::event("upper.cachemiss id=%d bytes=%u",id,size);
+    gamelog::mark("upper.read",id);
     if (size>capacity) { fail(3); return nullptr; }
     size = (size+31)&~31u;
     if (cursor+size>capacity) cursor=0;
@@ -664,7 +669,8 @@ void finish() {
 void acquire() {
 #ifdef __NDS__
     DS_SCOPE(wait);
-    while (pending) swiWaitForVBlank();
+    const unsigned waiting=gamelog::now();
+    while (pending) { gamelog::checkwait(waiting); swiWaitForVBlank(); }
 #endif
 }
 void vblank() {

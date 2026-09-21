@@ -2,6 +2,7 @@
 #include "assets.hpp"
 #include "frontend.hpp"
 #include "profiling.hpp"
+#include "gamelog.hpp"
 #include "upper.hpp"
 #include "upperassets.hpp"
 #include "candyview.hpp"
@@ -130,6 +131,7 @@ static void loadgame(const ui::controller& menu, const dx::simulation& game) {
         for (int size = source.height; size > 8; size >>= 1) ++height;
         if (!glTexImage2D(0, 0, GL_RGB32_A3, width, height, 0, TEXGEN_OFF, nullptr)) {
             nocashMessage("CTRD DS: sprite texture allocation failed");
+            gamelog::fatal("Sprite texture allocation failed",index);
             while (true) swiWaitForVBlank();
         }
         frontend::stage(textures[index], source.pixels, source.width * source.height, source.palette, 32);
@@ -213,7 +215,9 @@ static void lower(const dx::simulation& game,int frame,const ui::controller& men
 static void scene(const dx::simulation& game,int frame,const ui::controller& menu,bool,dx::point) {
     DS_SCOPE(scene);
     paintingupper=false;
+    gamelog::mark("lower.draw");
     lower(game,frame,menu);
+    gamelog::mark("upper.draw");
     DS_SCOPE(upperdraw);
     static bool heldpause=false;
     const bool paused=menu.mode==ui::view::paused && !menu.door && menu.white()<=0;
@@ -253,18 +257,25 @@ bool busy() { return loaded < 0 || transition != 0; }
 bool active() { return loaded >= 0 && (transition == 0 || transition >= 14); }
 int fadephase() { return transition; }
 void draw(const dx::simulation& game, int frame, const ui::controller& menu, bool touching, dx::point finger) {
+    const int oldtransition=transition;
+    gamelog::mark("upper.acquire");
     upper::acquire();
     const int desired = menu.frontend() ? static_cast<int>(menu.mode) * 12 + menu.locale : menu.pack;
     if (loaded < 0) {
+        gamelog::event("scene.first.begin desired=%d",desired);
         scene(game, frame, menu, false, finger);
         swiWaitForVBlank();
         swiWaitForVBlank();
         loaded = desired;
         previous = menu;
         setBrightness(3, 0);
+        gamelog::event("scene.first.visible desired=%d",desired);
         return;
     }
-    if (loaded != desired && !transition) transition = 1;
+    if (loaded != desired && !transition) {
+        gamelog::event("fade.begin loaded=%d desired=%d from=%d to=%d",loaded,desired,static_cast<int>(previous.mode),static_cast<int>(menu.mode));
+        transition = 1;
+    }
     if (transition > 0 && transition <= 12) {
         setBrightness(3, -(transition * 16 / 12));
         scene(game, frame, previous, false, finger);
@@ -272,16 +283,20 @@ void draw(const dx::simulation& game, int frame, const ui::controller& menu, boo
         return;
     }
     if (transition == 13) {
+        gamelog::event("fade.black.begin loaded=%d desired=%d",loaded,desired);
         setBrightness(3, -16);
         if (menu.frontend()) { if (!previous.frontend()) { frontend::reset(); gamecached = false; } }
         else loadgame(menu, game);
         loaded = desired;
+        gamelog::event("fade.black.loaded desired=%d",desired);
     }
     if (transition >= 13) {
         setBrightness(3, -std::clamp((27 - transition) * 16 / 12, 0, 16));
         if (++transition > 27) transition = 0;
     }
     scene(game, frame, menu, touching, finger);
+    if (transition==14) gamelog::event("fade.newscene.drawn desired=%d",desired);
+    if (oldtransition==27 && !transition) gamelog::event("fade.end desired=%d",desired);
     previous = menu;
 }
 

@@ -9,6 +9,7 @@
 #include "trace.hpp"
 #include "profiling.hpp"
 #include "upper.hpp"
+#include "gamelog.hpp"
 #include <fat.h>
 #include <sys/stat.h>
 #include <cstdio>
@@ -51,17 +52,40 @@ static void vertical() { vblanks = vblanks + 1; frontend::capture(); upper::vbla
 static dx::simulation game;
 static ui::controller menu;
 
-int main() {
+int main(int argc,char** argv) {
+#ifdef DS_LOGGING
+    defaultExceptionHandler();
+    gamelog::clock(&vblanks);
+    const bool storage=fatInitDefault();
+    char logdirectory[192]{};
+    if (storage) {
+        std::snprintf(logdirectory,sizeof(logdirectory),"%sctrdx",fatGetDefaultDrive());
+        mkdir(logdirectory,0777);
+    }
+    gamelog::initialize(storage?logdirectory:nullptr);
+    gamelog::event("BOOT mode=%s storage=%d argv=%s",isDSiMode()?"DSi":"DS",storage,argc>0?argv[0]:"missing");
+#else
+    (void)argc; (void)argv;
+#endif
     irqSet(IRQ_VBLANK, vertical);
     irqEnable(IRQ_VBLANK);
+    gamelog::event("display.initialize.begin");
     display::initialize();
+    gamelog::event("display.initialize.end");
     audio::initialize();
+    gamelog::event("audio.initialize.end");
     game.reset(dx::loadlevel(0));
+#ifdef DS_LOGGING
+    if (storage) {
+#else
     if (fatInitDefault()) {
+#endif
         char directory[192];
         std::snprintf(directory, sizeof(directory), "%sctrdx", fatGetDefaultDrive());
         mkdir(directory, 0777);
+        gamelog::event("saves.initialize.begin");
         menu.initialize(directory);
+        gamelog::event("saves.initialize.end writable=%d failed=%d locale=%d",menu.saves.writable,menu.saves.failed,menu.locale);
     }
     bool held = false;
     int touchx = 0, touchy = 0;
@@ -97,7 +121,9 @@ int main() {
     };
     nocashMessage("CTRD DS: ready");
     unsigned startedblank=vblanks;
+    gamelog::event("loop.begin");
     while (true) {
+        gamelog::mark("frame.wait");
         if (vblanks==startedblank) swiWaitForVBlank();
         startedblank=vblanks;
         cpuStartTiming(0);
@@ -116,8 +142,12 @@ int main() {
         if (down & (KEY_UP | KEY_LEFT)) commands |= ui::previous;
         if (down & (KEY_DOWN | KEY_RIGHT)) commands |= ui::following;
         const ui::view oldview = menu.mode;
+        gamelog::context(total,static_cast<int>(menu.mode),display::fadephase(),menu.pack,menu.level);
+        if (down) gamelog::event("input down=%x held=%x touch=%d x=%d y=%d busy=%d",down,keys,touching,touchx,touchy,display::busy());
+        gamelog::mark("menu.update");
         if (display::busy()) menu.suspend({touchx, touchy, 0, touching});
         else menu.update(game, {touchx, touchy, commands, touching});
+        if (menu.mode!=oldview) gamelog::event("scene.change from=%d to=%d",static_cast<int>(oldview),static_cast<int>(menu.mode));
         const bool resetbefore = menu.reset;
         if (resetbefore) resetgame();
         audio::update(menu);
@@ -244,8 +274,17 @@ int main() {
         if (!display::busy() || (!menu.frontend() && display::active())) menu.advance(game);
         if (menu.reset && !resetbefore) { resetgame(); audio::update(menu); }
         if (menu.mode == ui::view::results && oldview != ui::view::results) audio::effect(windata, winbytes);
-        if (menu.clicked || menu.mode != oldview) menu.persist();
+        if (menu.clicked || menu.mode != oldview) {
+            gamelog::mark("save");
+            gamelog::event("save.begin clicked=%d",menu.clicked);
+            menu.persist();
+            gamelog::event("save.end writable=%d failed=%d",menu.saves.writable,menu.saves.failed);
+        }
+        gamelog::context(total,static_cast<int>(menu.mode),display::fadephase(),menu.pack,menu.level);
+        gamelog::mark("draw");
         display::draw(game, frame, menu, menu.gameTouch, pointer);
+        gamelog::mark("frame.complete");
+        if (total%300==0) gamelog::event("heartbeat upper=%u renderfault=%u upperfault=%u",upper::updates(),frontend::cachefault(),upper::fault());
         telemetry.upperfault=upper::fault(); telemetry.upperframes=upper::updates(); telemetry.upperreads=upper::reads();
         telemetry.popup=menu.popup; telemetry.popupage=menu.popupage;
         const unsigned micros = timerTicks2usec(cpuEndTiming());
