@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 import assets
 import colors
 import uiscale
+import menulayout
 from levels import boxes
 
 root, content, output = assets.root, assets.content, assets.output
@@ -259,7 +260,7 @@ def main():
     for i in range(52):
         quad("titlecandy" + str(i), "menu_logo_new", i, mainfit*uiscale.title, group="titlecandies" + str(i // 8))
     quad("titlehand", "candy_selection_fx", 1, mainfit*uiscale.title, group="title")
-    titlepositions = [[round(128+(x-1280)*scale*mainfit*uiscale.title),round(59+(y-410)*scale*mainfit*uiscale.title)] for x,y in ((1280,410),(1423,685.5),(1603,729.5))]
+    titlepositions = menulayout.title(mainfit)
     for i, name in enumerate(("longup", "longdown", "shortdown", "shortup")):
         quad(name, "menu_buttons", i)
     for i in range(11):
@@ -278,7 +279,7 @@ def main():
     for i in range(6):
         quad("level" + str(i), "menu_level_ui", i, factor=fit*uiscale.levels, restore=True)
     quad("levelstar","menu_pack_ui",3,factor=fit*uiscale.levels)
-    levelpositions=[[48+i%5*40,30+i//5*36] for i in range(25)]
+    levelpositions=menulayout.levels()
     import popup
     popupinfo=popup.build(globals())
     configs = json.loads((content / "ctroriginal_packs.json").read_text())
@@ -418,7 +419,7 @@ def main():
             item["sourcePosition"]=[item["x"],item["y"]]
             if item["view"]=="home":
                 item["x"],item["y"] = titlepositions[1] if item["action"]=="skinmenu" else (128,141 if item["action"]=="packs" else 175)
-                item["w"],item["h"] = (round(281*scale*mainfit*uiscale.title),)*2 if item["action"]=="skinmenu" else (135,32)
+                item["w"],item["h"] = menulayout.candyhit(mainfit) if item["action"]=="skinmenu" else (135,32)
                 item["up"],item["down"] = ("","") if item["action"]=="skinmenu" else ("settingup","settingdown")
             elif item["view"]=="languages":
                 item["x"],item["y"] = 48+(item["argument"]%3)*80,45+(item["argument"]//3)*34

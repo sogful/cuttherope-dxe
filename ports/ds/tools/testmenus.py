@@ -232,7 +232,10 @@ for code,row in zip(manifest["locales"],manifest["popup"]["labels"]):
         previousbottom=y+item["oy"]+item["h"]
 for actual,(x,y) in zip(manifest["titlepositions"],((1280,410),(1423,685.5),(1603,729.5))):
     factor=192/1440*manifest["mainfit"]*manifest["uiscale"]["title"]
-    assert actual==[round(128+(x-1280)*factor),round(59+(y-410)*factor)]
+    assert actual==[round(128+(x-1280)*factor),round(67+(y-410)*factor)]
+paper=sprites["popuppaper"]
+assert manifest["popup"]["origin"][1]+paper["oy"]+paper["h"]/2==96
+assert manifest["levelpositions"][0][1]+level["oy"]+manifest["levelpositions"][-1][1]+level["oy"]+level["h"]==192
 
 markers = json.loads((repo / "content/images/menu_results.json").read_text())["frames"]
 markers = [(f["spriteSourceSize"]["x"], f["spriteSourceSize"]["y"]) for f in markers[:13]]

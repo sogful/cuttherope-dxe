@@ -238,7 +238,7 @@ void simulation::transports() {
         if (!hit) continue;
         for (int j = 0; j < definition.hatcount; ++j) if (j != i && definition.hats[j].group == hat.group) {
             exitspeed = candy().velocity.length() * .9f * 1.4f;
-            dropmouse(); retreatmouse(activemouse); cutattached(0); burst();
+            dropmouse(); retreatmouse(activemouse); cutattached(0);
             transit = j; transitage = 0; hattimers[j] = .8f; hatages[i] = 0; ++teleportevents;
             return;
         }

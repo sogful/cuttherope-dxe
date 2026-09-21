@@ -911,11 +911,15 @@ def main():
             settle()
             key(3)
             assert snapshot("source-pause")["view"] == 1
+            pausedticks=telemetry()["ticks"]
+            tap(*layout["gameui"]["pause"][4]); tap(*layout["gameui"]["pause"][5])
+            snapshot("pause-disabled")
             touch(*layout["gameui"]["pause"][2])
             touch(*layout["gameui"]["pause"][2],False)
             closing = []
             for _ in range(80):
                 run(1)
+                assert telemetry()["ticks"]==pausedticks, "Quit to level select resumed the score clock"
                 closing.append(framebuffer().crop((0, 192, 256, 384)))
             closing[0].save(directory / "box-quit.gif", save_all=True, append_images=closing[1:], duration=16, loop=0)
             settle()
@@ -941,6 +945,13 @@ def main():
             # frames while the flaps move, not an assumed 95 emu frames == 95 ticks.
             clocks = list(openingclocks.values())
             assert len(clocks) >= 10 and all(b > a for a,b in zip(clocks,clocks[1:])), "Opening flaps blocked world animation"
+            key(3)
+            pausedticks=telemetry()["ticks"]
+            touch(*layout["gameui"]["pause"][3]); touch(*layout["gameui"]["pause"][3],False)
+            for _ in range(90):
+                run(1)
+                assert telemetry()["ticks"]==pausedticks, "Quit to home resumed the score clock"
+            settle(); assert snapshot("quit-home")["view"]==5
             report.update(passed=True, seconds=time.monotonic() - start)
             (directory / "flowreport.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
             print("PASS: complete result timeline, improvement-only stamp, replay, original pause, box close/open")

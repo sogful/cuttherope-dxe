@@ -357,7 +357,7 @@ void simulation::tick(bool suppress) {
         resultvisual = visuals;
         bodies[0].pin = bodies[0].pos;
         bodies[0].pinned = true;
-        if (bubble >= 0) burst();
+        if (bubble >= 0) burst(0,false);
     } else for (int part = activecount()-1; part >= 0; --part) {
         const int id = activeid(part);
         if (!available(id)) continue;

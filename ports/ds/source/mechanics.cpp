@@ -93,14 +93,14 @@ void simulation::camera() {
         if (std::abs(target - cameray) < 1) { cameray = target; introduction = false; }
     } else cameray += difference * 14 * delta;
 }
-void simulation::burst(int id) {
+void simulation::burst(int id, bool sound) {
     int& active = bubbleindex(id);
     if (active < 0) return;
     releaseghost(id);
     active = -1;
     popposition = bodies[id].pos;
     popage = 0;
-    ++pops;
+    if (sound) ++pops;
 }
 bool simulation::interact(point position) {
     if (state != outcome::playing || introduction) return false;
@@ -158,7 +158,7 @@ bool simulation::interact(point position) {
 }
 void simulation::retirehalf(int id, int reason) {
     if (suppressoutcome || !id || !halfalive[id-1]) return;
-    releasecandy(id); burst(id); halfalive[id-1] = false;
+    releasecandy(id); burst(id,false); halfalive[id-1] = false;
     bodies[id].pin = bodies[id].pos; bodies[id].pinned = true;
     if (state == outcome::playing) { cancelbelts(); state = outcome::lost; failreason = reason; resulttick = ticks; resultvisual = visuals; }
 }
@@ -174,7 +174,7 @@ void simulation::fail(int reason) {
     resultvisual = visuals;
     for (int part = 0; part < activecount(); ++part) {
         const int id = activeid(part);
-        bodies[id].pin = bodies[id].pos; bodies[id].pinned = true; burst(id);
+        bodies[id].pin = bodies[id].pos; bodies[id].pinned = true; burst(id,false);
     }
 }
 bool segment(point a, point b, point c, point d) {

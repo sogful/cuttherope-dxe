@@ -138,7 +138,7 @@ public:
     point capturefrom{}, captureto{}, candydraw{};
     std::array<float, 8> reveals{};
     void ghostform(int index, int form);
-    void burst(int id = 0);
+    void burst(int id = 0, bool sound = true);
     const apparition* ghostapp(int form, int index) const;
     float ghostalpha(int form, int index) const;
     std::array<ghoststate, 4> ghosts{};

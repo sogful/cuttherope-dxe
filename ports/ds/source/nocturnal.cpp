@@ -179,7 +179,7 @@ void simulation::updatelight() {
 }
 void simulation::retirebulb() {
     if (!bulbalive) return;
-    releasecandy(3); burst(3); bulbalive = false;
+    releasecandy(3); burst(3,false); bulbalive = false;
     if (definition.night && state == outcome::playing) {
         state = outcome::lost; failreason = 4; resulttick = ticks; resultvisual = visuals;
         // Lights-out triggers GameLost, not candy removal. Keep its ropes,
@@ -217,7 +217,7 @@ void simulation::lighttransports() {
             for (int j = 0; j < definition.hatcount; ++j) if (j != i && definition.hats[j].group == hat.group) {
                 (id ? bulbspeed : exitspeed) = (.9f*bodies[id].velocity.length())*1.4f;
                 for (int r = 0; r < definition.hookcount; ++r) if (ropes[r].count && ropes[r].candy == id && !ropes[r].cut) sever(r,ropes[r].count-2);
-                burst(id); (id ? bulbtransit : transit) = j; (id ? bulbtime : candytime) = .1f;
+                (id ? bulbtransit : transit) = j; (id ? bulbtime : candytime) = .1f;
                 hattimers[j] = .8f; hatages[i] = 0; ++teleportevents;
                 return;
             }

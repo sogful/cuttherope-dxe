@@ -23,6 +23,8 @@ def main():
     os.chdir(root)
     if args.assets or not (root / "generated/assets.hpp").exists() or not (root / "generated/menuassets.hpp").exists():
         subprocess.run([sys.executable, "tools/assets.py"], check=True)
+    import menulayout
+    menulayout.update(root/"generated")
     upper = root / "generated/uppermanifest.json"
     if args.assets or not upper.exists() or any(path.stat().st_mtime > upper.stat().st_mtime for path in
             (root/"tools/upperart.py",root/"tools/upperhud.py",root/"tools/uppermotion.py",root/"assets/feedcandy.png",root/"generated/menumanifest.json")):

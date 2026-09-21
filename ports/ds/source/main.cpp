@@ -136,7 +136,7 @@ int main() {
             game.dragswitch = game.dragspike = -1;
             game.drag(pointer, false);
             if (!menu.frontend() && (menu.mode != ui::view::paused || menu.door) && display::active()) {
-                if (menu.mode == ui::view::results && menu.age >= 32) game.animate();
+                if (menu.mode == ui::view::paused || (menu.mode == ui::view::results && menu.age >= 32)) game.animate();
                 else game.tick();
             }
         }

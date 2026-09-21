@@ -584,7 +584,11 @@ void prepareoverlay(const ui::controller& menu, const dx::simulation& game) {
             } else {
                 add(menu.pressed == i ? menuart::pauseoption1 : menuart::pauseoption0, b.x, b.y);
                 add(i == 4 ? menuart::pauseoption2 : menuart::pauseoption3, b.x, b.y);
-                if (!(i == 4 ? menu.effects : menu.music)) add(menuart::pauseoption4, b.x, b.y);
+                if (!(i == 4 ? menu.effects : menu.music)) {
+                    const auto& icon = menuart::sprites[i == 4 ? menuart::pauseoption2 : menuart::pauseoption3];
+                    const auto& cross = menuart::sprites[menuart::pauseoption4];
+                    add(menuart::pauseoption4, b.x + icon.ox + icon.w + 1 - cross.ox, b.y);
+                }
             }
         }
     }
@@ -1056,8 +1060,13 @@ void draw(const ui::controller& menu) {
                 }
             }
         }
-        label(menu, menuart::count0 + menu.totalstars(menu.pack), 228, 5);
-        add(menuart::levelstar, 248, 6);
+        {
+            const auto& star = menuart::sprites[menuart::levelstar];
+            const int id = menuart::labels[menu.locale][menuart::count0 + menu.totalstars(menu.pack)];
+            const auto& text = menuart::sprites[id];
+            add(id,250+star.ox-1-text.w-text.ox,6);
+            add(menuart::levelstar,250,6);
+        }
         if (menu.notice) label(menu, menuart::unavailable, 128, 186);
         break;
     default: break;
@@ -1078,17 +1087,22 @@ void draw(const ui::controller& menu) {
         if (item.action == ui::action::music || item.action == ui::action::effects) {
             const bool enabled = item.action == ui::action::music ? menu.music : menu.effects;
             add(menuart::setting0 + item.argument, item.x, item.y, {}, GL_FLIP_NONE, factor, 0, enabled ? 31 : 16, enabled ? RGB15(31,31,31) : RGB15(15,15,15));
-            if (!enabled) add(menuart::setting4, item.x + std::lround((item.argument == 2 ? 10 : 7)*menuart::settingszoom*factor), item.y + 6, {}, GL_FLIP_NONE, factor);
+            if (!enabled) {
+                const auto& icon=menuart::sprites[menuart::setting0+item.argument];
+                const auto& cross=menuart::sprites[menuart::setting4];
+                add(menuart::setting4,item.x+std::lround((icon.ox+icon.w)*factor)+1-std::lround(cross.ox*factor),item.y,{},GL_FLIP_NONE,factor);
+            }
         }
         ++index;
     }
     if (menu.popup) {
         rect({}, RGB15(0,0,0), 16);
         const float scale = menu.popupscale();
-        add(menuart::popuppaper, 128, 96, {}, GL_FLIP_NONE, scale);
+        const auto& origin = menuart::popuporigin;
+        add(menuart::popuppaper, origin[0], origin[1], {}, GL_FLIP_NONE, scale);
         for (int i = 0; i < 3; ++i) {
             const auto& p = menuart::popuppositions[i];
-            const int px = std::lround(128 + (p[0] - 128) * scale), py = std::lround(96 + (p[1] - 96) * scale);
+            const int px = std::lround(origin[0] + (p[0] - origin[0]) * scale), py = std::lround(origin[1] + (p[1] - origin[1]) * scale);
             if (i == 2) add(menu.pressed == 0 ? menuart::popupdown : menuart::popupup, px, py, {}, GL_FLIP_NONE, scale);
             add(menuart::popuplabels[menu.locale][i], px, py, {}, GL_FLIP_NONE, scale);
         }

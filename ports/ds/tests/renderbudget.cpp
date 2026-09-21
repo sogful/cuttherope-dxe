@@ -61,6 +61,23 @@ int main(int argc, char** argv) {
     }
     std::printf("Frontend working sets: %u cases, peak %u / 393216 bytes; %u failures\n",menucases,menupeak,menufailed);
     assert(!menufailed && !frontend::renderfault);
+    for (int locale=0;locale<12;++locale) {
+        menu={}; menu.locale=locale; menu.mode=ui::view::levels;
+        const auto& tile=menuart::sprites[menuart::level0];
+        const int edge=menuart::levelpositions[4][0]+tile.ox+tile.w;
+        for (int stars=0;stars<=75;++stars) {
+            for (int i=0;i<25;++i) menu.saves.active().levels[i].stars=std::clamp(stars-i*3,0,3);
+            frontend::draw(menu);
+            const int text=menuart::labels[locale][menuart::count0+stars];
+            bool found=false;
+            for (int i=0;i<frontend::count;++i) if (frontend::commands[i].id==text) {
+                const auto& command=frontend::commands[i]; const auto& sprite=menuart::sprites[text];
+                assert(command.x+sprite.ox>=edge && command.x+sprite.ox+sprite.w==244);
+                assert(command.y+sprite.oy>=0); found=true;
+            }
+            assert(found);
+        }
+    }
     menu={};
     frontend::reserve(reserved);
     for (int locale=0;locale<12;++locale) {
