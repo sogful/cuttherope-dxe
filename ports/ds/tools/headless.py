@@ -627,7 +627,8 @@ def main():
             means = [sum(sum(pixel) for pixel in item.getdata()) / (256 * 192 * 3) for item in fades]
             assert min(means) < 1 and max(means) < 190 and len({round(value) for value in means}) > 8, means
             fades[0].save(directory / "black-fade.gif", save_all=True, append_images=fades[1:], duration=17, loop=0)
-            assert telemetry()["view"] == 7 and not telemetry()["transition"]
+            settle()
+            assert telemetry()["view"] == 7 and not telemetry()["transition"],telemetry()
             tap(131, 185)
             assert snapshot("unlock-enabled")["unlocked"] == 1
             key(0)
@@ -673,10 +674,10 @@ def main():
             classic = []
             for _ in range(60):
                 run(1)
-                classic.append(framebuffer().crop((48, 226, 90, 277)))
+                classic.append(framebuffer().crop((19, 229, 78, 307)))
             classic[0].save(directory / "classic-preview.gif", save_all=True, append_images=classic[1:], duration=16, loop=0)
-            strip = Image.new("RGB", (42 * 20, 51))
-            for i, item in enumerate(classic[::3]): strip.paste(item, (42 * i, 0))
+            strip = Image.new("RGB", (59 * 20, 78))
+            for i, item in enumerate(classic[::3]): strip.paste(item, (59 * i, 0))
             strip.save(directory / "classic-preview-strip.png")
             scrollbottom()
             tap(208, 150)

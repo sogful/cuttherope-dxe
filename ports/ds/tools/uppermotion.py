@@ -1,7 +1,7 @@
 """Exact software-shadow raster, stored as sparse pixel changes for the ARM9.
 
 The 75-second authored rotation is sampled every five game updates. Keyframes
-bound seeks to five seconds of sparse patches. No extra permanent frame buffer.
+bound seeks to one second of sparse patches. No extra permanent frame buffer.
 """
 import math
 import struct
@@ -9,7 +9,7 @@ import numpy as np
 
 steps=900
 interval=5
-keyinterval=60
+keyinterval=12
 
 
 def unpack(data):
@@ -43,6 +43,7 @@ def patch(previous,current):
 
 
 def bake(output,manifest,backgrounds,records,palettes,lookups,spans):
+    from menus import lz
     item=next(item for item in manifest["sprites"] if item["name"]=="shadow")
     page=manifest["pages"][item["page"]]
     source=np.frombuffer(unpack((output/(page["name"]+".lz")).read_bytes()),dtype=np.uint8)
@@ -77,13 +78,16 @@ def bake(output,manifest,backgrounds,records,palettes,lookups,spans):
                 mixed=((((rgb&0x7c1f)*(alpha+1)+(target&0x7c1f)*(31-alpha))>>5)&0x7c1f)|((((rgb&0x3e0)*(alpha+1)+(target&0x3e0)*(31-alpha))>>5)&0x3e0)
                 table[pixel]=lookups[profile][mixed] if alpha else np.arange(256,dtype=np.uint8)
             index=stream.tell(); entries.append(index)
-            stream.write(bytes(steps*4))
-            offsets=[]; previous=None
+            stream.write(bytes((steps+steps//keyinterval)*4))
+            offsets=[]; keys=[]
+            previous=np.where(mask,base,table[samples[-1],base]).astype(np.uint8).ravel()
             for step,sample in enumerate(samples):
                 current=np.where(mask,base,table[sample,base]).astype(np.uint8).ravel()
+                if step%keyinterval==0:
+                    keys.append(stream.tell()); stream.write(lz(current.tobytes()))
                 offsets.append(stream.tell())
-                stream.write(current.tobytes() if step%keyinterval==0 else patch(previous,current))
+                stream.write(patch(previous,current))
                 previous=current
             end=stream.tell(); stream.seek(index)
-            stream.write(struct.pack("<"+"I"*steps,*offsets)); stream.seek(end)
+            stream.write(struct.pack("<"+"I"*(steps+len(keys)),*offsets,*keys)); stream.seek(end)
     return entries

@@ -1101,10 +1101,11 @@ void upperoverlay(const ui::controller& menu,const dx::simulation& game) {
     upper::shade(31);
     upper::transient(menu.door || menu.mode==ui::view::results);
     if (menu.mode==ui::view::playing || menu.mode==ui::view::paused || (menu.mode==ui::view::results && menu.age<32)) {
+        int frames[3];
         for (int i=0;i<3;++i) {
-            const int frame=menu.starage[i]<0?0:std::min(10,1+menu.starage[i]/3);
-            upper::hud(frame,80+i*48,82);
+            frames[i]=menu.starage[i]<0?0:std::min(10,1+menu.starage[i]/3);
         }
+        upper::stars(frames);
         char value[24]; std::snprintf(value,sizeof(value),"%d",ui::controller::points(game.count,game.ticks));
         int width=0;
         for (const char* p=value;*p;++p) width+=upperart::hud[11+*p-'0'].advance;

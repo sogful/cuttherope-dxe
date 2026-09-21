@@ -7,6 +7,7 @@ void initialize(const char* prefix = "nitro:/");
 void begin(int background, int top = 0);
 bool menu(int background, unsigned frame);
 void hud(int id, int x, int y);
+void stars(const int* frames);
 void mirror(bool enabled);
 void shade(int brightness);
 void transient(bool enabled);

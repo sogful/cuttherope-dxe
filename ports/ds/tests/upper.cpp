@@ -129,6 +129,45 @@ int main(int argc,char** argv) {
     for (int box=0;box<17;++box) {
         const int background=upperart::worlds[box][0];
         for (int frame=0;frame<=10;++frame) {
+            int frames[]={frame,(frame+3)%11,(frame+6)%11};
+            for (int objects : {0,0,1,0,2,0}) {
+                upper::begin(background);
+                const upper::clip bounds=objects==1?upper::clip{70,60,130,100}:upper::clip{0,140,256,192};
+                if (objects) upper::rect(bounds,0,31);
+                for (int i=0;i<3;++i) upper::hud(frames[i],80+i*48,82);
+                const unsigned expected=hash();
+                upper::begin(background);
+                if (objects) upper::rect(bounds,0,31);
+                upper::stars(frames);
+                assert(hash()==expected);
+            }
+            ++frontend::blendversion;
+            std::memset(frontend::workspace()+65536,0,65536);
+            upper::begin(background); upper::stars(frames);
+            const unsigned expected=hash();
+            upper::begin(background);
+            for (int i=0;i<3;++i) upper::hud(frames[i],80+i*48,82);
+            assert(hash()==expected);
+        }
+        for (int id : {menuart::body0,menuart::hud1,menuart::belt0}) for (int x : {-5,0,128,255}) {
+            const auto& source=menuart::sprites[id];
+            const auto& page=menuart::pages[source.page];
+            upper::begin(background); upper::shade(17);
+            upper::sprite(id,x,96);
+            const unsigned fast=hash();
+            upper::begin(background); upper::shade(17);
+            auto* cached=upper::load(source.page,page.width*page.height);
+            upper::transform t;
+            if (upper::placement(source.w,source.h,source.ox,source.oy,x,96,1,1,0,{},t)) {
+                // Less than 1/256 pixel of shear selects the scalar reference
+                // raster without moving any native pixel-center samples.
+                t.xy=1;
+                upper::blit({frontend::workspace()+upper::cachestart+cached->start,cached->colors,page.width,
+                    source.x,source.y,source.w,source.h,source.ox,source.oy,page.alphabits,false},t,0,31,0x7fff);
+            }
+            assert(hash()==fast);
+        }
+        for (int frame=0;frame<=10;++frame) {
             upper::begin(background); upper::transient(true);
             reference(menuart::hud1+frame,80,82,2.5f);
             const unsigned expected=hash();
@@ -185,5 +224,5 @@ int main(int argc,char** argv) {
             assert(upper::pixels()[y*256+x]==original[(191-y)*256+x]);
     }
     assert(!upper::fault());
-    std::puts("PASS: 425 upper-camera command maps, all background windows, clipped sprites, photo occlusion, HUD, shared-cache invalidation and decoded page reuse");
+    std::puts("PASS: 425 reused camera-command maps, all backgrounds, native blits/HUD, sparse shadow playback/seeks, photo occlusion, all 17 mirrored flap pairs and cache invalidation");
 }

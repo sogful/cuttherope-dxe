@@ -33,6 +33,19 @@ static bool palettechanged = false;
 static bool photograph = false;
 static bool moving = false;
 static bool mirrored = false;
+static bool starcovered=false, starcachevalid=false;
+static int scrolltop=0;
+static constexpr clip starbounds{58,60,198,104};
+static_assert([] {
+    for (int i=0;i<11;++i) {
+        const auto& glyph=upperart::hud[i];
+        if (glyph.ox < -22 || glyph.ox+glyph.width > 22 || glyph.oy < -22 || glyph.oy+glyph.height > 22) return false;
+    }
+    return true;
+}(),"Star cache bounds must match the final-size HUD bake");
+static bool overstars(int left,int top,int right,int bottom) {
+    return left<starbounds.right && right>starbounds.left && top<starbounds.bottom && bottom>starbounds.top;
+}
 static constexpr unsigned cachestart = 262144, capacity = 163840;
 struct entry {
     int id = -1;
@@ -56,6 +69,21 @@ static bool read(FILE* file, unsigned offset, void* destination, unsigned bytes)
     readbytes += bytes;
     DS_PROFILE_DO(profiling::data[profiling::upperreads] += bytes);
     if (!file || std::fseek(file,offset,SEEK_SET) || std::fread(destination,1,bytes,file)!=bytes) { fail(1); return false; }
+    return true;
+}
+static bool keyframe(unsigned position) {
+    if (std::fseek(motionfile,position,SEEK_SET)) { fail(9); return false; }
+    unsigned offset=0,available=0;
+    auto next=[&]() -> int {
+        if (offset==available) {
+            available=std::fread(input,1,sizeof(input),motionfile); offset=0;
+            readbytes+=available;
+            DS_PROFILE_DO(profiling::data[profiling::upperreads]+=available);
+            if (!available) return -1;
+        }
+        return input[offset++];
+    };
+    if (!packed::stream(next,backdrop,256*192)) { fail(10); return false; }
     return true;
 }
 
@@ -90,6 +118,7 @@ void begin(int id, int top) {
         lookupversion=frontend::workgeneration(196608);
     }
     top = std::clamp(top,0,background.height-192);
+    scrolltop=top;
     if (id != backgroundid || top < backgroundtop || top+192 > backgroundtop+208) {
         backgroundtop = top/16*16;
         const int rows = std::min(208,background.height-backgroundtop);
@@ -106,6 +135,7 @@ void begin(int id, int top) {
     photograph = false;
     moving = false;
     mirrored = false;
+    starcovered=false;
     ++age;
 }
 
@@ -118,18 +148,18 @@ bool menu(int id,unsigned frame) {
     begin(id);
     if (animated) {
         // The scrolling background's spare sixteen rows hold the on-disk index.
-        static_assert(upperart::motionsteps*4<=256*16);
+        constexpr int entries=upperart::motionsteps+upperart::motionsteps/upperart::motionkey;
+        static_assert(entries*4<=256*16);
         auto* index=reinterpret_cast<unsigned*>(backdrop+256*192);
-        if (changed && !read(motionfile,upperart::motion[id],index,upperart::motionsteps*4)) return false;
+        if (changed && !read(motionfile,upperart::motion[id],index,entries*4)) return false;
         int first=previous+1;
-        if (changed || step<previous || step-previous>=upperart::motionkey) {
-            first=step/upperart::motionkey*upperart::motionkey;
+        if (!changed && previous==upperart::motionsteps-1 && step==0) first=0;
+        else if (changed || step<previous || step-previous>=upperart::motionkey) {
+            const int key=step/upperart::motionkey;
+            if (!keyframe(index[upperart::motionsteps+key])) return false;
+            first=key*upperart::motionkey+1;
         }
         for (int current=first;current<=step;++current) {
-            if (current%upperart::motionkey==0) {
-                if (!read(motionfile,index[current],backdrop,256*192)) return false;
-                continue;
-            }
             if (std::fseek(motionfile,index[current],SEEK_SET)) { fail(6); return false; }
             unsigned offset=0,available=0;
             auto next=[&]() -> unsigned {
@@ -225,6 +255,37 @@ struct transform {
     int left,top,right,bottom,xx,xy,yx,yy,originx,originy;
 };
 static DS_HOT void aligned(const texture& source,const transform& t,int flip,const unsigned* values,const unsigned char* table) {
+    if (!flip && t.xx==65536 && t.yy==65536) {
+        const int first=(t.originx+t.left*65536)>>16;
+        const int columns=t.right-t.left;
+        const unsigned mask=source.bits==3?0xe0e0e0e0u:0xf8f8f8f8u;
+        const int firstrow=(t.originy+t.top*65536)>>16;
+        if (first>=0 && first+columns<=source.width && firstrow>=0 && firstrow+t.bottom-t.top<=source.height) {
+            for (int y=t.top;y<t.bottom;++y) {
+                const int row=(t.originy+y*65536)>>16;
+                const auto* pixel=source.data+(source.top+row)*source.stride+source.left+first;
+                auto* target=frontend::workspace()+(mirrored?191-y:y)*256+t.left;
+                for (int x=0;x<columns;) {
+                    // Rings and character cutouts contain mostly transparent runs.
+                    // Only aligned words may be loaded on the ARM9.
+                    if (x+4<=columns && !(reinterpret_cast<std::uintptr_t>(pixel)&3)) {
+                        std::uint32_t word;
+                        std::memcpy(&word,__builtin_assume_aligned(pixel,4),4);
+                        if (!(word&mask)) { pixel+=4; target+=4; x+=4; continue; }
+                    }
+                    const unsigned raw=*pixel++;
+                    if (table) *target=table[(raw<<8)|*target];
+                    else if (raw>>(8-source.bits)) {
+                        const unsigned value=values[raw],opacity=(value>>16)&31;
+                        if (opacity==31) *target=value>>24;
+                        else if (opacity) *target=lookup[blend(value&0x7fff,palette[*target],opacity)];
+                    }
+                    ++target; ++x;
+                }
+            }
+            return;
+        }
+    }
     int columns[256];
     for (int x=t.left;x<t.right;++x) {
         int column=(t.originx+x*t.xx)>>16;
@@ -253,6 +314,7 @@ static DS_HOT void aligned(const texture& source,const transform& t,int flip,con
 }
 
 static const unsigned char* blendtable(const std::uint16_t* colors,int bits,int alpha,unsigned color,int id,int slot=0) {
+    if (!slot) starcachevalid=false;
     struct key { unsigned stamp=~0u, ink=0; int profile=-1,page=-1,light=-1,opacity=-1; };
     static key keys[2];
     auto& key=keys[slot];
@@ -396,6 +458,7 @@ void sprite(int id,int x,int y,float scale,float vertical,int angle,int flip,int
     const auto& source=menuart::sprites[id];
     transform t;
     if (!placement(source.w,source.h,source.ox,source.oy,x,y,scale,vertical,angle,bounds,t)) return;
+    starcovered|=overstars(t.left,t.top,t.right,t.bottom);
     const auto& page=menuart::pages[source.page];
     auto* cached=load(source.page,page.width*page.height*(page.direct?2:1));
     if (!cached) return;
@@ -411,6 +474,7 @@ void immediate(int id,int x,int y,int alpha,float scale) {
     const auto& source=art::sprites[id];
     transform t;
     if (!placement(source.w,source.h,source.ox,source.oy,x,y,scale,scale,0,{},t)) return;
+    starcovered|=overstars(t.left,t.top,t.right,t.bottom);
     const auto& page=art::textures[source.page];
     blit({page.pixels,reinterpret_cast<const std::uint16_t*>(page.palette),page.width,source.x,source.y,
           source.w,source.h,source.ox,source.oy,3,false},t,0,alpha,0x7fff);
@@ -431,6 +495,29 @@ void DS_HOT hud(int id,int x,int y) {
         }
     }
 }
+void stars(const int* frames) {
+    static int previous[3]={-1,-1,-1}, background=-1, top=-1;
+    static unsigned stamp=~0u;
+    constexpr int left=starbounds.left, first=starbounds.top, width=starbounds.right-left, height=starbounds.bottom-first;
+    auto* cache=frontend::workspace()+65536;
+    const bool same=starcachevalid && !starcovered && background==backgroundid && top==scrolltop &&
+        stamp==frontend::workgeneration(65536) && std::equal(frames,frames+3,previous);
+    if (same) {
+        for (int row=0;row<height;++row)
+            std::memcpy(frontend::workspace()+(first+row)*256+left,cache+row*width,width);
+        return;
+    }
+    for (int i=0;i<3;++i) hud(frames[i],80+i*48,82);
+    if (starcovered) return;
+    // An unobstructed star region has the same authored backdrop every frame.
+    // Cache their already-composited pixels; never cache across visible world
+    // objects in that region, camera moves, pickups or overwritten uploads.
+    for (int row=0;row<height;++row)
+        std::memcpy(cache+row*width,frontend::workspace()+(first+row)*256+left,width);
+    std::copy(frames,frames+3,previous);
+    background=backgroundid; top=scrolltop; stamp=frontend::workgeneration(65536);
+    starcachevalid=true;
+}
 void photo() {
     auto* cached=load(menuart::pagecount,upperart::photowidth*upperart::photoheight*2);
     if (!cached) return;
@@ -441,6 +528,7 @@ void photo() {
 }
 void rect(clip bounds,unsigned color,int alpha) {
     if (alpha<=0) return;
+    starcovered|=overstars(bounds.left,bounds.top,bounds.right,bounds.bottom);
     unsigned char table[256];
     color=tint(color,0x7fff);
     for (int i=0;i<256;++i) table[i]=lookup[alpha==31?color:blend(color,palette[i],alpha)];
@@ -451,6 +539,7 @@ void rect(clip bounds,unsigned color,int alpha) {
 }
 void line(int x,int y,int endx,int endy,unsigned color,int alpha) {
     if ((y<0 && endy<0) || (y>=192 && endy>=192) || (x<0 && endx<0) || (x>=256 && endx>=256) || alpha<=0) return;
+    starcovered|=overstars(std::min(x,endx),std::min(y,endy),std::max(x,endx)+1,std::max(y,endy)+1);
     color=tint(color,0x7fff);
     const int dx=std::abs(endx-x), sx=x<endx?1:-1, dy=-std::abs(endy-y), sy=y<endy?1:-1;
     int delta=dx+dy;
