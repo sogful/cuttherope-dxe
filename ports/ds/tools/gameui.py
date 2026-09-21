@@ -1,6 +1,7 @@
 import json
 from levels import boxes
 import math
+import uiscale
 import xml.etree.ElementTree as xml
 
 from PIL import Image, ImageDraw
@@ -31,7 +32,7 @@ def build(menu):
     left = (plate.width - 256) // 2
     add("pauseplate", plate.crop((left, 0, left + 256, plate.height)), "pauseplate")
     for i in range(19):
-        quad("hud" + str(i), "hud_ui", i, restore=False, group="hud_ui")
+        quad("hud" + str(i), "hud_ui", i, factor=fit*uiscale.hud, restore=False, group="hud_ui" + (str(i) if i>=12 else ""))
     for i in (0, 3):
         quad("tutorial" + str(i), "tutorial_signs", i, factor=1, group="tutorials")
     info["hudquads"] = [12, 14, 13, 12, 18, 12, 12, 12, 16, 15, 17, 17]
@@ -64,8 +65,8 @@ def build(menu):
         face, _ = menu["font"](code, True)
         info["best"].append((name, sum(face.getlength(c) for c in value) * fit * scale))
         for level in range(boxes * 25):
-            label("levelname" + str(level) + code, f"{level // 25 + 1} - {level % 25 + 1}", code, factor=fit, group="textlevel" + code + str(level // 10))
-        label("levelword" + code, strings["LEVEL"], code, factor=fit * .7, group="texthud" + code)
+            label("levelname" + str(level) + code, f"{level // 25 + 1} - {level % 25 + 1}", code, factor=fit*uiscale.hud, group="textlevel" + code + str(level // 10))
+        label("levelword" + code, strings["LEVEL"], code, factor=fit * .7 * uiscale.hud, group="texthud" + code)
     label("failuretitle", "TRY AGAIN!", "en", group="textfailure")
     label("failurehint", "Om Nom is still hungry!", "en", group="textfailure")
     face, height = menu["font"]("en")
@@ -85,8 +86,8 @@ def build(menu):
     for q in info["hudquads"]:
         pw, ph = (frames[q]["spriteSourceSize"][key] for key in ("w", "h"))
         rw, rh = (frames[0]["spriteSourceSize"][key] for key in ("w", "h"))
-        info["hud"].append([round(256 - (8 + pw / 2) * fit * scale), round((8 + ph / 2) * fit * scale),
-                            round(256 - (pw + 16 + rw / 2) * fit * scale), round((8 + rh / 2) * fit * scale)])
+        info["hud"].append([round(256 - (8 + pw / 2) * fit * scale * uiscale.hud), round((8 + ph / 2) * fit * scale * uiscale.hud),
+                            round(256 - (pw + 16 + rw / 2) * fit * scale * uiscale.hud), round((8 + rh / 2) * fit * scale * uiscale.hud)])
     import tutorials
     info["tutorials"] = tutorials.build(menu)
     return info

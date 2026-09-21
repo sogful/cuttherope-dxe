@@ -15,12 +15,30 @@ int main(int argc, char** argv) {
         game.bulbtransit=0; assert(!game.illuminated({1000,1000}));
         game.bulbtransit=-1; game.bulbalive=false; assert(!game.illuminated({1000,1000}));
         game.reset(source); game.bodies[0].pos=game.bodies[0].previous=source.target; game.bodies[3].pos=game.bodies[3].previous={-1000,0};
-        game.tick(); assert(!game.awake && !game.mouth && game.state==dx::outcome::playing);
+        game.tick(); assert(!game.awake && !game.nightwoken && !game.mouth && game.state==dx::outcome::playing);
         game.bodies[3].pos=game.bodies[3].previous=source.target+dx::point{150,0};
         game.tick(); assert(game.awake && game.state==dx::outcome::won);
         game.reset(source); game.bodies[3].pos=game.bodies[3].previous={1000,-401};
         game.tick(); assert(!game.bulbalive && game.failreason==4);
         const float y=game.candy().pos.y; game.tick(); assert(game.candy().pos.y>y);
+        source.gravity={0,0}; game.reset(source); game.introduction=false;
+        auto place=[&](int id,dx::point offset) {
+            auto& body=game.bodies[id]; body.pos=body.previous=body.pin=source.target+offset; body.pinned=true;
+        };
+        place(3,{150,0}); place(0,{0,-500});
+        for (int i=0;i<100;++i) { game.tick(); assert(game.awake && !game.mouth && game.state==dx::outcome::playing); }
+        place(0,{0,-160}); game.tick(); assert(game.mouth);
+        const int opened=game.mouthtick;
+        for (int i=0;i<20;++i) {
+            place(3,{1500,0}); game.tick(); assert(!game.awake && game.nightwoken && game.mouthtick==opened);
+            place(3,{150,0}); game.tick(); assert(game.awake && game.mouth && game.mouthtick==opened);
+        }
+        game.mouthdelay=1; place(0,{0,-250});
+        for (int i=0;i<62;++i) { game.tick(); assert(game.mouth && game.mouthtick==opened); }
+        game.tick(); assert(!game.mouth);
+        place(0,{0,-160}); game.tick(); assert(game.mouth && game.mouthtick>opened);
+        assert(game.state==dx::outcome::playing);
+        std::puts("PASS: bulb never opens mouth or feeds Om Nom; sleep/wake preserves feeding state; source one-second mouth-close delay");
         std::puts("PASS: strict light radius, hidden/dead emitters, asleep/awake eating, and surviving candy on lights-out");
         return 0;
     }

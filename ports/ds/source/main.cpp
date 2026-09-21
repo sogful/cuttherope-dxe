@@ -14,7 +14,7 @@
 #include <algorithm>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 15;
+    std::uint32_t magic = 0x44585250, version = 16;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -34,6 +34,7 @@ struct diagnostics {
     std::uint32_t mouse = 0, mousecaptures = 0, mousereleases = 0, mousehandoffs = 0, mousecarry = 0;
     std::uint32_t bulb = 0, bulbx = 0, bulby = 0, awake = 0, lit = 0;
     std::uint32_t belt = 0, beltwraps = 0, belthandoffs = 0, beltoffset = 0, beltitems = 0;
+    std::uint32_t mouth = 0, mouthtick = 0, nightstart = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -308,6 +309,7 @@ int main() {
         telemetry.mousehandoffs = game.mousehandoffs; telemetry.mousecarry = game.activemouse >= 0 && game.mice[game.activemouse].carry;
         telemetry.bulb = game.definition.bulbcount && game.available(3); telemetry.bulbx = game.bodies[3].pos.x; telemetry.bulby = game.bodies[3].pos.y;
         telemetry.awake = game.awake; telemetry.lit = game.starlit[0] | (game.starlit[1]<<1) | (game.starlit[2]<<2);
+        telemetry.mouth = game.mouth; telemetry.mouthtick = game.mouthtick; telemetry.nightstart = game.nightstart;
         telemetry.belt = game.heldbelt+1; telemetry.beltwraps = game.beltwraps; telemetry.belthandoffs = game.belthandoffs;
         telemetry.beltoffset = game.belts[0].offset*100; telemetry.beltitems = 0;
         for (int i=0;i<game.beltitemsused;++i) if (game.beltitems[i].belt>=0) ++telemetry.beltitems;

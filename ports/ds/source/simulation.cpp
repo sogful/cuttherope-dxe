@@ -62,6 +62,7 @@ void simulation::reset(const level& data) {
     bodycount = ticks = count = resulttick = resultvisual = mouthtick = 0;
     suppressoutcome = false;
     mouth = false;
+    mouthdelay = 0;
     state = outcome::playing;
     add(data.candy, 1, false);
     bodies[0].previous = data.candy;
@@ -292,8 +293,14 @@ void simulation::tick(bool suppress) {
     const point distance = pos - definition.target;
     updatelight();
     updatebelts();
-    if (!split && !hidden() && (!definition.night || awake) && !mouth && distance.length() < 200) { mouth = true; mouthtick = ticks; }
-    else if (mouth && distance.length() >= 220) mouth = false;
+    if (state == outcome::playing && (!definition.night || awake)) {
+        const bool nearby = !split && !hidden() && distance.length() < 200;
+        if (!mouth && nearby) { mouth = true; mouthtick = ticks; mouthdelay = 1; }
+        else if (mouth) {
+            mouthdelay = std::max(0.0f,mouthdelay-delta);
+            if (mouthdelay==0) { if (nearby) mouthdelay=1; else mouth=false; }
+        }
+    }
     for (int index = 0; index < 3; ++index) {
         const float timeout = definition.timeouts[index];
         if (timeout > 0 && ticks * delta >= timeout) { expired[index] = true; removebeltitem(1,index); }

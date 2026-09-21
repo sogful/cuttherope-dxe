@@ -176,8 +176,9 @@ public:
     std::array<mousestate,5> mice{};
     int activemouse = -1, mousecaptures = 0, mousereleases = 0, mousehandoffs = 0, mouseevents = 0, mousesound = 0;
     bool micelocked = false;
-    bool bulbalive = false, awake = false;
+    bool bulbalive = false, awake = false, nightwoken = false;
     int bulbbubble = -1, bulbtransit = -1, nightstart = 0, sleepevents = 0;
+    float mouthdelay = 0;
     float bulbtime = 0, bulbspeed = 0, candytime = 0, sleeptime = 0;
     std::array<bool,3> starlit{}, pickuplit{};
     std::array<float,3> lightalpha{};

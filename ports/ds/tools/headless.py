@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--inspect", action="store_true")
     parser.add_argument("--menus", action="store_true", help="Check source-shaped title, packs, settings, languages and credits")
     parser.add_argument("--skins", action="store_true", help="Check fades, isolated unlock mode, picker scrolling, all cosmetic tabs and equipped gameplay")
+    parser.add_argument("--night", action="store_true", help="Record Pillow sleep, live bulb wakeup and candy feeding through actual stylus input")
     parser.add_argument("--flow", action="store_true", help="Capture box transitions and the complete animated result sequence")
     parser.add_argument("--boxes", action="store_true", help="Launch all 425 maps across the seventeen boxes")
     parser.add_argument("--startup", action="store_true", help="Capture consecutive frames through early level texture paging")
@@ -232,14 +233,17 @@ def main():
         keys += ["steamevents", "steamstates", "captures", "releases", "occupied", "shared", "lanternx", "lanterny"]
         keys += ["mouse", "mousecaptures", "mousereleases", "mousehandoffs", "mousecarry", "bulb", "bulbx", "bulby", "awake", "lit"]
         keys += ["belt", "beltwraps", "belthandoffs", "beltoffset", "beltitems"]
+        keys += ["mouth", "mouthtick", "nightstart"]
         faultsymbol = next((line for line in symbols if line.endswith(" renderfault")), None)
         faultaddress = memory + int(faultsymbol.split()[0], 16) - 0x02000000 if faultsymbol else None
         def telemetry():
             version = struct.unpack("<I", c.string_at(memory + offset + 4, 4))[0]
-            fields = 91 if version >= 15 else 86 if version >= 14 else 76 if version >= 13 else 68 if version >= 12 else 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
+            fields = 94 if version >= 16 else 91 if version >= 15 else 86 if version >= 14 else 76 if version >= 13 else 68 if version >= 12 else 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
             result = dict(zip(keys, struct.unpack(f"<10I2f{fields}I", c.string_at(memory + offset, 48 + fields * 4))))
             for key in keys: result.setdefault(key, 0)
             return result
+        layouts=json.loads((root/"generated/menumanifest.json").read_text(encoding="utf-8"))["gameui"]["hud"]
+        def hud(): return layouts[telemetry()["locale"]]
         def run(count):
             nonlocal lastframe, stalled
             for _ in range(count):
@@ -281,7 +285,9 @@ def main():
         start = time.monotonic()
         def touch(x, y, held=True):
             pointer[:] = [round(x / 255 * 65534 - 32767), round((192 + y) / 383 * 65534 - 32767), int(held)]
+            before=telemetry()["frames"]
             run(3)
+            while telemetry()["frames"]<before+2: run(1)
         def tap(x, y):
             settle()
             touch(x, y)
@@ -326,6 +332,10 @@ def main():
             assert telemetry()["costume"] == args.costume
             key(0)
         assert title["view"] == 5 and title["ticks"] == 0 and title["frames"] > 40, title
+        if args.night:
+            import nightcheck
+            nightcheck.check(run,tap,key,touch,telemetry,framebuffer,settle,snapshot,report,directory,args.costume)
+            return
         if args.layers:
             control = memory + int(next(line.split()[0] for line in symbols if line.endswith(" profilestress")),16)-0x02000000
             key(8); key(8); tap(66,26); settle()
@@ -709,11 +719,13 @@ def main():
             assert scrolled["scroll"] > credits["scroll"] + 50
             run(30)
             assert telemetry()["scroll"] == scrolled["scroll"], "Touch did not stop credits auto-scroll"
-            for _ in range(8):
+            for _ in range(24):
                 touch(128, 145)
                 touch(128, 40)
                 touch(128, 40, False)
-            assert snapshot("credits-end")["scroll"] == 704 - 146
+            menus = json.loads((root/"generated/menumanifest.json").read_text(encoding="utf-8"))
+            bounds = menus["uiscale"]["creditbounds"]
+            assert snapshot("credits-end")["scroll"] == menus["creditheights"][0]-(bounds[3]-bounds[1])
             key(0)
             tap(128, 77)
             assert snapshot("reset-confirmation")["view"] == 10
@@ -740,6 +752,11 @@ def main():
                 key(7)
                 run(20)
             assert snapshot("boxes-last")["pack"] == 16
+            touch(128,96); touch(165,96); touch(205,96)
+            snapshot("boxes-mechanical-clipped")
+            touch(205,96,False); run(180)
+            key(7); run(180)
+            assert telemetry()["pack"] == 16
             for _ in range(16):
                 key(6)
                 run(20)
@@ -777,6 +794,9 @@ def main():
             assert abs(incoming[-1]["y"] - incoming[0]["y"]) > .01, "Candy stayed fixed during the incoming fade"
             sequence[0].save(directory / "level-startup.gif",save_all=True,append_images=sequence[1:],duration=17,loop=0)
             sequence[worst[0]].save(directory / "startup-worst-game.png")
+            for label,tick in (("hud-visible",100),("hud-faded",180)):
+                index=min(range(len(clocks)),key=lambda i:abs(clocks[i]["ticks"]-tick))
+                sequence[index].save(directory/(label+"-game.png"))
             report.update(passed=worst[1] < 1,startupFrames=len(sequence),backgroundChange=worst[1],clocks=clocks,seconds=time.monotonic()-start)
             (directory / "startupreport.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
             assert worst[1] < 1, ("Texture upload corrupted the unchanged background",worst)
@@ -926,15 +946,15 @@ def main():
             run(30)
             resumed = snapshot("resumed")
             assert resumed["paused"] == 0 and resumed["ticks"] > paused["ticks"], resumed
-            tap(220, 8)
+            tap(*hud()[2:])
             touchretry = snapshot("touchretry")
             assert touchretry["resets"] == 3 and touchretry["ticks"] < resumed["ticks"], touchretry
-            touch(241, 8)
+            touch(*hud()[:2])
             touch(100, 40)
             touch(155, 40)
             touch(155, 40, False)
             assert telemetry()["view"] == 0 and telemetry()["cuts"] == 1, "Cancelled HUD drag leaked into gameplay"
-            tap(241, 8)
+            tap(*hud()[:2])
             assert telemetry()["view"] == 1, "Touch pause failed"
             tap(128, 96)
             settle()
@@ -967,7 +987,7 @@ def main():
             fastwin = snapshot("fastwin")
             assert fastwin["view"] == 2 and fastwin["score"] > 5000 and fastwin["bestscore"] == fastwin["score"], fastwin
             while telemetry()["menuage"] < 32: run(1)
-            settle(); tap(98,125); settle(); tap(241,8)
+            settle(); tap(98,125); settle(); tap(*hud()[:2])
             before = telemetry()
             tap(128,72)
             skipped = snapshot("pause-skip")

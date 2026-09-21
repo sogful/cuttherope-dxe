@@ -63,7 +63,7 @@ void simulation::resetnocturnal() {
     }
     bulbalive = definition.bulbcount > 0; bulbbubble = bulbtransit = -1;
     bulbtime = bulbspeed = candytime = sleeptime = 0;
-    awake = false; nightstart = sleepevents = 0;
+    awake = nightwoken = false; nightstart = sleepevents = 0;
     starlit.fill(false); pickuplit.fill(false); lightalpha.fill(0); lightchange.fill(-1000);
 }
 void simulation::updatemice() {
@@ -169,8 +169,8 @@ void simulation::updatelight() {
     }
     const bool lit = illuminated(definition.target);
     if (state == outcome::playing && awake != lit) {
-        awake = lit; mouth = false; nightstart = visuals; sleeptime = 0;
-        if (lit) excitement = visuals;
+        awake = lit; nightstart = visuals; sleeptime = 0;
+        if (lit) { excitement = visuals; nightwoken = true; }
     }
     if (!awake && state == outcome::playing) {
         sleeptime += delta;

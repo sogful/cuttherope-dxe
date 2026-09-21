@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
 import assets
 import colors
+import uiscale
 from levels import boxes
 
 root, content, output = assets.root, assets.content, assets.output
@@ -104,7 +105,7 @@ def font(code, small=False):
     return face, height
 
 
-def textimage(value, code, small=False, wrap=None, factor=fit, horizontal=1):
+def textimage(value, code, small=False, wrap=None, factor=fit, horizontal=1, rotation=0):
     face, height = font(code, small)
     def measure(line):
         return sum(face.getlength(char) for char in line)
@@ -143,15 +144,18 @@ def textimage(value, code, small=False, wrap=None, factor=fit, horizontal=1):
             if not small:
                 draw.text((x, y), char, font=face, anchor="ls", fill="white")
             x += face.getlength(char)
+    if rotation:
+        canvas = canvas.rotate(rotation, Image.Resampling.BICUBIC, expand=True)
+        width, layoutheight = canvas.width-pad*2, canvas.height-pad*2
     sx, sy = scale * factor * horizontal, scale * factor
     image = canvas.resize((max(1, round(canvas.width * sx)), max(1, round(canvas.height * sy))), Image.Resampling.LANCZOS)
     return image, ((pad + width / 2) * sx, (pad + layoutheight / 2) * sy), layoutheight
 
 
-def label(name, value, code, small=False, wrap=None, factor=fit, horizontal=1, group=None):
-    image, origin, _ = textimage(value, code, small, wrap, factor, horizontal)
+def label(name, value, code, small=False, wrap=None, factor=fit, horizontal=1, group=None, rotation=0):
+    image, origin, _ = textimage(value, code, small, wrap, factor, horizontal, rotation)
     return add(name, image, group or "text" + code, origin,
-               {"locale": code, "text": value, "font": "small" if small else "big", "factor": factor, "wrap": wrap})
+               {"locale": code, "text": value, "font": "small" if small else "big", "factor": factor, "wrap": wrap, "rotation": rotation})
 
 
 def background(name, fabric=False, cover=None, skin=False):
@@ -258,10 +262,15 @@ def main():
         quad(name, "menu_buttons", i)
     for i in range(11):
         quad("option" + str(i), "menu_options_packed", i)
+    for i in range(11):
+        quad("setting" + str(i), "menu_options_packed", i, factor=fit*uiscale.settings, group="menu_options_packedsettings")
+    for i, name in enumerate(("settingup", "settingdown")):
+        quad(name, "menu_buttons", i, factor=fit*uiscale.settings, group="menu_buttonssettings")
     quad("backup", "menu_extra_buttons", 0)
     quad("backdown", "menu_extra_buttons", 1)
     for i in range(1, 10):
-        quad("pack" + str(i), "menu_pack_ui", i, restore=i in (1, 2))
+        quad("pack" + str(i), "menu_pack_ui", i, factor=fit*(uiscale.boxes if i in (1,2,9) else 1.3 if i in (6,7) else 1), restore=i in (1, 2))
+    quad("boxstar", "menu_pack_ui", 3, factor=fit*uiscale.boxes)
     for i in range(6):
         quad("level" + str(i), "menu_level_ui", i, restore=True)
     configs = json.loads((content / "ctroriginal_packs.json").read_text())
@@ -270,7 +279,7 @@ def main():
         background("levelback" + str(i), cover=config["boxCover"][0])
     for i, config in enumerate(configs):
         resource = "menu_pack_selection" + ("2" if config["packSpritesheet"] == "2" else "")
-        quad("box" + str(i), resource, config["packQuadIndex"], restore=True, group="box" + str(i))
+        quad("box" + str(i), resource, config["packQuadIndex"], factor=fit*uiscale.boxes, restore=True, group="box" + str(i))
     import skins
     skininfo = skins.build(globals())
     import gameui
@@ -322,27 +331,33 @@ def main():
                 if key == "HARDEST_LABEL":
                     factor *= .35
             group = ("packtext" if key.startswith(("boxname", "hint", "required", "total", "count")) else "text") + code
+            for prefix in ("boxname", "hint", "required"):
+                if key.startswith(prefix): group += "box" + key[len(prefix):]
+            if key == "HARDEST_LABEL": group = "packtext" + code + "box16"
             if key.startswith(("total", "count")):
                 group += key[:5] + str(int(key[5:]) // 16)
-            row.append(label(code + key, value, code, small, wrap, factor, horizontal, group))
+            if key.startswith(("boxname", "hint", "required")) or key == "HARDEST_LABEL": factor *= uiscale.boxes
+            if key.startswith("total") or key in ("LANGUAGE", "RESET", "CREDITS", "DRAG_TO_CUT", "CLICK_TO_CUT", "unlockall"): factor *= uiscale.settings
+            row.append(label(code + key, value, code, small, wrap, factor, horizontal, group, rotation=16 if key=="HARDEST_LABEL" else 0))
         labelids.append(row)
-        width = round(1300 * scale)
+        width = uiscale.creditbounds[2]-uiscale.creditbounds[0]
+        creditfit = fit*uiscale.credits
         blocks = []
-        top = Image.new("RGBA", (width, round(100 * fit * scale)))
+        top = Image.new("RGBA", (width, round(100 * creditfit * scale)))
         blocks.append(top)
         logopath = content / "images/CutTheRopeDXLogo.png"
         sources.add(logopath)
         logo = Image.open(logopath).convert("RGBA")
-        blocks.append(logo.resize((round(logo.width * fit * scale), round(logo.height * fit * scale)), Image.Resampling.LANCZOS))
+        blocks.append(logo.resize((round(logo.width * creditfit * scale), round(logo.height * creditfit * scale)), Image.Resampling.LANCZOS))
         creditkeys = ["ABOUT_FANWORK_MAIN", "ABOUT_FANWORK_PROJECT_WEBSITE", "ABOUT_FANWORK_PROJECT_NOTE", "ABOUT_FANWORK_CTRH_WEBSITE", "ABOUT_FANWORK_LEAD", "ABOUT_FANWORK_TEAM", "ABOUT_FANWORK_MEMBERS", "logo1", "ABOUT_TEXT", "logo2", "ABOUT_SPECIAL_THANKS"]
         for key in creditkeys:
             if key.startswith("logo"):
                 crop, _ = assets.readframe("menu_logo", int(key[-1]))
-                blocks.append(crop.resize((round(crop.width * fit * scale), round(crop.height * fit * scale)), Image.Resampling.LANCZOS))
+                blocks.append(crop.resize((round(crop.width * creditfit * scale), round(crop.height * creditfit * scale)), Image.Resampling.LANCZOS))
             else:
                 value = strings[key].replace("%versionNo%", "DS")
-                image, origin, height = textimage(value, code, True, 1300 / fit)
-                block = Image.new("RGBA", (width, max(1, round(height * fit * scale))))
+                image, origin, height = textimage(value, code, True, width/(creditfit*scale), factor=creditfit)
+                block = Image.new("RGBA", (width, max(1, round(height * creditfit * scale))))
                 block.alpha_composite(image, (round(width / 2 - origin[0]), round(block.height / 2 - origin[1])))
                 blocks.append(block)
         height = sum(image.height for image in blocks)
@@ -379,6 +394,18 @@ def main():
                 round(340 * fit * scale), round(140 * fit * scale), "skin4", "skin5", key, i, absolute=True)
     for view in ("packs", "options", "languages", "credits", "resetmenu", "levels", "skins"):
         control(view, "back", 14, 178, 29, 29, "backup", "backdown", absolute=True)
+    for item in controls:
+        if item["view"] == "options" and item["action"] != "back":
+            item["sourcePosition"] = [item["x"], item["y"]]
+            item["x"], item["y"] = dict(effects=(95,18), music=(161,18), languages=(128,47), resetmenu=(128,75),
+                credits=(128,103), clickcut=(155,151), unlock=(131,186))[item["action"]]
+            item["w"] = round(item["w"]*uiscale.settings)
+            item["h"] = 11 if item["action"]=="unlock" else 60 if item["action"]=="clickcut" else 26
+            item["up"] = item["up"].replace("option", "setting").replace("long", "setting")
+            item["down"] = item["down"].replace("option", "setting").replace("long", "setting")
+        if item["view"] == "packs":
+            if item["action"] == "openpack": item["w"] = item["h"] = round(88*uiscale.boxes)
+            if item["action"] in ("previouspack", "nextpack"): item["w"], item["h"] = 26,29
     pack()
     ids = {record["name"]: i for i, record in enumerate(records)}
     header = ['#pragma once', '#include "interface.hpp"', '#include <cstdint>', 'extern "C" {']
@@ -421,6 +448,8 @@ def main():
         fields += [str(keys.index(item["label"]) if item["label"] else -1), str(item["argument"])]
         header.append('{' + ','.join(fields) + '},')
     header += ['};', f'inline constexpr int playableboxes = {boxes};', f'inline constexpr float fit = {fit:.8f}f;', f'inline constexpr float mainfit = {mainfit:.8f}f;']
+    header += [f'inline constexpr float boxzoom = {uiscale.boxes}f, settingszoom = {uiscale.settings}f, hudzoom = {uiscale.hud}f;',
+               'inline constexpr int creditbounds[] = {'+','.join(map(str,uiscale.creditbounds))+'};']
     lockwidths = [[int(math.ceil(sum(font(code)[0].getlength(c) for c in str(config["unlockStars"]))) * .7) for config in configs] for code in codes]
     header += ['inline constexpr int lockwidths[12][17] = {'] + ['{' + ','.join(map(str,row)) + '},' for row in lockwidths] + ['};']
     header += skins.header(skininfo, ids, fit, scale)
@@ -433,6 +462,7 @@ def main():
     sources.update(assets.sources)
     manifest = dict(viewport=[256, 192], logical=[1920, 1440], design=[2560, 1440], fit=fit, mainfit=mainfit,
                     controls=controls, locales=codes, creditheights=creditheights, lockwidths=lockwidths,
+                    uiscale=dict(boxes=uiscale.boxes, settings=uiscale.settings, credits=uiscale.credits, hud=uiscale.hud, creditbounds=uiscale.creditbounds),
                     pages=[{key: value for key, value in page.items() if key != "image"} for page in pages],
                     sprites=[{key: value for key, value in record.items() if key != "image"} for record in records],
                     sources={str(path.relative_to(content)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)})

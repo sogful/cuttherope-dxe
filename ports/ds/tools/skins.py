@@ -12,7 +12,7 @@ def build(menu):
     quad, add = menu["quad"], menu["add"]
     root, content = menu["root"], menu["content"]
     scale, fit = menu["scale"], menu["fit"]
-    info = {"previews": [], "candies": [], "halves": [], "costumes": [], "animations": [], "sources": {}}
+    info = {"previews": [], "candies": [], "halves": [], "costumes": [], "animations": [], "sleeptrim": [], "sources": {}}
     for i in range(67):
         quad("particle" + str(i), "traces_ctr2", i, 1, restore=False, group="particles" + str(i // 5))
     for i in range(3):
@@ -135,6 +135,7 @@ def build(menu):
             animation = info["animations"][index]
             animation["followup"] = references.get(animation["followup"], -1)
         info["costumes"].append([references[timeline] for timeline in chosen])
+        info["sleeptrim"].append(min(config.get("idleToSleepTrimFrames",0)/30, skin["timelines"][str(chosen[8])]["duration"]) if chosen[8]!=chosen[7] else 0)
     assert len(info["costumes"]) == 15 and len(info["previews"][2]) == 16
     return info
 
@@ -171,6 +172,7 @@ def header(info, ids, fit, scale):
     lines += ["};", "inline constexpr int costumes[15][9] = {"]
     lines += ["{" + ",".join(map(str, values)) + "}," for values in info["costumes"]]
     lines += ["};"]
+    lines += ["inline constexpr float sleeptrim[] = {" + ",".join(str(float(value))+"f" for value in info["sleeptrim"]) + "};"]
     fields = list(info["presets"][0])
     lines += ["struct traceconfig { " + " ".join("float " + field.lower() + ";" for field in fields) + " };", "inline constexpr traceconfig tracepresets[] = {"]
     for config in info["presets"]:

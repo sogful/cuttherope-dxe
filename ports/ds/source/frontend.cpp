@@ -335,16 +335,18 @@ static void upload(bool repacked = false) {
 
 static void packs(const ui::controller& menu) {
     const clip strip{38, 0, 218, 192};
+    const float zoom = menuart::boxzoom, step = 640 * menuart::fit * pixels * zoom;
     add(menuart::pack4, 45, 96);
+    commands[count-1].vertical = zoom;
     add(menuart::pack4, 211, 96, {}, GL_FLIP_H | GL_FLIP_V);
-    const float step = 640 * menuart::fit * pixels;
+    commands[count-1].vertical = zoom;
     for (int i = 0; i < menuart::boxcount; ++i) {
         const int center = std::lround(128 + (i - menu.packposition) * step);
-        if (center + 45 < strip.left || center - 45 >= strip.right) continue;
+        if (center + 45*zoom < strip.left || center - 45*zoom >= strip.right) continue;
         if (menu.packopen(i)) {
             static constexpr unsigned char colors[17][3] = {{70,37,0},{39,52,0},{44,45,54},{31,42,84},{69,31,50},{75,33,0},
                 {84,22,0},{0,51,78},{98,0,0},{66,40,0},{0,47,90},{0,58,0},{63,42,0},{89,12,0},{56,45,0},{37,32,104},{55,38,62}};
-            const clip hole{std::max(strip.left, center - 16), 96, std::min(strip.right, center + 16), 122};
+            const clip hole{std::max(strip.left, center - static_cast<int>(16*zoom)), 96, std::min(strip.right, center + static_cast<int>(16*zoom)), static_cast<int>(std::lround(96+26*zoom))};
             if (hole.right > hole.left) {
                 commands[count++] = {-1, 0, 0, 31, GL_FLIP_NONE, 0, 1, hole, static_cast<u16>(RGB15(colors[i][0] >> 3, colors[i][1] >> 3, colors[i][2] >> 3))};
                 add(menuart::pack1, 128, 96, hole);
@@ -352,17 +354,17 @@ static void packs(const ui::controller& menu) {
         }
         const int first = count;
         add(menuart::boxes[i], center, 96, strip);
-        label(menu, menuart::boxname0 + i, center, 76, strip);
+        label(menu, menuart::boxname0 + i, center, std::lround(96-20*zoom), strip);
         if (!menu.packopen(i)) {
             add(menuart::pack2, center, 96, strip);
-            const int middle = std::lround(96 + 110 * menuart::fit * pixels);
-            label(menu, menuart::required0 + i, center - std::lround(30 * menuart::fit * pixels), middle, strip);
-            add(menuart::pack3, center + std::lround(menuart::lockwidths[menu.locale][i] * .5f * menuart::fit * pixels), middle, strip);
-            label(menu, menuart::hint0 + i, center, 143, strip);
+            const int middle = std::lround(96 + 110 * menuart::fit * pixels * zoom);
+            label(menu, menuart::required0 + i, center - std::lround(30 * menuart::fit * pixels * zoom), middle, strip);
+            add(menuart::boxstar, center + std::lround(menuart::lockwidths[menu.locale][i] * .5f * menuart::fit * pixels * zoom), middle, strip);
+            label(menu, menuart::hint0 + i, center, std::lround(96+47*zoom), strip);
         }
         if (i == menuart::boxcount - 1) {
-            add(menuart::pack9, center + 18, 115, strip);
-            add(menuart::labels[menu.locale][menuart::HARDEST_LABEL], center + 18, 115, strip, GL_FLIP_NONE, 1, -1456);
+            add(menuart::pack9, center + std::lround(18*zoom), std::lround(96+19*zoom), strip);
+            add(menuart::labels[menu.locale][menuart::HARDEST_LABEL], center + std::lround(18*zoom), std::lround(96+19*zoom), strip);
         }
         const float time = menu.settled * .016f;
         if (i == menu.pack && time < .6f) {
@@ -382,24 +384,26 @@ static void packs(const ui::controller& menu) {
         }
     }
     add(menuart::pack5, 38, 96);
+    commands[count-1].vertical = zoom;
     add(menuart::pack5, 218, 96, {}, GL_FLIP_H | GL_FLIP_V);
+    commands[count-1].vertical = zoom;
     const int text = menuart::labels[menu.locale][menuart::total0 + std::min(menuart::playableboxes * 75, menu.totalstars())];
     const auto& definition = menuart::sprites[text];
-    add(text, 243 - definition.w / 2, 10);
-    add(menuart::pack3, 248, 9);
+    add(text, 240 - definition.w / 2, 12);
+    add(menuart::boxstar, 247, 11, {}, GL_FLIP_NONE, menuart::settingszoom/menuart::boxzoom);
 }
 
 static void options(const ui::controller& menu) {
-    add(menuart::option5, x(1130.5f), y(1018.5f));
-    add(menuart::option6, x(1428.5f), y(1018.5f));
-    label(menu, menuart::DRAG_TO_CUT, x(1130.5f), y(1212));
-    label(menu, menuart::CLICK_TO_CUT, x(1428.5f), y(1215));
-    add(menuart::option10, x(1120.5f), y(1303.5f));
-    add(menuart::option7, x(1130.5f), y(1289.5f));
-    add(menuart::option9, x(1418.5f), y(1306.5f));
-    if (menu.clickcut) add(menuart::option8, x(1428.5f), y(1293));
-    label(menu, menuart::unlockall, 125, 185);
-    add(menu.unlockall() ? menuart::option8 : menuart::option9, 164, 185, {}, GL_FLIP_NONE, .65f);
+    add(menuart::setting5, 101, 140, {}, GL_FLIP_NONE, .82f);
+    add(menuart::setting6, 155, 140, {}, GL_FLIP_NONE, .82f);
+    label(menu, menuart::DRAG_TO_CUT, 101, 166);
+    label(menu, menuart::CLICK_TO_CUT, 155, 166);
+    add(menuart::setting10, 99, 178, {}, GL_FLIP_NONE, .8f);
+    add(menuart::setting7, 101, 176, {}, GL_FLIP_NONE, .8f);
+    add(menuart::setting9, 153, 178, {}, GL_FLIP_NONE, .8f);
+    if (menu.clickcut) add(menuart::setting8, 155, 176, {}, GL_FLIP_NONE, .8f);
+    label(menu, menuart::unlockall, 125, 184);
+    add(menu.unlockall() ? menuart::setting8 : menuart::setting9, 176, 186, {}, GL_FLIP_NONE, .65f);
 }
 
 static int animation(int index, float seconds, bool preview = false) {
@@ -516,7 +520,7 @@ void prepareoverlay(const ui::controller& menu, const dx::simulation& game) {
     if (menu.mode == ui::view::playing || menu.mode == ui::view::paused || (menu.mode == ui::view::results && menu.age < 32)) {
         for (int i = 0; i < 3; ++i) {
             const int frame = menu.starage[i] < 0 ? 0 : std::min(10, 1 + menu.starage[i] / 3);
-            add(menuart::hud1 + frame, std::lround((86 * i + 43) * menuart::fit * pixels), std::lround(43.5f * menuart::fit * pixels));
+            add(menuart::hud1 + frame, std::lround((86 * i + 43) * menuart::fit * pixels * menuart::hudzoom), std::lround(43.5f * menuart::fit * pixels * menuart::hudzoom));
         }
         const auto& p = menuart::hudpositions[menu.locale];
         add(menuart::hud0, p[2], p[3], {}, GL_FLIP_NONE, 1, 0, menu.pressed == 0 ? 31 : 19);
@@ -525,9 +529,9 @@ void prepareoverlay(const ui::controller& menu, const dx::simulation& game) {
         const auto& name = menuart::sprites[levelname];
         const float time = game.ticks * .016f;
         const float alpha = time < 1 ? unit((time - .5f) / .5f) : time > 2 ? 1 - unit((time - 2) / .5f) : 1;
-        const int inset = std::lround(40 * menuart::fit * pixels), bottom = menu.locale >= 10 ? 180 : 183;
+        const int inset = std::lround(40 * menuart::fit * pixels), bottom = menu.locale >= 10 ? 177 : 181;
         add(levelname, inset + name.w / 2, bottom, {}, GL_FLIP_NONE, 1, 0, std::lround(alpha * 31));
-        add(menuart::levelwords[menu.locale], inset + menuart::sprites[menuart::levelwords[menu.locale]].w / 2, bottom - 9, {}, GL_FLIP_NONE, 1, 0, std::lround(alpha * 31));
+        add(menuart::levelwords[menu.locale], inset + menuart::sprites[menuart::levelwords[menu.locale]].w / 2, bottom - std::lround(9*menuart::hudzoom), {}, GL_FLIP_NONE, 1, 0, std::lround(alpha * 31));
     }
     if (menu.mode == ui::view::paused && !menu.door) {
         rect({}, RGB15(3, 3, 3), 16);
@@ -685,8 +689,8 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         if (game.mouth) { state = 2; since = game.ticks - game.mouthtick; }
         if (game.state == dx::outcome::won) { state = 4; since = elapsed - game.resultvisual; }
         if (game.state == dx::outcome::lost) { state = 3; since = elapsed - game.resultvisual; }
-        if (sleeping) { state = 8; since = elapsed-game.nightstart; }
-        add(animation(menuart::costumes[menu.skins[2] - 1][state], since * .016f),
+        if (sleeping) { state = game.nightwoken ? 8 : 7; since = elapsed-game.nightstart; }
+        add(animation(menuart::costumes[menu.skins[2] - 1][state], since * .016f + (sleeping && game.nightwoken ? menuart::sleeptrim[menu.skins[2]-1] : 0)),
             wx(game.definition.target.x), wy(game.definition.target.y));
     }
     gamevisuals::sleep(game,world);
@@ -995,9 +999,10 @@ void draw(const ui::controller& menu) {
     case ui::view::skins: skins(menu); break;
     case ui::view::resetmenu: label(menu, menuart::RESET_TEXT, 128, y(520)); break;
     case ui::view::credits: {
+        const auto& bounds = menuart::creditbounds;
         const int first = std::max(0, static_cast<int>(menu.creditoffset) / 96);
-        const int last = std::min(static_cast<int>(std::size(menuart::credits[0])) - 1, static_cast<int>(menu.creditoffset + 146) / 96);
-        for (int i = first; i <= last; ++i) add(menuart::credits[menu.locale][i], 41, 23 + i * 96 - static_cast<int>(menu.creditoffset), {41, 23, 215, 169});
+        const int last = std::min(static_cast<int>(std::size(menuart::credits[0])) - 1, static_cast<int>(menu.creditoffset + bounds[3]-bounds[1]) / 96);
+        for (int i = first; i <= last; ++i) add(menuart::credits[menu.locale][i], bounds[0], bounds[1] + i * 96 - static_cast<int>(menu.creditoffset), {bounds[0], bounds[1], bounds[2], bounds[3]});
         break;
     }
     case ui::view::levels:
@@ -1024,13 +1029,13 @@ void draw(const ui::controller& menu) {
         bool pressed = menu.pressed == index || (menu.keyboard && menu.focus == index);
         if (item.action == ui::action::language && item.argument == menu.locale) pressed = !pressed;
         if (item.action == ui::action::skintab && item.argument == menu.skintab) pressed = true;
-        const float factor = menu.mode == ui::view::home ? menuart::mainfit / menuart::fit : 1;
+        const float factor = menu.mode == ui::view::home ? menuart::mainfit / menuart::fit : menu.mode == ui::view::options && item.action != ui::action::back ? .85f : 1;
         add(pressed ? item.down : item.up, item.x, item.y, {}, item.action == ui::action::nextpack ? GL_FLIP_H : GL_FLIP_NONE, factor);
-        if (item.label >= 0) add(menuart::labels[menu.locale][item.label], item.x, item.y, {}, GL_FLIP_NONE, factor);
+        if (item.label >= 0) add(menuart::labels[menu.locale][item.label], item.x, item.y, {}, GL_FLIP_NONE, menu.mode==ui::view::options?1:factor);
         if (item.action == ui::action::music || item.action == ui::action::effects) {
             const bool enabled = item.action == ui::action::music ? menu.music : menu.effects;
-            add(menuart::option0 + item.argument, item.x, item.y, {}, GL_FLIP_NONE, 1, 0, enabled ? 31 : 16, enabled ? RGB15(31,31,31) : RGB15(15,15,15));
-            if (!enabled) add(menuart::option4, item.x + (item.argument == 2 ? 10 : 7), item.y + 5);
+            add(menuart::setting0 + item.argument, item.x, item.y, {}, GL_FLIP_NONE, factor, 0, enabled ? 31 : 16, enabled ? RGB15(31,31,31) : RGB15(15,15,15));
+            if (!enabled) add(menuart::setting4, item.x + std::lround((item.argument == 2 ? 10 : 7)*menuart::settingszoom*factor), item.y + 6, {}, GL_FLIP_NONE, factor);
         }
         ++index;
     }

@@ -23,6 +23,17 @@ for first, count in tutorials["spans"][400]:
 belts = [item for item in manifest["sprites"] if re.fullmatch(r"belt[0-6]", item["name"])]
 assert len(belts) == 7 and [item["source"]["quad"] for item in belts] == list(range(7))
 assert all(item["source"]["resource"] == "obj_conveyor" for item in belts)
+for item in manifest["sprites"]:
+    source = item.get("source") or {}
+    if re.fullmatch(r"level[0-5]",item["name"]) or item["name"]=="pack3":
+        assert source["factor"]==manifest["fit"], "Level selection must retain its original scale"
+    if item["name"].endswith("HARDEST_LABEL"):
+        assert source["rotation"]==16 and abs(source["factor"]-manifest["fit"]*.35*manifest["uiscale"]["boxes"])<1e-8
+        assert not manifest["pages"][item["page"]]["dither"], "Rotated label is still font art"
+for item in manifest["controls"]:
+    if item["view"]=="options" and item["action"]!="back":
+        assert item["x"]-item["w"]/2>=0 and item["x"]+item["w"]/2<=256
+        assert item["y"]-item["h"]/2>=0 and item["y"]+item["h"]/2<=192
 for name, digest in manifest["sources"].items():
     assert hashlib.sha256((repo / "content" / name).read_bytes()).hexdigest() == digest, name
 for name, digest in manifest["layoutSources"].items():
@@ -170,9 +181,15 @@ for scene, view, indent, actions, scale in cases:
         x, y, width, height = map(float, rect)
         expected = [128 + (x + width / 2 - 960) * scale * 192 / 1440,
                     96 + (y + height / 2 - 720) * scale * 192 / 1440]
-        assert abs(item["x"] - expected[0]) <= 1 and abs(item["y"] - expected[1]) <= 1, (scene, item, expected)
+        actual = item.get("sourcePosition", [item["x"], item["y"]])
+        assert abs(actual[0] - expected[0]) <= 1 and abs(actual[1] - expected[1]) <= 1, (scene, item, expected)
         positions += 1
 header = (generated / "menuassets.hpp").read_text()
+sleeptrim = [float(value.rstrip("f")) for value in re.search(r"sleeptrim\[\] = \{(.*?)\};",header).group(1).split(",")]
+configs = json.loads((repo/"content/images/animations/om_nom_skins.json").read_text())
+assert len(sleeptrim)==len(configs)==15
+for actual,config in zip(sleeptrim,configs):
+    assert 0 <= actual <= config.get("idleToSleepTrimFrames",0)/30+1e-6
 def generatedpoints(name):
     body = re.search(r"inline constexpr int " + name + r"\[[^;]+?= \{(.*?)\};", header, re.S).group(1)
     return [tuple(map(int, pair.split(","))) for pair in re.findall(r"\{([\d, -]+)\}", body)]
@@ -186,7 +203,7 @@ for actual, marker in zip(generatedpoints("resultanchors"), markers):
 for actual, quad in zip(generatedpoints("hudpositions"), (12,14,13,12,18,12,12,12,16,15,17,17)):
     frames = json.loads((repo / "content/images/hud_ui.json").read_text())["frames"]
     pause, restart = frames[quad]["spriteSourceSize"], frames[0]["spriteSourceSize"]
-    scale = manifest["fit"] * 192 / 1440
+    scale = manifest["fit"] * 192 / 1440 * manifest["uiscale"]["hud"]
     expected = [256 - (8 + pause["w"] / 2) * scale, (8 + pause["h"] / 2) * scale,
                 256 - (pause["w"] + 16 + restart["w"] / 2) * scale, (8 + restart["h"] / 2) * scale]
     assert all(abs(a - b) <= .5 for a, b in zip(actual, expected))

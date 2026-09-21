@@ -14,7 +14,72 @@ int main(int argc, char** argv) {
     
     constexpr unsigned reserved = 144384;
 
+    unsigned menupeak=0, menucases=0, menufailed=0;
+    auto checkmenu=[&]() {
+        try { frontend::draw(menu); }
+        catch (const std::runtime_error&) { ++menufailed; }
+        bool needed[menuart::pagecount]{};
+        unsigned bytes=0;
+        for (int i=0;i<frontend::count;++i) {
+            const auto& command=frontend::commands[i];
+            if (command.id<0 || !frontend::visible(command)) continue;
+            const int page=menuart::sprites[command.id].page;
+            if (!needed[page]) bytes+=frontend::bytes(page);
+            needed[page]=true;
+        }
+        menupeak=std::max(menupeak,bytes); ++menucases;
+    };
+    for (int locale=0;locale<12;++locale) for (int unlocked=0;unlocked<3;++unlocked) {
+        menu={}; menu.locale=locale; menu.saves.unlocked=unlocked;
+        if (unlocked==2) for (auto& level : menu.saves.active().levels) level.stars=3;
+        menu.mode=ui::view::packs;
+        for (int position=0;position<=16*4;++position) for (int age : {0,15,100}) {
+            menu.packposition=position/4.0f; menu.pack=std::lround(menu.packposition); menu.settled=age;
+            for (int pressed : {-1,0,1}) { menu.pressed=pressed; checkmenu(); }
+        }
+        for (auto view : {ui::view::home,ui::view::options,ui::view::languages,ui::view::resetmenu,ui::view::levels}) {
+            menu.mode=view;
+            for (int pressed=-1;pressed<12;++pressed) { menu.pressed=pressed; checkmenu(); }
+        }
+        menu.mode=ui::view::credits;
+        for (int offset=0;offset<menuart::creditheights[locale];offset+=32) { menu.creditoffset=offset; checkmenu(); }
+    }
+    std::printf("Frontend working sets: %u cases, peak %u / 393216 bytes; %u failures\n",menucases,menupeak,menufailed);
+    assert(!menufailed && !frontend::renderfault);
+    menu={};
     frontend::reserve(reserved);
+    for (int locale=0;locale<12;++locale) {
+        menu={}; menu.locale=locale; menu.mode=ui::view::packs; menu.pack=16; menu.settled=100;
+        for (float position : {15.2f,15.5f,16.0f,16.5f}) {
+            menu.packposition=position; frontend::count=0; frontend::packs(menu);
+            for (int i=0;i<frontend::count;++i) {
+                const auto& command=frontend::commands[i];
+                if (command.id==menuart::labels[locale][menuart::HARDEST_LABEL])
+                    assert(command.angle==0 && command.bounds.left==38 && command.bounds.right==218);
+            }
+        }
+        menu.mode=ui::view::playing;
+        ui::button controls[8]; assert(menu.buttons(controls)==2);
+        assert(controls[0].x+(controls[0].width+1)/2<=controls[1].x-controls[1].width/2);
+        for (int i=0;i<2;++i) {
+            const auto& sprite=menuart::sprites[menuart::hud0+(i?menuart::hudquads[locale]:0)];
+            assert(controls[i].width>=sprite.w && controls[i].height>=sprite.h);
+        }
+    }
+    for (int skin=0;skin<16;++skin) {
+        menu={}; menu.mode=ui::view::playing; menu.pack=15; menu.skins[2]=skin;
+        game.reset(dx::levels[375]);
+        for (bool woken : {false,true}) for (int age : {0,1,12,30,100,240,600}) {
+            game.nightwoken=woken;
+            game.visuals=game.ticks=age; frontend::preparegame(menu,game,age);
+            const int expected=skin?frontend::animation(menuart::costumes[skin-1][woken?8:7],age*.016f+(woken?menuart::sleeptrim[skin-1]:0)):menuart::sleep0+std::min(6,static_cast<int>(age*.016f/.05f));
+            bool found=false;
+            for (int i=0;i<frontend::groundend;++i) found |= frontend::commands[i].id==expected;
+            assert(found);
+        }
+    }
+    menu={};
+    std::puts("PASS: all locales clip the Mechanical label, scaled HUD hitboxes fit, all costumes follow trimmed Pillow sleep timelines");
     {
         auto data=dx::levels[410]; data.tubecount=1; data.beltcount=0;
         game.reset(data); game.steamtime=.3f;
@@ -169,8 +234,8 @@ int main(int argc, char** argv) {
         }
     }
     std::printf("Working sets: %u cases, peak %u / 393216 bytes at %d-%d costume %d age %d locale %d phase %d; %u failures\n",cases,peak,peaklevel/25+1,peaklevel%25+1,peakskin,peakage,peaklocale,peakphase,failed);
-    assert(!frontend::renderfault);
     if(failed) for(int i=0;i<menuart::pagecount;++i) if(peakpages[i]) std::printf("Page %d: %u bytes\n",i,frontend::bytes(i));
+    assert(!frontend::renderfault);
     frontend::reset(); frontend::reserve(reserved);
     frontend::catalog=std::fopen(argv[1],"rb"); assert(frontend::catalog);
     const int resets=textureresets;

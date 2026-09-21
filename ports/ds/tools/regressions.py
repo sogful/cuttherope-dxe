@@ -2,6 +2,7 @@
 
 import json
 import time
+from pathlib import Path
 from PIL import ImageStat
 
 
@@ -9,6 +10,8 @@ def check(
     run, tap, key, touch, state, framebuffer, snapshot, settle, report, directory
 ):
     start = time.monotonic()
+    layouts=json.loads((Path(__file__).resolve().parents[1]/"generated/menumanifest.json").read_text(encoding="utf-8"))["gameui"]["hud"]
+    def hud(): return layouts[state()["locale"]]
 
     def screen():
         return framebuffer().crop((0, 192, 256, 384))
@@ -60,8 +63,8 @@ def check(
     settle()
     run(120)
     before = state()
-    touch(220, 8)
-    touch(220, 8, False)
+    touch(*hud()[2:])
+    touch(*hud()[2:], False)
     flash = []
     for _ in range(90):
         run(1)
@@ -78,13 +81,13 @@ def check(
     wait(lambda s: s["state"] == 1)
     won = state()
     run(24)
-    tap(241, 8)
+    tap(*hud()[:2])
     assert state()["view"] == 1
     paused = state()
     run(45)
     assert state()["visuals"] == paused["visuals"]
     key(3)
-    touch(241, 8)
+    touch(*hud()[:2])
     sequence = []
     waitframes = state()["frames"]
     for _ in range(900):
@@ -93,15 +96,15 @@ def check(
         if state()["view"] == 2:
             break
     assert state()["view"] == 2 and state()["frames"] > waitframes + 25
-    touch(241, 8, False)
+    touch(*hud()[:2], False)
     for _ in range(500):
         run(1)
         sequence.append(screen())
     assert state()["view"] == 2 and state()["resets"] == won["resets"]
     report["completionMinimumBrightness"] = record("regression-completion", sequence)
     # Obsolete HUD coordinates must not capture controls on the result panel.
-    tap(241, 8)
-    tap(220, 8)
+    tap(*hud()[:2])
+    tap(*hud()[2:])
     key(3)
     assert state()["view"] == 2
     snapshot("regression-results-hud-input")
@@ -123,7 +126,7 @@ def check(
     touch(155, 40, False)
     wait(lambda s: s["state"] == 1)
     before = state()["resets"]
-    tap(220, 8)
+    tap(*hud()[2:])
     settle()
     run(240)
     assert (

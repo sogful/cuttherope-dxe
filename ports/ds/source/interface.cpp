@@ -4,6 +4,7 @@
 #include "menuassets.hpp"
 
 namespace ui {
+static constexpr int creditheight = menuart::creditbounds[3]-menuart::creditbounds[1];
 void controller::initialize(const char* directory) {
     saves.initialize(directory);
     const auto& settings = saves.preferences;
@@ -85,8 +86,8 @@ int controller::buttons(button* out) const {
     };
     switch (mode) {
     case view::playing:
-        add(action::restart, menuart::hudpositions[locale][2], menuart::hudpositions[locale][3], 14, 14, "");
-        add(action::pause, menuart::hudpositions[locale][0], menuart::hudpositions[locale][1], 28, 14, "");
+        add(action::restart, menuart::hudpositions[locale][2], menuart::hudpositions[locale][3], menuart::sprites[menuart::hud0].w+2, menuart::sprites[menuart::hud0].h+2, "");
+        add(action::pause, menuart::hudpositions[locale][0], menuart::hudpositions[locale][1], menuart::sprites[menuart::hud0+menuart::hudquads[locale]].w+2, menuart::sprites[menuart::hud0+menuart::hudquads[locale]].h+2, "");
         break;
     case view::paused:
         for (int i = 0; i < 6; ++i) {
@@ -255,7 +256,7 @@ void controller::frontinput(input current) {
         originx = lastx = current.x;
         originy = lasty = current.y;
         armed = -1;
-        if (mode == view::packs && current.x >= 38 && current.x < 218) strip.begin(current.x / (menuart::fit * (192.0f / 1440)));
+        if (mode == view::packs && current.x >= 38 && current.x < 218) strip.begin(current.x / (menuart::fit * (192.0f / 1440) * menuart::boxzoom));
         if (mode == view::credits) autoscroll = false;
         if (mode == view::skins) skinvelocity = 0;
         for (int i = 0; i < count; ++i) {
@@ -267,13 +268,13 @@ void controller::frontinput(input current) {
     }
     if (current.touch && held) {
         const bool strip = mode == view::packs && originx >= 38 && originx < 218;
-        const bool credits = mode == view::credits && originy >= 23 && originy < 169;
+        const bool credits = mode == view::credits && originx >= menuart::creditbounds[0] && originx < menuart::creditbounds[2] && originy >= menuart::creditbounds[1] && originy < menuart::creditbounds[3];
         const bool skins = mode == view::skins && originy >= menuart::skintop && originy < menuart::skinbottom;
         if ((strip || credits || skins) && (std::abs(current.x - originx) > 3 || std::abs(current.y - originy) > 3)) dragging = true;
         if (dragging) {
             armed = -1;
-            if (strip) this->strip.drag(current.x / (menuart::fit * (192.0f / 1440)));
-            if (credits) creditoffset = std::clamp(creditoffset + lasty - current.y, 0.0f, std::max(0.0f, menuart::creditheights[locale] - 146.0f));
+            if (strip) this->strip.drag(current.x / (menuart::fit * (192.0f / 1440) * menuart::boxzoom));
+            if (credits) creditoffset = std::clamp(creditoffset + lasty - current.y, 0.0f, std::max(0.0f, static_cast<float>(menuart::creditheights[locale] - creditheight)));
             if (skins) {
                 skinvelocity = (lasty - current.y) * .5f + skinvelocity * .5f;
                 skinoffsets[skintab] = std::clamp(skinoffsets[skintab] + lasty - current.y, 0.0f, menuart::skinmax[skintab]);
@@ -294,8 +295,8 @@ void controller::frontinput(input current) {
             const int index = skinhit(current.x, current.y);
             if (index >= 0 && index == skinhit(originx, originy)) activate(action::skin, index);
         }
-        else if (mode == view::packs && current.x >= 38 && current.x < 218 && current.y >= 51 && current.y < 141) {
-            strip.moveto(static_cast<int>(std::round(packposition + (current.x - 128) / (640 * menuart::fit * (192.0f / 1440)))));
+        else if (mode == view::packs && current.x >= 38 && current.x < 218 && std::abs(current.y-96) < 45*menuart::boxzoom) {
+            strip.moveto(static_cast<int>(std::round(packposition + (current.x - 128) / (640 * menuart::fit * (192.0f / 1440) * menuart::boxzoom))));
             pack = strip.selected;
             settled = 100;
         }
@@ -312,7 +313,7 @@ void controller::frontinput(input current) {
         if (mode == view::packs) activate(direction < 0 ? action::previouspack : action::nextpack);
         else if (mode == view::credits) {
             autoscroll = false;
-            creditoffset = std::clamp(creditoffset + direction * 8.0f, 0.0f, std::max(0.0f, menuart::creditheights[locale] - 146.0f));
+            creditoffset = std::clamp(creditoffset + direction * 8.0f, 0.0f, std::max(0.0f, static_cast<float>(menuart::creditheights[locale] - creditheight)));
         } else if (mode == view::skins) {
             const int chosen = std::clamp(skins[skintab] + direction, 0, menuart::skincounts[skintab] - 1);
             activate(action::skin, chosen);
@@ -354,7 +355,7 @@ void controller::advance(const dx::simulation& game) {
         else ++settled;
         packposition = -strip.x / 640;
     }
-    if (mode == view::credits && autoscroll) creditoffset = std::min(creditoffset + .5f * (192.0f / 1440), std::max(0.0f, menuart::creditheights[locale] - 146.0f));
+    if (mode == view::credits && autoscroll) creditoffset = std::min(creditoffset + .75f * (192.0f / 1440), std::max(0.0f, static_cast<float>(menuart::creditheights[locale] - creditheight)));
     if (mode != view::playing) return;
     for (int i = 0; i < 3; ++i) {
         if (game.stars[i]) starage[i] = std::min(starage[i] + 1, 30);
