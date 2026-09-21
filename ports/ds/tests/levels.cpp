@@ -4,11 +4,20 @@
 #include <cstdio>
 
 static void same(dx::point a, dx::point b) { assert(a.x == b.x && a.y == b.y); }
-static void same(dx::motion a, dx::motion b) { same(a.offset,b.offset); assert(a.speed == b.speed && a.rotation == b.rotation && a.circle == b.circle); }
+static void same(dx::motion a, dx::motion b) { same(a.offset,b.offset); assert(a.speed == b.speed && a.rotation == b.rotation && a.circle == b.circle && a.route == b.route); }
 static void decoded(const dx::level& a, const dx::level& b) {
     same(a.candy,b.candy); same(a.target,b.target);
     same(a.gravity,b.gravity); assert(a.switchcount == b.switchcount);
     assert(a.disccount == b.disccount && a.ghostcount == b.ghostcount);
+    assert(a.tubecount == b.tubecount && a.lanterncount == b.lanterncount);
+    for (int i=0;i<a.tubecount;++i) {
+        const auto& x=a.tubes[i]; const auto& y=b.tubes[i]; same(x.position,y.position);
+        assert(x.angle==y.angle && x.scale==y.scale);
+    }
+    for (int i=0;i<a.lanterncount;++i) {
+        const auto& x=a.lanterns[i]; const auto& y=b.lanterns[i]; same(x.position,y.position); same(x.path,y.path);
+        assert(x.captured==y.captured && x.route==y.route);
+    }
     for (int i = 0; i < a.disccount; ++i) {
         const auto& x=a.discs[i]; const auto& y=b.discs[i]; same(x.position,y.position);
         assert(x.size==y.size && x.angle==y.angle && x.single==y.single);
@@ -89,6 +98,7 @@ int main() {
             assert(std::isfinite(game.candy().pos.x) && std::isfinite(game.candy().pos.y));
             if (game.state != dx::outcome::playing) {
                 for (int i = 0; i < level.hookcount; ++i) if (game.ropes[i].count) {
+                    if (game.split && game.ropes[i].candy && game.halfalive[game.ropes[i].candy-1]) continue;
                     assert(game.ropes[i].cut && game.ropes[i].pending < 0);
                     if (level.hooks[i].spider) assert(game.ropes[i].spiderstate);
                 }

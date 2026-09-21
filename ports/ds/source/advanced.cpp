@@ -106,7 +106,6 @@ void simulation::merge(bool touching) {
         if (mergedistance == 0) {
             whole.pos = left.pos;
             whole.previous = whole.pos - ((left.pos - left.previous) + (right.pos - right.previous)) * .5f;
-            whole.velocity = (whole.pos - whole.previous) / (.016f * definition.speed);
             mergeghosts();
             for (int i = 0; i < definition.hookcount; ++i) {
                 auto& rope = ropes[i];
@@ -209,7 +208,7 @@ void simulation::movebee(int index) {
 }
 
 void simulation::transports() {
-    if (split || state != outcome::playing) return;
+    if (split || inlantern || state != outcome::playing) return;
     if (transit >= 0) {
         if (++transitage < 7) return;
         const auto& hat = definition.hats[transit];
@@ -244,7 +243,7 @@ void simulation::transports() {
 }
 
 void simulation::bounce() {
-    if (hidden() || state != outcome::playing) return;
+    if (hidden() || (state != outcome::playing && !(state == outcome::lost && split && activecount()))) return;
     for (int i = 0; i < definition.bouncercount; ++i) {
         const auto& item = definition.bouncers[i];
         const auto center = item.position + item.path.at(visuals * .016f);

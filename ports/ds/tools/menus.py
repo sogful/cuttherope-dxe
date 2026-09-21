@@ -205,8 +205,8 @@ def pack():
             canvas.paste(record["image"], (x, y))
             record.update(x=x, y=y, w=record["image"].width, h=record["image"].height, page=page)
         pages.append(dict(name="menupage" + str(page), image=canvas, group=group, direct=False, bytes=width * height,
-                          alphabits=5 if group in ("menu_bgr_shadow", "doorshade") or group.startswith(("catch", "vinylring", "vinylcontour")) else 3,
-                          dither=False if group == "doorshade" or group.startswith(("text", "packtext", "credits", "catch", "vinylring", "vinylcontour")) else
+                          alphabits=5 if group in ("menu_bgr_shadow", "doorshade", "steampuffs") or group.startswith(("catch", "vinylring", "vinylcontour")) else 3,
+                          dither=False if group in ("doorshade", "steampuffs") or group.startswith(("text", "packtext", "credits", "catch", "vinylring", "vinylcontour")) else
                           "low" if group.startswith(("menu_buttons", "menu_extra_buttons", "menu_options_packed", "skin_selection", "menu_level_ui", "hud_ui")) else True))
     members = defaultdict(list)
     for record in records:

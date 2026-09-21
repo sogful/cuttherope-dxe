@@ -39,13 +39,13 @@ def main():
     parser.add_argument("--menus", action="store_true", help="Check source-shaped title, packs, settings, languages and credits")
     parser.add_argument("--skins", action="store_true", help="Check fades, isolated unlock mode, picker scrolling, all cosmetic tabs and equipped gameplay")
     parser.add_argument("--flow", action="store_true", help="Capture box transitions and the complete animated result sequence")
-    parser.add_argument("--boxes", action="store_true", help="Launch all 300 maps across the first twelve boxes")
+    parser.add_argument("--boxes", action="store_true", help="Launch all 350 maps across the first fourteen boxes")
     parser.add_argument("--startup", action="store_true", help="Capture consecutive frames through early level texture paging")
     parser.add_argument("--regressions", action="store_true", help="Exercise outcome input races, flashes, costume voices, carousel and tall backgrounds")
     parser.add_argument("--profile", action="store_true", help="Read optional profiling build and capture framebuffer changes during stalled main updates")
     parser.add_argument("--pagingstress", action="store_true", help="Profile-only synthetic heavy completion and captured-frame recovery test")
-    parser.add_argument("--first-box", type=int, default=1, choices=range(1,13))
-    parser.add_argument("--last-box", type=int, default=12, choices=range(1,13))
+    parser.add_argument("--first-box", type=int, default=1, choices=range(1,15))
+    parser.add_argument("--last-box", type=int, default=14, choices=range(1,15))
     parser.add_argument("--level-only", type=int, choices=range(1,26), help="Limit box checks to one level number")
     parser.add_argument("--costume", type=int, default=0, choices=range(16), help="Equip a costume through the real picker before a test")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
@@ -228,11 +228,12 @@ def main():
         keys += ["gravity", "gravityevents", "wheel", "wheelevents", "wheelparts", "wheellength"]
         keys += ["spikeevents", "spikebutton", "beex", "beey", "spiderfalls", "spiderclimbers", "fadephase"]
         keys += ["disc", "discangle", "discevents", "ghostforms", "ghostevents", "ghostapps", "bodypool"]
+        keys += ["steamevents", "steamstates", "captures", "releases", "occupied", "shared", "lanternx", "lanterny"]
         faultsymbol = next((line for line in symbols if line.endswith(" renderfault")), None)
         faultaddress = memory + int(faultsymbol.split()[0], 16) - 0x02000000 if faultsymbol else None
         def telemetry():
             version = struct.unpack("<I", c.string_at(memory + offset + 4, 4))[0]
-            fields = 68 if version >= 12 else 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
+            fields = 76 if version >= 13 else 68 if version >= 12 else 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
             result = dict(zip(keys, struct.unpack(f"<10I2f{fields}I", c.string_at(memory + offset, 48 + fields * 4))))
             for key in keys: result.setdefault(key, 0)
             return result
@@ -279,10 +280,12 @@ def main():
             pointer[:] = [round(x / 255 * 65534 - 32767), round((192 + y) / 383 * 65534 - 32767), int(held)]
             run(3)
         def tap(x, y):
+            settle()
             touch(x, y)
             touch(x, y, False)
             run(36)
         def key(ident):
+            settle()
             buttons.add(ident)
             before = telemetry()["frames"]
             while telemetry()["frames"] < before + 2: run(1)
@@ -291,7 +294,7 @@ def main():
         def settle():
             for _ in range(360):
                 current = telemetry()
-                if not current["door"] and not current["transition"] and not current["flash"]:
+                if not current["door"] and not current["transition"] and not current["flash"] and not (current["view"] == 2 and current["menuage"] < 32):
                     return
                 run(1)
             raise AssertionError("Transition failed to finish: " + repr(telemetry()))
@@ -361,6 +364,23 @@ def main():
                     assert stage["level"] == box * 25 + level and stage["visuals"] > 0
                     assert math.isfinite(stage["x"]) and math.isfinite(stage["y"])
                     assert not stage["intro"], "Tall level introduction never handed control back"
+                    if box == 12 and level == 0:
+                        before = telemetry()
+                        for state in (1,2,0):
+                            tap(126,177)
+                            result = snapshot("steam-valve-"+str(state))
+                            assert result["steamevents"] == before["steamevents"]+1 and result["steamstates"] & 3 == state and result["cuts"] == before["cuts"], result
+                            before = result
+                    if box == 13 and level == 0:
+                        touch(162,80); touch(180,80); touch(180,80,False)
+                        for _ in range(300):
+                            if telemetry()["shared"]: break
+                            run(1)
+                        captured = snapshot("lantern-captured")
+                        assert captured["occupied"] and captured["shared"] and captured["captures"], captured
+                        tap(85,68)
+                        released = snapshot("lantern-released")
+                        assert released["releases"] and not released["occupied"] and not released["shared"], released
                     if box == 10 and level == 0:
                         initial = telemetry()
                         center = (128.4,92)
@@ -477,6 +497,10 @@ def main():
                         assert result["state"] == 1 and result["stars"] == 3, result
                         run(420)
                         snapshot("valentine-result-finished")
+                    if box >= 12 and level == 24 and telemetry()["view"] == 0:
+                        key(3); tap(128,72); settle()
+                        skipped = snapshot(f"skip-last-{box+1}")
+                        assert skipped["view"] == 4 and skipped["level"] == box*25+24, skipped
                     if telemetry()["view"] == 0: key(3)
                     current = telemetry()["view"]
                     if current == 1: tap(128,96)
@@ -495,7 +519,7 @@ def main():
                 assert any(item["bounces"] for item in report["stages"].values()), "No bouncer contact observed"
             maps = (args.last_box - args.first_box + 1) * (1 if args.level_only else 25)
             report.update(passed=True, maps=maps, referenceSamples=len(maperrors), maximumDesktopError=max(maperrors.values(),default=0), seconds=time.monotonic()-start)
-            filename = "boxreport" + ("" if maps == 300 else f"-{args.first_box}-{args.last_box}-{args.level_only or 'all'}") + ".json"
+            filename = "boxreport" + ("" if maps == 350 else f"-{args.first_box}-{args.last_box}-{args.level_only or 'all'}") + ".json"
             (directory / filename).write_text(json.dumps(report, indent=2), encoding="utf-8")
             print(f"PASS: {maps} maps launched through real UI, boxes {args.first_box}-{args.last_box}")
             return
@@ -519,13 +543,13 @@ def main():
             key(8)
             assert snapshot("unlocked-fabric-levels")["pack"] == 1 and telemetry()["view"] == 4
             key(0)
-            for _ in range(11): key(7)
+            for _ in range(13): key(7)
             run(180)
             key(8)
             tap(66, 26)
             assert telemetry()["view"] == 4 and telemetry()["resets"] == 0, "An unavailable map silently launched 1-1"
             key(0)
-            for _ in range(12): key(6)
+            for _ in range(14): key(6)
             run(180)
             key(0)
             tap(128, 170)
@@ -825,8 +849,8 @@ def main():
             run(60)
             paused = snapshot("paused")
             assert paused["paused"] == 1 and paused["ticks"] == beforepause["ticks"], paused
-            tap(128, 72)
-            assert telemetry()["view"] == 1 and telemetry()["ticks"] == paused["ticks"], "Disabled skip resumed gameplay"
+            touch(128,72); touch(40,72); touch(40,72,False)
+            assert telemetry()["view"] == 1 and telemetry()["ticks"] == paused["ticks"], "Cancelled skip resumed gameplay"
             tap(104, 145)
             tap(152, 145)
             quiet = snapshot("quiet")
@@ -881,6 +905,12 @@ def main():
             run(200)
             fastwin = snapshot("fastwin")
             assert fastwin["view"] == 2 and fastwin["score"] > 5000 and fastwin["bestscore"] == fastwin["score"], fastwin
+            while telemetry()["menuage"] < 32: run(1)
+            settle(); tap(98,125); settle(); tap(241,8)
+            before = telemetry()
+            tap(128,72)
+            skipped = snapshot("pause-skip")
+            assert skipped["view"] == 0 and skipped["level"] == 1 and skipped["resets"] == before["resets"]+1 and not skipped["door"] and not skipped["flash"], skipped
             final = snapshot("complete")
             assert final["late"] >= idle["late"], final
             assert final["vblanks"] - idle["vblanks"] == final["frames"] - idle["frames"] + final["late"] - idle["late"], "Unaccounted VBlanks"

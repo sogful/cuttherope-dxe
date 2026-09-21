@@ -13,7 +13,7 @@
 #include <cstdio>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 12;
+    std::uint32_t magic = 0x44585250, version = 13;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -29,6 +29,7 @@ struct diagnostics {
     std::uint32_t gravity = 0, gravityevents = 0, wheel = 0, wheelevents = 0, wheelparts = 0, wheellength = 0;
     std::uint32_t spikeevents = 0, spikebutton = 0, beex = 0, beey = 0, spiderfalls = 0, spiderclimbers = 0, fadephase = 0;
     std::uint32_t disc = 0, discangle = 0, discevents = 0, ghostforms = 0, ghostevents = 0, ghostapps = 0, bodypool = 0;
+    std::uint32_t steamevents = 0, steamstates = 0, captures = 0, releases = 0, occupied = 0, shared = 0, lanternx = 0, lanterny = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -64,6 +65,7 @@ int main() {
     int showngravity = 0, shownwheel = 0;
     int shownspikes = 0, shownspiderfalls = 0, shownspideractivations = 0;
     int showndiscs = 0, shownghosts = 0;
+    int shownsteam = 0, showncaptures = 0, shownreleases = 0;
     bool shownmouth = false, shownresult = false;
     bool greeting = false;
     unsigned total = 0, peak = 0, late = 0;
@@ -76,6 +78,7 @@ int main() {
         showngravity = shownwheel = 0;
         shownspikes = shownspiderfalls = shownspideractivations = 0;
         showndiscs = shownghosts = 0;
+        shownsteam = showncaptures = shownreleases = 0;
         telemetry.resets = telemetry.resets + 1;
         trace::trail.reset();
         greeting = menu.door == 1 && !menu.replaypanel;
@@ -126,6 +129,12 @@ int main() {
                 else game.tick();
             }
         }
+        DS_PROFILE_DO(if (profilestress & 8) {
+            profilestress = profilestress & ~8u;
+            for (int i=0;i<game.definition.tubecount;++i) {
+                game.valvetap(i); game.valvetap(i);
+            }
+        });
         DS_PROFILE_DO(if (profilestress & 4) {
             profilestress = profilestress & ~4u;
             game.state = dx::outcome::won;
@@ -149,6 +158,13 @@ int main() {
             showndiscs = game.discevents;
         }
         if (game.ghostevents != shownghosts) { audio::effect(ghostpuffdata,ghostpuffbytes); shownghosts = game.ghostevents; }
+        if (game.steamevents != shownsteam) {
+            const unsigned char* sounds[] = {steamenddata,steamstart2data,steamstartdata};
+            const unsigned sizes[] = {steamendbytes,steamstart2bytes,steamstartbytes};
+            audio::effect(sounds[game.steamstate],sizes[game.steamstate]); shownsteam = game.steamevents;
+        }
+        if (game.captures != showncaptures) { audio::effect(lanternteleportindata,lanternteleportinbytes); showncaptures = game.captures; }
+        if (game.releases != shownreleases) { audio::effect(lanternteleportoutdata,lanternteleportoutbytes); shownreleases = game.releases; }
         if (game.spiderfalls != shownspiderfalls) { audio::effect(spiderfalldata, spiderfallbytes); shownspiderfalls = game.spiderfalls; }
         if (game.spideractivations != shownspideractivations) { audio::effect(spideractivatedata, spideractivatebytes); shownspideractivations = game.spideractivations; }
         if (game.bubbleevents != shownbubbles) { audio::effect(bubbledata, bubblebytes); shownbubbles = game.bubbleevents; }
@@ -258,6 +274,11 @@ int main() {
         for (int i = 0; i < game.definition.ghostcount; ++i) telemetry.ghostforms |= game.ghosts[i].form << (i*4);
         for (const auto& app : game.apparitions) if (app.form) ++telemetry.ghostapps;
         telemetry.bodypool = game.bodycount;
+        telemetry.steamevents = game.steamevents; telemetry.steamstates = 0;
+        for (int i=0;i<game.definition.tubecount;++i) telemetry.steamstates |= game.tubes[i].state << (i*2);
+        telemetry.captures = game.captures; telemetry.releases = game.releases;
+        telemetry.occupied = game.inlantern; telemetry.shared = game.sharedlantern;
+        telemetry.lanternx = game.lanterns[0].position.x; telemetry.lanterny = game.lanterns[0].position.y;
         telemetry.spikeevents = game.spikeevents; telemetry.spikebutton = game.dragspike + 1;
         telemetry.beex = telemetry.beey = 0;
         telemetry.spiderfalls = game.spiderfalls; telemetry.spiderclimbers = 0;

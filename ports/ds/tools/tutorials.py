@@ -48,7 +48,7 @@ def build(menu):
                     info["items"].append([name, x, y, float(node.get("angle", 0)), float(node.get("fadeIn", 1)),
                         float(node.get("duration", 5)), float(node.get("fadeOut", .5)), int(node.get("repeat", 1)),
                         float(node.get("moveDelay", 0)), float(node.get("moveSpeed", 0)) if node.get("path") else 0,
-                        int(node.get("showOn") == "bubbled"), *area, *pathvalues])
+                        {"bubbled":1,"lanternCatch":2,"steamBurst":3}.get(node.get("showOn"),0), *area, *pathvalues])
                 assert len(info["items"]) - first <= 32, (path, code, "Tutorial runtime capacity")
                 rows.append([first, len(info["items"]) - first])
             info["spans"].append(rows)
@@ -62,3 +62,31 @@ def header(info, ids):
     lines += ['};', f'inline constexpr int tutorialspans[{boxes * 25}][12][2] = {{']
     lines += ['{' + ','.join('{' + ','.join(map(str, span)) + '}' for span in row) + '},' for row in info['spans']]
     return lines + ['};']
+
+
+def refresh():
+    """Refresh event metadata without re-encoding unchanged text/texture pages."""
+    import json
+    from assets import content, output
+    path = output / "menumanifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    info = manifest["gameui"]["tutorials"]
+    ids = {item["name"]:i for i,item in enumerate(manifest["sprites"])}
+    old = "\n".join(header(info,ids))
+    for level,spans in enumerate(info["spans"]):
+        document = xml.parse(content / "maps" / f"{level//25+1}_{level%25+1}.xml")
+        for code,(first,count) in zip(manifest["locales"],spans):
+            nodes = [n for n in document.iter() if n.get("locale")==code]
+            if not nodes: nodes = [n for n in document.iter() if n.get("locale")=="en"]
+            nodes = [n for n in nodes if n.tag.startswith("tutorial") and (n.tag!="tutorialText" or n.get("text"))]
+            assert len(nodes)==count
+            for i,node in enumerate(nodes): info["items"][first+i][10] = {"bubbled":1,"lanternCatch":2,"steamBurst":3}.get(node.get("showOn"),0)
+    target = output / "menuassets.hpp"
+    source = target.read_text(encoding="utf-8")
+    assert old in source
+    target.write_text(source.replace(old,"\n".join(header(info,ids))),encoding="utf-8")
+    path.write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
+
+
+if __name__ == "__main__":
+    refresh()

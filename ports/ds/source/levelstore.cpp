@@ -9,7 +9,7 @@ const level& loadlevel(int index) {
     const float* cursor = leveldata + leveloffsets[index];
     auto scalar = [&]() { return *cursor++; };
     auto vector = [&]() { const float x = scalar(), y = scalar(); return point{x,y}; };
-    auto mover = [&]() { motion item; item.offset = vector(); item.speed = scalar(); item.rotation = scalar(); item.circle = scalar(); return item; };
+    auto mover = [&]() { motion item; item.offset = vector(); item.speed = scalar(); item.rotation = scalar(); item.circle = scalar(); item.route = scalar(); return item; };
     data.left = scalar(); data.width = scalar(); data.height = scalar(); data.speed = scalar();
     data.box = scalar(); data.index = scalar(); data.candy = vector(); data.target = vector(); data.split = scalar();
     for (auto& half : data.halves) half = vector();
@@ -48,6 +48,14 @@ const level& loadlevel(int index) {
     data.ghostcount = scalar();
     for (int i = 0; i < data.ghostcount; ++i) {
         auto& item = data.ghosts[i]; item.position = vector(); item.radius = scalar(); item.angle = scalar(); item.forms = scalar();
+    }
+    data.tubecount = scalar();
+    for (int i = 0; i < data.tubecount; ++i) {
+        auto& item = data.tubes[i]; item.position = vector(); item.angle = scalar(); item.scale = scalar();
+    }
+    data.lanterncount = scalar();
+    for (int i = 0; i < data.lanterncount; ++i) {
+        auto& item = data.lanterns[i]; item.position = vector(); item.path = mover(); item.captured = scalar(); item.route = scalar();
     }
     return data;
 }

@@ -5,7 +5,7 @@ import math
 import struct
 import xml.etree.ElementTree as xml
 
-boxes = 12
+boxes = 14
 
 
 def build(content, output, sources):
@@ -32,7 +32,7 @@ def build(content, output, sources):
              f'inline constexpr std::array<level, {total}> levels = [] {{ std::array<level, {total}> items{{}};']
     audit, packed, offsets, routes, routepoints = [], [], [], [], []
     f = lambda value: struct.unpack("<f", struct.pack("<f", value))[0]
-    limits = dict(hooks=16, bubbles=32, spikes=16, pumps=8, hats=8, bouncers=16, switches=4, discs=4, ghosts=4)
+    limits = dict(hooks=16, bubbles=32, spikes=16, pumps=8, hats=8, bouncers=16, switches=4, discs=4, ghosts=4, tubes=6, lanterns=6)
     for box in range(1, boxes + 1):
         for index in range(1, 26):
             path = content / "maps" / f"{box}_{index}.xml"
@@ -55,7 +55,7 @@ def build(content, output, sources):
 
             def motion(node):
                 if not node.get("path"):
-                    return [[0.0,0.0],0.0,0.0,0.0]
+                    return [[0.0,0.0],0.0,0.0,0.0,-1]
                 pathvalue = node.get("path", "0,0")
                 circle = 0.0
                 if pathvalue.startswith("R"):
@@ -63,8 +63,14 @@ def build(content, output, sources):
                     values = [0.0,0.0]
                 else:
                     values = [number(v) * 3 for v in pathvalue.rstrip(",").split(",")]
-                assert len(values) == 2, (path, node.attrib)
-                return [values, float(int(float(node.get("moveSpeed", 0)) * 3.3)), float(int(float(node.get("rotateSpeed", 0)))), circle]
+                route = -1
+                if len(values) > 2:
+                    assert len(values)%2 == 0, (path,node.attrib)
+                    route = len(routes)
+                    points = [[0.0,0.0]] + [values[i:i+2] for i in range(0,len(values),2)]
+                    routes.append([len(routepoints),len(points),False]); routepoints.extend(points)
+                    values = [0.0,0.0]
+                return [values, float(int(float(node.get("moveSpeed", 0)) * 3.3)), float(int(float(node.get("rotateSpeed", 0)))), circle, route]
 
             for node in objects:
                 if node.tag.startswith("tutorial"):
@@ -128,12 +134,32 @@ def build(content, output, sources):
                     radius = float(node.get("radius", -1))
                     forms = 1 + sum(flag for name, flag in (("bubble", 2), ("grab", 4), ("bouncer", 8)) if node.get(name) == "true")
                     records["ghosts"].append([position(node), radius * 3 if radius != -1 else -1.0, number(node.get("angle", 0)), forms])
+                elif node.tag == "steamTube":
+                    records["tubes"].append([position(node), number(node.get("angle", 0)), 3.0])
+                elif node.tag == "lantern":
+                    route = -1
+                    movement = motion(node)
+                    if node.get("path"):
+                        route = len(routes)
+                        origin, points, value = position(node), [], node.get("path")
+                        if value.startswith("R"):
+                            radius = int(value[2:]) * 3
+                            count, angle = radius // 2, 0.0
+                            step = f(f(math.tau) / count) * (1 if value[1] == "C" else -1)
+                            for _ in range(count):
+                                points.append([f(origin[0] + f(radius * f(math.cos(angle)))), f(origin[1] + f(radius * f(math.sin(angle))))])
+                                angle = f(angle + step)
+                        else:
+                            points = [origin, [f(origin[k] + movement[0][k]) for k in (0,1)]]
+                        routes.append([len(routepoints),len(points),value.startswith("R")])
+                        routepoints.extend(points)
+                    records["lanterns"].append([position(node), movement, node.get("candyCaptured") == "true", route])
                 elif node.tag in ("hidden02", "hidden03", "hiddenElement", "spikesSwitch"):
                     pass  # The C# LoadObjects switch also ignores this legacy map tag.
                 else:
                     raise ValueError((path, "Unsupported object", node.tag))
             assert len(stars) == 3 and target is not None, path
-            assert (tags.get("candyL") == tags.get("candyR") == 1) if split else tags.get("candy") == 1
+            assert (tags.get("candyL") == tags.get("candyR") == 1) if split else tags.get("candy") == 1 or any(item[2] for item in records["lanterns"])
             if split:
                 candy = [(halves[0][axis] + halves[1][axis]) / 2 for axis in (0,1)]
             lines.append(f"{{ auto& value = items[{(box-1)*25+index-1}];")
@@ -148,7 +174,7 @@ def build(content, output, sources):
             packed += flatten([left,width,height,speed,box-1,index-1,candy,target,split,halves,
                 float(design.get("globalGravityX", 0)),float(design.get("globalGravityY", 784))])
             for i in range(3): packed += flatten([stars[i], timeouts[i], motions[i]])
-            countnames = dict(hooks="hookcount",bubbles="bubblecount",spikes="spikecount",pumps="pumpcount",hats="hatcount",bouncers="bouncercount",switches="switchcount",discs="disccount",ghosts="ghostcount")
+            countnames = dict(hooks="hookcount",bubbles="bubblecount",spikes="spikecount",pumps="pumpcount",hats="hatcount",bouncers="bouncercount",switches="switchcount",discs="disccount",ghosts="ghostcount",tubes="tubecount",lanterns="lanterncount")
             for key, capacity in limits.items():
                 assert len(records[key]) <= capacity, (path,key,len(records[key]),capacity)
                 lines.append(f"value.{countnames[key]} = {len(records[key])};")

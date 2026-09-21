@@ -1,5 +1,6 @@
 #include "simulation.hpp"
 #include "geometry.hpp"
+#include "routes.hpp"
 #include <algorithm>
 
 namespace dx {
@@ -14,6 +15,20 @@ point rotate(point p, float angle) {
     return {p.x * c - p.y * s, p.x * s + p.y * c};
 }
 point motion::at(float time) const {
+    if (route >= 0) {
+        const auto& path = routes[route];
+        float length = 0;
+        for (int i = 0; i < path.count; ++i) length += (routepoints[path.first+(i+1)%path.count]-routepoints[path.first+i]).length();
+        if (length <= 0) return {};
+        float remaining = std::fmod(time*speed,length);
+        for (int i = 0; i < path.count; ++i) {
+            const auto a = routepoints[path.first+i], d = routepoints[path.first+(i+1)%path.count]-a;
+            const float size = d.length();
+            if (size > 0 && remaining < size) return a+d*(remaining/size);
+            remaining -= size;
+        }
+        return routepoints[path.first];
+    }
     if (circle != 0) {
         const float radius = std::abs(circle);
         const int count = static_cast<int>(radius) / 2;
@@ -52,6 +67,7 @@ float motion::angle(float base, float time, bool reset) const {
 }
 void simulation::animate() {
     ++visuals;
+    advancedevices();
     updatediscs();
     for (int i = 0; i < definition.spikecount; ++i) spikeages[i] = std::min(spikeduration[i], spikeages[i] + delta);
     gravityage = std::min(100, gravityage + 1);
@@ -91,6 +107,10 @@ bool simulation::interact(point position) {
     draghook = -1;
     dragwheel = dragswitch = dragspike = -1;
     dragdisc = -1;
+    for (int i = 0; i < definition.tubecount; ++i)
+        if ((position-valvepoint(i)).length() < 40*definition.tubes[i].scale) return valvetap(i);
+    for (int i = 0; i < definition.lanterncount; ++i)
+        if ((position-lanterns[i].position).length() < 85 && lanterntap(i)) return true;
     if (pressdisc(position)) return true;
     for (int i = 0; i < definition.ghostcount; ++i)
         if ((position - definition.ghosts[i].position).length() < 80 && ghosttap(i)) return true;
@@ -141,6 +161,7 @@ void simulation::retirehalf(int id, int reason) {
 }
 void simulation::fail(int reason) {
     if (suppressoutcome || state != outcome::playing) return;
+    removelantern();
     for (int part = 0; part < activecount(); ++part) releasecandy(activeid(part));
     state = outcome::lost;
     failreason = reason;
@@ -182,7 +203,10 @@ void simulation::hazards() {
             const auto b = center + rotate({width / 2, side * 5.0f}, angle);
             for (int part = 0; part < activecount(); ++part) {
                 const auto& body = bodies[activeid(part)];
-                if (linebox(a, b, body.pos) || segment(a, b, body.previous, body.pos)) { fail(2); return; }
+                if (linebox(a, b, body.pos) || segment(a, b, body.previous, body.pos)) {
+                    if (split) retirehalf(activeid(part),2); else fail(2);
+                    return;
+                }
             }
         }
     }

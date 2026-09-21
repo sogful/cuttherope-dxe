@@ -35,6 +35,7 @@ subprocess.run(
                 "source/mechanics.cpp",
                 "source/advanced.cpp",
                 "source/contraptions.cpp",
+                "source/devices.cpp",
                 "source/interface.cpp",
                 "source/progress.cpp",
             )

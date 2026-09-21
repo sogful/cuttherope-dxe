@@ -74,11 +74,12 @@ void simulation::reset(const level& data) {
     cameray = introduction && data.candy.y < data.height / 2 ? data.height - 1440 : 0;
     cameraspeed = 20;
     cameradistance = std::abs(cameray - std::clamp(data.candy.y - 720, 0.0f, data.height - 1440));
+    resetdevices();
     for (int index = 0; index < data.hookcount; ++index) {
         const hook& source = data.hooks[index];
         anchors[index] = source.anchor;
         ropes[index].spiderpos = source.anchor;
-        if (source.radius < 0) attach(index, source.length, split ? 1 + source.part : 0);
+        if (source.radius < 0 && !inlantern) attach(index, source.length, split ? 1 + source.part : 0);
     }
 }
 
@@ -253,16 +254,21 @@ void simulation::tick(bool suppress) {
     advanceghosts(4);
     ropephysics();
     if (state != outcome::playing && !(state == outcome::lost && split && activecount())) {
-        advanceghosts(2); advanceghosts(8); updateghosts(); return;
+        advanceghosts(2); advanceghosts(8); updateghosts(); updatedevices(); return;
     }
     ++ticks;
     const float step = delta * definition.speed;
     const point halfgap = halfdraw[0] - halfdraw[1];
     const bool touching = std::abs(halfgap.x) < 88 && std::abs(halfgap.y) < 76;
-    for (int part = 0; part < activecount() && !hidden(); ++part) {
+    for (int part = 0; part < activecount() && transit < 0; ++part) {
         auto& item = bodies[activeid(part)];
-        integrate(item, 784.0f * (step * step), 1.0f / step);
+        integrate(item, nogravity ? 0 : 784.0f * (step * step), 1.0f / step);
         if (split) halfdraw[activeid(part)-1] = item.pos;
+    }
+    candydraw = candy().pos;
+    if (captureage < .1f) {
+        captureage += delta;
+        candydraw = capturefrom+(captureto-capturefrom)*std::min(1.0f,captureage/.1f);
     }
     if (split && activecount()==2) merge(touching);
     const point pos = candy().pos;
@@ -299,6 +305,7 @@ void simulation::tick(bool suppress) {
         }
     }
     updateghosts();
+    updatedevices();
     transports();
     hazards();
     advanceghosts(8);

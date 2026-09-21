@@ -21,7 +21,7 @@ struct point {
 #endif
     }
 };
-struct motion { point offset{}; float speed = 0, rotation = 0, circle = 0; point at(float time) const; float angle(float base, float time, bool reset = false) const; };
+struct motion { point offset{}; float speed = 0, rotation = 0, circle = 0; int route = -1; point at(float time) const; float angle(float base, float time, bool reset = false) const; };
 struct hook { point anchor; float length; float radius = -1; bool spider = false; float rail = 0, offset = 0; bool vertical = false; int part = 0; bool wheel = false; int route = -1; float speed = 0; bool hidepath = false; };
 struct spike { point anchor{}; motion path{}; float angle = 0; int size = 1; float on = 0, off = 0, delay = 0; int group = -1; };
 struct pump { point position{}; float angle = 0; };
@@ -29,6 +29,11 @@ struct hat { point position{}; motion path{}; float angle = 0; int group = 0; bo
 struct bouncer { point position{}; motion path{}; float angle = 0; int size = 1; };
 struct disc { point position{}; float size = 0, angle = 0; bool single = false; };
 struct ghost { point position{}; float radius = -1, angle = 0; int forms = 1; };
+struct tube { point position{}; float angle = 0, scale = 3; };
+struct lantern { point position{}; motion path{}; bool captured = false; int route = -1; };
+struct puff { float start = -100, stop = -1, height = 0; int variant = 0, horizontal = 0; };
+struct tubestate { int state = 0, revision = 0; float phase = 0, valveage = .55f, valve = 0; bool reverse = false; std::array<puff, 42> puffs{}; point forward{}, backward{}; float angle = 1e9f, scale = 0, lift = 0; };
+struct lanternstate { point position{}, previous{}; float age = 0, cooldown = -1, release = -1, firestart = 0, idlestart = 0, angle = 0; int state = 0, phase = 0, target = 1; };
 struct apparition { int ghost = -1, form = 0, index = -1; float age = 0, retirement = -1; int owner = -1; };
 struct ghoststate { int form = 1, app = -1, morphs = 0; float age = 0, idleage = 0; };
 struct discstate { int index = 0; float angle = 0, fade = .216f; bool copy = false; };
@@ -58,6 +63,9 @@ struct level {
     std::array<disc, 4> discs{};
     std::array<ghost, 4> ghosts{};
     int disccount = 0, ghostcount = 0;
+    std::array<tube, 6> tubes{};
+    std::array<lantern, 6> lanterns{};
+    int tubecount = 0, lanterncount = 0;
 };
 const level& loadlevel(int index);
 struct constraint { int other = 0; float length = 0; bool active = false, maximum = false; };
@@ -106,6 +114,17 @@ public:
     void rotatedisc(point position);
     point dischandle(int index, bool right) const;
     bool ghosttap(int index);
+    bool valvetap(int index);
+    bool lanterntap(int index);
+    float steamheight(int index) const;
+    point valvepoint(int index) const;
+    std::array<tubestate, 6> tubes{};
+    std::array<lanternstate, 6> lanterns{};
+    int steamevents = 0, steamstate = 0, captures = 0, releases = 0, pendinglantern = -1;
+    float steamtime = 0, capturetimer = -1, captureage = 1;
+    bool inlantern = false, sharedlantern = false, nogravity = false;
+    point capturefrom{}, captureto{}, candydraw{};
+    std::array<float, 8> reveals{};
     void ghostform(int index, int form);
     void burst(int id = 0);
     const apparition* ghostapp(int form, int index) const;
@@ -121,7 +140,7 @@ public:
     int activecount() const { return split ? halfalive[0] + halfalive[1] : 1; }
     int activeid(int index) const { return split ? halfalive[0] ? index + 1 : 2 : 0; }
     int bubblefor(int id) const { return id ? halfbubbles[id - 1] : bubble; }
-    bool hidden() const { return transit >= 0; }
+    bool hidden() const { return transit >= 0 || inlantern; }
     level definition{};
     std::array<body, 256> bodies{};
     std::array<rope, 24> ropes{};
@@ -165,6 +184,13 @@ public:
     int dragspike = -1, spikeevents = 0, spiderfalls = 0, spideractivations = 0;
     bool spikedirection = false;
 private:
+    void resetdevices();
+    void advancedevices();
+    void updatedevices();
+    void adjuststeam(int index);
+    void cachetube(int index);
+    void capturelantern(int index, int count);
+    void removelantern();
     void resetcontraptions();
     void advanceghosts(int form);
     void updateghosts();

@@ -41,7 +41,7 @@ def main():
     for source in sources:
         target = build / (source.stem + ".o")
         print("Compile", source.name, flush=True)
-        hotflags = ["-marm", "-O3"] if source.stem in ("simulation", "mechanics", "advanced") else []
+        hotflags = ["-marm", "-O3"] if source.stem in ("simulation", "mechanics", "advanced", "frontend", "devices") else []
         subprocess.run([str(compiler), *flags, *hotflags, "-c", str(source), "-o", str(target)], check=True, env=environment)
         objects.append(str(target))
     assets = build / "assets.o"

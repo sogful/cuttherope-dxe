@@ -63,5 +63,11 @@ int main(int argc, char** argv) {
     assert(migrated.save() && bytes("normal-a.sav") == preserved);
     progress::store zero;
     assert(zero.initialize(argv[1]) && zero.active().levels[6].completed == 1 && zero.active().levels[6].score == 0);
+    zero.unlock(7); assert(zero.save());
+    progress::store skipped;
+    assert(skipped.initialize(argv[1]) && skipped.active().levels[7].completed==2 && skipped.active().levels[7].score==0);
+    skipped.complete(7,0,0); assert(skipped.active().levels[7].completed==1);
+    skipped.toggle(); skipped.unlock(9); assert(skipped.active().levels[9].completed==2);
+    skipped.toggle(); assert(skipped.active().levels[9].completed==0);
     std::puts("PASS: isolated normal/unlocked files, profile switching, reset isolation, settings reload, interrupted-write recovery, no-storage fallback");
 }

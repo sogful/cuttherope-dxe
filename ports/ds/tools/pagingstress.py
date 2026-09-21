@@ -28,7 +28,7 @@ def check(run, tap, key, state, framebuffer, settle, stress, profiler, report, d
     hooks = state()["hooks"]
     start = len(profiler.records)
     firstchange = len(profiler.anomalies)
-    stress(7)  # Keep ropes active, trigger the real result controller, repack and force capture.
+    stress(15)  # Keep ropes active, raise steam, trigger results, repack and force capture.
     frames = []
     repeated = False
     for _ in range(2000):

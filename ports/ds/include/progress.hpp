@@ -19,6 +19,7 @@ public:
     void toggle();
     void clear();
     void complete(int level, unsigned score, unsigned stars);
+    void unlock(int level);
     profile& active() { return unlocked ? sandbox : normal; }
     const profile& active() const { return unlocked ? sandbox : normal; }
 private:

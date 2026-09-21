@@ -63,13 +63,24 @@ int main(int argc, char** argv) {
             ++cases;
         }
     }
-    for (int level=250; level<300; ++level) {
+    for (int level=250; level<static_cast<int>(dx::levels.size()); ++level) {
         const auto& data=dx::levels[level];
         int combinations=1;
         for (int i=0; i<data.ghostcount; ++i) combinations*=3;
         if (data.disccount) combinations=data.disccount*4;
+        if (data.tubecount || data.lanterncount) combinations=std::max(combinations,36);
         for (int combination=0; combination<combinations; ++combination) {
             game.reset(data); game.introduction=false;
+            for (int i=0; i<data.tubecount; ++i) {
+                game.valvetap(i); game.valvetap(i);
+                if (combination%3==0) game.valvetap(i);
+            }
+            game.steamtime=.016f*(combination+2);
+            for (int i=0; i<data.lanterncount; ++i) {
+                game.lanterns[i].state=1;
+                game.lanterns[i].phase=combination%2+1;
+                game.lanterns[i].age=combination*.016f;
+            }
             for (int i=0, value=combination; i<data.ghostcount; ++i,value/=3) {
                 const int form=2<<(value%3);
                 for (int old : {2,4,8}) if (old!=form && (data.ghosts[i].forms&old)) { game.ghostform(i,old); break; }

@@ -6,6 +6,13 @@ from PIL import Image, ImageDraw
 
 def build(menu):
     quad, add, scale = menu["quad"], menu["add"], menu["scale"]
+    for i in range(35):
+        quad("pipe"+str(i),"obj_pipe",i,factor=1,restore=i>=2,group="pipebody" if i<2 else "steampuffs")
+    for i in range(3):
+        quad("lantern"+str(i),"obj_lantern",i,factor=1,restore=True,group="lantern")
+    for i in range(52):
+        resource = "obj_lantern" if i<3 else "candies/obj_candy_"+str(i+1).zfill(2)
+        quad("lanterncandy"+str(i),resource,3+i if i<3 else 10,factor=1,restore=True,group="lanterncandy"+str(i))
     for i in range(7):
         quad("ghost"+str(i),"obj_ghost",i,factor=1,group="ghost")
     for i in (4,5):
@@ -23,6 +30,9 @@ def build(menu):
         discs = list(xml.parse(menu["content"] / f"maps/11_{level}.xml").iter("rotatedCircle"))
         maps.append(discs)
         sizes.update(int(d.get("size")) for d in discs)
+    for box in range(13,menu["boxes"]+1):
+        for level in range(1,26):
+            sizes.update(int(d.get("size")) for d in xml.parse(menu["content"] / f"maps/{box}_{level}.xml").iter("rotatedCircle"))
     vinyls, contours = [], []
     for size in sorted(sizes):
         base, control = size / 167, max(size / 167,.75)

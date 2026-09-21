@@ -8,6 +8,7 @@
 #include "profiling.hpp"
 #include "routes.hpp"
 #include "contraptionview.hpp"
+#include "deviceview.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -56,7 +57,8 @@ struct command {
     u16 color = RGB15(31, 31, 31);
     float vertical = 1;
 };
-static std::array<command, 384> commands;
+static std::array<command, 512> commands;
+static std::array<bool, 512> visibility;
 static int count = 0;
 static int overlaystart = -1;
 static int groundend = 0;
@@ -243,7 +245,8 @@ static void upload(bool repacked = false) {
     bool missing = false;
     unsigned required = 0;
     for (int i = 0; i < count; ++i) {
-        if (commands[i].id < 0 || !visible(commands[i])) continue;
+        visibility[i] = visible(commands[i]);
+        if (commands[i].id < 0 || !visibility[i]) continue;
         const int page = menuart::sprites[commands[i].id].page;
         if (!needed[page]) required += bytes(page);
         needed[page] = true;
@@ -441,7 +444,7 @@ static void doors(float progress, bool opening, bool loading, int box) {
     piece(menuart::doorshade, (opening ? -t : t - 1) * 891 * 4 * pixels + base, 0, 891 * 4 * pixels, 400 * 4 * pixels);
     const float leftside = opening ? (1280 - 12) * (1 - t) - 25 * t : -13 * (1 - t) + (1293 - 16) * t;
     const float rightside = opening ? (1280 + 14) * (1 - t) + 2560 * t : (2560 - 40) * (1 - t) + (1280 + 20) * t;
-    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0, menuart::boxcover7x0, menuart::boxcover8x0, menuart::boxcover9x0, menuart::boxcover10x0, menuart::boxcover11x0, menuart::boxcover12x0};
+    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0, menuart::boxcover7x0, menuart::boxcover8x0, menuart::boxcover9x0, menuart::boxcover10x0, menuart::boxcover11x0, menuart::boxcover12x0, menuart::boxcover13x0, menuart::boxcover14x0};
     static_assert(std::size(covers) == menuart::playableboxes, "Every playable box needs its authored flaps");
     const int cover = covers[box];
     piece(cover + 1, base + leftside * pixels, 0, side, 192 * (1 + .3f * closed));
@@ -639,8 +642,10 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     cameray = game.cameray;
     auto wx = [](float value) { return std::lround(128 + (value - 1280) * pixels); };
     auto wy = [](float value) { return std::lround((value - cameray) * pixels); };
-    auto world = [&](int sprite, dx::point position, int alpha = 31, float angle = 0, float scale = 1, int flip = GL_FLIP_NONE) {
-        add(sprite, wx(position.x), wy(position.y), {}, flip, scale, static_cast<int>(angle * 32768 / 360), alpha);
+    auto world = [&](int sprite, dx::point position, int alpha = 31, float angle = 0, float scale = 1, int flip = GL_FLIP_NONE, float vertical = -1, int shade = 31) {
+        const int before = count;
+        add(sprite, wx(position.x), wy(position.y), {}, flip, scale, static_cast<int>(angle * 32768 / 360), alpha, RGB15(shade,shade,shade));
+        if (vertical >= 0 && count > before) commands[count-1].vertical = vertical;
     };
     gamevisuals::discs(game,world);
     pollen(game,elapsed);
@@ -712,6 +717,8 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         world(menuart::hat0 + hat.group % 2, position, 31, angle);
         if (game.hatages[i] * .016f < .2f) world(menuart::hat2 + std::min(2, static_cast<int>(game.hatages[i] * .016f / .05f)), position, 31, angle);
     }
+    gamevisuals::steam(game,false,world);
+    gamevisuals::lanterns(game,menu.skins[0],world);
     for (int i = 0; i < game.definition.hookcount; ++i) if (game.ghostapp(4,i))
         world(menuart::ghosthook0,game.anchors[i],std::lround(game.ghostalpha(4,i)*31));
     groundend = count;
@@ -782,7 +789,8 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         const auto& item = menuart::tutorials[span[0] + i];
         if (tutorialstart[i] < 0 && item.trigger) {
             const auto p = game.candy().pos;
-            if (game.bubble >= 0 && (!item.width || (p.x >= item.left && p.x < item.left + item.width && p.y >= item.top && p.y < item.top + item.height))) tutorialstart[i] = elapsed;
+            const bool triggered = item.trigger == 1 ? game.bubble >= 0 : item.trigger == 2 ? game.captures > 0 : game.steamevents > 0;
+            if (triggered && (!item.width || (p.x >= item.left && p.x < item.left + item.width && p.y >= item.top && p.y < item.top + item.height))) tutorialstart[i] = elapsed;
             else continue;
         }
         float t = item.trigger ? time - tutorialstart[i] * .016f : time;
@@ -821,7 +829,7 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         add(animation(menuart::costumes[menu.skins[2] - 1][state], since * .016f),
             wx(game.definition.target.x), wy(game.definition.target.y));
     }
-    if (game.split && game.failreason != 2 && game.failreason != 3) {
+    if (game.split && game.failreason != 3) {
         for (int i = 0; i < 2; ++i) if (game.halfalive[i]) world(menuart::gamehalves[menu.skins[0]][i], game.bodies[i + 1].pos);
     }
     if (!game.split && !game.hidden() && menu.skins[0] > 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
@@ -829,6 +837,10 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         for (int id : menuart::gamecandies[menu.skins[0]]) add(id, px, py);
     }
     if (game.mergeage * .016f < .25f) world(menuart::merge0 + static_cast<int>(game.mergeage * .016f / .05f), game.candy().pos);
+    if (game.inlantern && game.captureage < .1f) {
+        const float t = game.captureage/.1f;
+        for (int id : menuart::gamecandies[menu.skins[0]]) world(id,game.candydraw,std::lround((1-t)*31),0,1-(1-.3f/.71f)*t);
+    }
     for (int part = 0; part < game.activecount(); ++part) {
         const int id = game.activeid(part);
         if (game.bubblefor(id) >= 0) {
@@ -838,6 +850,7 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     }
     if (game.popage * .016f < .6f) world(menuart::bubble18 + std::min(11, static_cast<int>(game.popage * .016f / .05f)), game.popposition);
     gamevisuals::ghosts(game,world);
+    gamevisuals::steam(game,true,world);
     const auto& trail = trace::trail;
     auto px = [](float value) { return std::lround(128 + (value - 1280) * pixels); };
     auto py = [](float value) { return std::lround((value - cameray) * pixels); };
@@ -997,7 +1010,7 @@ void render(bool overlay, bool ground) {
     const int last = ground ? groundend : !overlay && overlaystart >= 0 ? overlaystart : count;
     for (int i = first; i < last; ++i) {
         const command& item = commands[i];
-        if (!visible(item)) continue;
+        if (!visibility[i]) continue;
         if (item.id < 0) {
             glPolyFmt(POLY_ALPHA(item.alpha) | POLY_CULL_NONE | POLY_ID(60));
             glBoxFilled(item.bounds.left, item.bounds.top, item.bounds.right - 1, item.bounds.bottom - 1, item.color);
@@ -1016,6 +1029,12 @@ void render(bool overlay, bool ground) {
             glPopMatrix(1);
         } else {
             int px = item.x + std::lround(source.ox * item.scale), py = item.y + std::lround(source.oy * item.vertical);
+            if (px >= item.bounds.left && py >= item.bounds.top &&
+                px + source.w * item.scale <= item.bounds.right && py + source.h * item.vertical <= item.bounds.bottom) {
+                if (item.scale == 1 && item.vertical == 1) glSprite(px,py,item.flip,&image);
+                else glSpriteScaleXY(px,py,floattof32(item.scale),floattof32(item.vertical),item.flip,&image);
+                continue;
+            }
             {
                 const int left = std::max(0, static_cast<int>(std::ceil((item.bounds.left - px) / item.scale)));
                 const int top = std::max(0, static_cast<int>(std::ceil((item.bounds.top - py) / item.vertical)));

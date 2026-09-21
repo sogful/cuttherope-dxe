@@ -28,7 +28,7 @@ bool controller::packopen(int box) const {
 bool controller::levelopen(int index) const {
     if (!packopen(pack) || index < 0 || index >= 25) return false;
     const auto& records = saves.active().levels;
-    return unlockall() || index == 0 || records[pack * 25 + index].completed || records[pack * 25 + index - 1].completed;
+    return unlockall() || index == 0 || records[pack * 25 + index].completed || (records[pack * 25 + index - 1].completed & 1);
 }
 bool controller::hasnext() const { return levelid() < menuart::playableboxes * 25 - 1 && (level < 24 || packopen(pack + 1)); }
 void controller::persist() {
@@ -91,7 +91,7 @@ int controller::buttons(button* out) const {
     case view::paused:
         for (int i = 0; i < 6; ++i) {
             static constexpr action actions[] = {action::resume, action::skip, action::levels, action::home, action::effects, action::music};
-            add(actions[i], menuart::pausepositions[i][0], menuart::pausepositions[i][1], i < 4 ? 104 : 49, 26, "", i != 1);
+            add(actions[i], menuart::pausepositions[i][0], menuart::pausepositions[i][1], i < 4 ? 104 : 49, 26, "");
         }
         break;
     case view::results:
@@ -121,6 +121,13 @@ void controller::activate(action command, int argument) {
     switch (command) {
     case action::pause: enter(view::paused); break;
     case action::resume: enter(view::playing); break;
+    case action::skip:
+        if (mode != view::paused) break;
+        if (level == 24) { activate(action::levels); break; }
+        saves.unlock(levelid() + 1);
+        activate(action::next);
+        door = doorframe = 0;
+        break;
     case action::restart:
         if (mode != view::results) {
             flash = 1; flashframe = resultage = 0;

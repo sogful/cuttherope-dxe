@@ -38,13 +38,15 @@ int main() {
     assert(menu.mode == ui::view::playing && !menu.gameTouch);
     tap(241, 8);
     assert(menu.mode == ui::view::paused);
-    tap(128, 72);
+    pen(128, 72, true); pen(40, 72, true); pen(40, 72, false);
     assert(menu.mode == ui::view::paused && !menu.reset);
     tap(104, 145);
     tap(152, 145);
     assert(!menu.effects && !menu.music);
     key(ui::following);
     assert(menu.focus == 0);
+    key(ui::following);
+    assert(menu.focus == 1);
     key(ui::following);
     assert(menu.focus == 2);
     key(ui::accept);
@@ -194,5 +196,16 @@ int main() {
         assert(!race.blocked() && resets <= 1);
         assert(race.mode == ui::view::results || (race.mode == ui::view::playing && game.state == dx::outcome::playing));
     }
-    std::puts("PASS: UI capture/cancel, pause/resume, audio, frontend, localization, persistence, DX scrolling, two-second win, delayed white retry, 320 transition-input boundaries, scoring");
+    ui::controller skip;
+    skip.mode = ui::view::paused;
+    skip.update(game,{128,72,0,true}); skip.update(game,{128,72,0,false});
+    assert(skip.mode==ui::view::playing && skip.level==1 && skip.reset && !skip.door && !skip.flash);
+    assert(skip.levelopen(1) && !skip.levelopen(2) && skip.totalstars()==0);
+    assert(skip.saves.active().levels[0].completed==0 && skip.saves.active().levels[1].completed==2);
+    skip.mode = ui::view::paused; skip.level = 24;
+    skip.update(game,{128,72,0,true}); skip.update(game,{128,72,0,false});
+    assert(skip.door==2 && skip.pack==0 && !skip.reset);
+    for (int i=0;i<32;++i) skip.advance(game);
+    assert(skip.mode==ui::view::levels);
+    std::puts("PASS: UI capture/cancel, pause/resume, skip without fabricated completion, audio, frontend, localization, persistence, DX scrolling, two-second win, delayed white retry, 320 transition-input boundaries, scoring");
 }
