@@ -52,7 +52,7 @@ static void strand(const dx::simulation& game, int index, int first, int count, 
     }
     dx::point points[125];
     int size = 0;
-    game.samples(index, first, count, points, size);
+    game.samples(index, first, count, points, size, true);
     DS_PROFILE_DO(if (size > 0) profiling::data[profiling::segments] += (size - 1) * 2);
     const dx::rope& rope = game.ropes[index];
     const int alpha = rope.cut ? std::max(1, std::min(31, static_cast<int>(rope.remaining / 1.95f * 31))) : 31;
@@ -253,6 +253,7 @@ bool busy() { return loaded < 0 || transition != 0; }
 bool active() { return loaded >= 0 && (transition == 0 || transition >= 14); }
 int fadephase() { return transition; }
 void draw(const dx::simulation& game, int frame, const ui::controller& menu, bool touching, dx::point finger) {
+    upper::acquire();
     const int desired = menu.frontend() ? static_cast<int>(menu.mode) * 12 + menu.locale : menu.pack;
     if (loaded < 0) {
         scene(game, frame, menu, false, finger);

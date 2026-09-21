@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 
-def check(run,tap,key,state,settle,snapshot,report,directory):
+def check(run,tap,key,state,settle,snapshot,report,directory,heavy=False):
     layout=json.loads((Path(__file__).resolve().parents[1]/"generated/menumanifest.json").read_text(encoding="utf-8"))
     results=[]
     def wait(predicate):
@@ -29,10 +29,26 @@ def check(run,tap,key,state,settle,snapshot,report,directory):
         results.append(item); print("BENCH:",json.dumps(item),flush=True)
         (directory/"benchmark.json").write_text(json.dumps(results,indent=2))
         snapshot("bench-"+name)
+    def finish():
+        report.update(passed=True,benchmark=results)
+        (directory/"benchmark.json").write_text(json.dumps(report,indent=2))
+        print("PASS: serial benchmark",flush=True)
+    if heavy:
+        tap(128,170); tap(131,185); key(0); key(8)
+        for box,level in ((1,23),(7,7),(8,11),(8,19),(9,17),(17,20)):
+            if state()["view"]==0:
+                key(3); key(7); key(7); key(8); settle(); key(0)
+            while state()["pack"]!=box-1: key(7)
+            run(120); tap(128,96); wait(lambda s:s["view"]==4); settle()
+            tap(*layout["levelpositions"][level-1]); wait(lambda s:s["view"]==0); settle()
+            wait(lambda s:not s["intro"])
+            assert state()["level"]==(box-1)*25+level-1,state()
+            measure(f"ropes-{box}-{level}")
+        finish(); return
     measure("title")
     tap(128,170); measure("settings")
     tap(131,185); assert state()["unlocked"]
-    key(0); tap(147,91); measure("customization")
+    key(0); tap(*layout["titlepositions"][1]); measure("customization")
     key(0); key(8); measure("boxes")
     key(8); key(8); settle(); wait(lambda s:s["ticks"]>=150)
     measure("cardboard-1")
@@ -47,6 +63,4 @@ def check(run,tap,key,state,settle,snapshot,report,directory):
     tap(*layout["levelpositions"][22]); wait(lambda s:s["view"]==0); settle(); wait(lambda s:not s["intro"])
     assert state()["level"]==422,state()
     measure("mechanical-23")
-    report.update(passed=True,benchmark=results)
-    (directory/"benchmark.json").write_text(json.dumps(report,indent=2))
-    print("PASS: serial benchmark",flush=True)
+    finish()

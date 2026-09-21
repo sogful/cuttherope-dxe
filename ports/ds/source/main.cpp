@@ -96,8 +96,10 @@ int main() {
         greeting = menu.door == 1 && !menu.replaypanel;
     };
     nocashMessage("CTRD DS: ready");
+    unsigned startedblank=vblanks;
     while (true) {
-        swiWaitForVBlank();
+        if (vblanks==startedblank) swiWaitForVBlank();
+        startedblank=vblanks;
         cpuStartTiming(0);
         DS_PROFILE_DO(profiling::begin());
         scanKeys();

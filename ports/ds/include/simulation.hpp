@@ -147,7 +147,7 @@ public:
     int disclayers = 0, dragdisc = -1, discside = 0, discevents = 0, ghostevents = 0;
     bool discdirection = false;
     point disctouch{};
-    void samples(int index, int first, int count, point* output, int& size) const;
+    void samples(int index, int first, int count, point* output, int& size, bool visual=false) const;
     const body& candy() const { return bodies[0]; }
     int candycount() const { return split ? halfalive[0] + halfalive[1] : 1; }
     int activecount() const { return candycount() + (definition.bulbcount && bulbalive); }

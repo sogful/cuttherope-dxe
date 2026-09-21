@@ -84,7 +84,8 @@ for name, (offset, size) in zip(effectnames, effects):
     pcm += b"\0" * (-len(pcm) % 4)
     assert data[offset:offset + size] == pcm, name
     assert size <= voice["maximum"]
-world = (generated / "nitro/world.bin").read_bytes()
+import backgroundstore
+world = backgroundstore.read(generated,"world")
 packs = json.loads((content / "ctroriginal_packs.json").read_text())
 for entry in backgrounds:
     box, sections = entry["box"], entry["sections"]

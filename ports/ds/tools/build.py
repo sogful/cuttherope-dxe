@@ -30,6 +30,8 @@ def main():
             (root/"tools/upperart.py",root/"tools/upperhud.py",root/"tools/uppermotion.py",root/"assets/feedcandy.png",root/"generated/menumanifest.json")):
         subprocess.run([sys.executable, "tools/upperart.py"], check=True)
     build = root / "build" / "profile" if args.profile else root / "build"
+    import backgroundstore
+    backgroundstore.update(root/"generated")
     dist = root / "dist"
     build.mkdir(parents=True, exist_ok=True)
     dist.mkdir(exist_ok=True)

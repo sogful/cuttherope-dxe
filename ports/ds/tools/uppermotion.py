@@ -1,4 +1,4 @@
-"""Exact software-shadow raster, stored as sparse pixel changes for the ARM9.
+"""Shared exact shadow samples with per-background palette lookup tables.
 
 The 75-second authored rotation is sampled every five game updates. Keyframes
 bound seeks to one second of sparse patches. No extra permanent frame buffer.
@@ -51,6 +51,9 @@ def bake(output,manifest,backgrounds,records,palettes,lookups,spans):
     scale=1781*2*(192/1440)/256
     yy,xx=np.mgrid[0:192,0:256]
     mask=(xx>=np.asarray(spans)[:,0,None])&(xx<np.asarray(spans)[:,1,None])
+    pigments=np.unique(source)
+    codes=np.zeros(256,dtype=np.uint8)
+    codes[pigments]=np.arange(len(pigments),dtype=np.uint8)
     samples=[]
     for step in range(steps):
         angle=4096+(step*interval)*32768//4500
@@ -62,32 +65,33 @@ def bake(output,manifest,backgrounds,records,palettes,lookups,spans):
         columns=(ux+xx*tx+yy*ty)>>16
         rows=(uy-xx*ty+yy*tx)>>16
         assert columns.min()>=0 and columns.max()<256 and rows.min()>=0 and rows.max()<256
-        samples.append(source[rows*256+columns])
+        samples.append(np.where(mask,0,codes[source[rows*256+columns]]).astype(np.uint8).ravel())
     entries=[]
     with (output/"nitro/uppermotion.bin").open("wb") as stream:
+        stream.write(bytes((steps+steps//keyinterval)*4))
+        offsets=[]; keys=[]
+        previous=samples[-1]
+        for step,current in enumerate(samples):
+            if step%keyinterval==0:
+                keys.append(stream.tell()); stream.write(lz(current.tobytes()))
+            delta=patch(previous,current)
+            offsets.append(stream.tell()); stream.write(struct.pack("<I",len(delta))); stream.write(delta)
+            previous=current
+        end=stream.tell(); stream.seek(0)
+        stream.write(struct.pack("<"+"I"*(steps+len(keys)),*offsets,*keys)); stream.seek(end)
         for ident,(offset,height,profile) in enumerate(records[:20]):
             if ident==2:  # Authored picker background has no shadow.
                 entries.append(-1); continue
-            print("Upper shadow playback",ident+1,"/ 20",flush=True)
-            base=np.frombuffer(backgrounds[offset:offset+49152],dtype=np.uint8).reshape(192,256)
+            print("Upper shadow palette",ident+1,"/ 20",flush=True)
             target=palettes[profile].astype(np.uint32)
-            table=np.empty((256,256),dtype=np.uint8)
-            for pixel in range(256):
+            table=np.empty((len(pigments),256),dtype=np.uint8)
+            for code,pixel in enumerate(pigments.astype(np.uint32)):
                 alpha=pixel>>3
                 rgb=colors[pixel&7]
                 mixed=((((rgb&0x7c1f)*(alpha+1)+(target&0x7c1f)*(31-alpha))>>5)&0x7c1f)|((((rgb&0x3e0)*(alpha+1)+(target&0x3e0)*(31-alpha))>>5)&0x3e0)
-                table[pixel]=lookups[profile][mixed] if alpha else np.arange(256,dtype=np.uint8)
-            index=stream.tell(); entries.append(index)
-            stream.write(bytes((steps+steps//keyinterval)*4))
-            offsets=[]; keys=[]
-            previous=np.where(mask,base,table[samples[-1],base]).astype(np.uint8).ravel()
-            for step,sample in enumerate(samples):
-                current=np.where(mask,base,table[sample,base]).astype(np.uint8).ravel()
-                if step%keyinterval==0:
-                    keys.append(stream.tell()); stream.write(lz(current.tobytes()))
-                offsets.append(stream.tell())
-                stream.write(patch(previous,current))
-                previous=current
-            end=stream.tell(); stream.seek(index)
-            stream.write(struct.pack("<"+"I"*(steps+len(keys)),*offsets,*keys)); stream.seek(end)
-    return entries
+                table[code]=lookups[profile][mixed] if alpha else np.arange(256,dtype=np.uint8)
+            assert len(pigments)<=32
+            rows=np.zeros((256,32),dtype=np.uint8)
+            rows[:,:len(pigments)]=table.T
+            entries.append(stream.tell()); stream.write(rows.tobytes())
+    return entries,256*32

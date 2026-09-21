@@ -73,7 +73,8 @@ assert len({record["page"] for record in manifest["sprites"]}) == len(manifest["
 assert manifest["texturebytes"] <= 384 * 1024
 assert manifest["upperbytes"] == 48 * 1024 and manifest["upperpalettebytes"] == 512
 upper=json.loads((generated/manifest["upper"]).read_text())
-assert (generated/"nitro/upperbg.bin").stat().st_size==upper["backgroundBytes"]
+import backgroundstore
+assert len(backgroundstore.read(generated,"upperbg"))==upper["backgroundBytes"]
 assert (generated/"nitro/upperpal.bin").stat().st_size==upper["paletteBytes"]==upper["palettes"]*(512+32768)
 assert (generated/"nitro/upperhud.bin").stat().st_size==upper["hudBytes"]
 assert (generated/"nitro/uppermotion.bin").stat().st_size==upper["motionBytes"]
@@ -83,7 +84,7 @@ for offset,height,palette in upper["backgrounds"]:
     assert height>=192 and offset+height*256<=upper["backgroundBytes"] and palette<upper["palettes"]
 import upperart
 import numpy as np
-backgrounddata=(generated/"nitro/upperbg.bin").read_bytes()
+backgrounddata=backgroundstore.read(generated,"upperbg")
 palettedata=(generated/"nitro/upperpal.bin").read_bytes()
 for box in range(17):
     original=Image.open(generated/f"background{box+1}x1.png").crop((0,0,256,192))

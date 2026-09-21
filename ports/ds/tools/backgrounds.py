@@ -1,6 +1,7 @@
 import json
 from PIL import Image
 import colors
+import backgroundstore
 from levels import boxes
 
 
@@ -57,7 +58,7 @@ def build(content, output, sources):
                     / ("background.png" if box == 0 else f"background{box + 1}.png")
                 )
         offsets.append(row)
-    (output / "nitro/world.bin").write_bytes(data)
+    backgroundstore.pack(output,"world",data,15)
     (output / "backgroundmanifest.json").write_text(json.dumps(records, indent=2))
     return (
         [f"inline constexpr unsigned backgrounds[{boxes}][3] = {{"]

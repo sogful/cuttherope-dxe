@@ -9,7 +9,7 @@ import uiscale
 
 def title(fit):
     factor=192/1440*fit*uiscale.title
-    return [[round(128+(x-1280)*factor),round(67+(y-410)*factor)]
+    return [[round(128+(x-1280)*factor),round(64+(y-410)*factor)]
             for x,y in ((1280,410),(1423,685.5),(1603,729.5))]
 
 

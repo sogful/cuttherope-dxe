@@ -42,3 +42,22 @@ def encode(images,lookup):
         alpha=(source[:,:,3]*31+127)//255
         result.extend((color|(alpha<<8)).astype("<u2").tobytes())
     return result
+
+
+def packed(images,palettes,lookups):
+    records=[]
+    for palette,lookup in zip(palettes,lookups):
+        raw=np.frombuffer(encode(images,lookup),dtype="<u2").copy()
+        raw[raw>>8==0]=0
+        tokens,codes=np.unique(raw,return_inverse=True)
+        assert len(tokens)<=224
+        table=np.empty((len(tokens),256),dtype=np.uint8)
+        target=palette.astype(np.uint32)
+        for code,token in enumerate(tokens):
+            alpha=int(token)>>8
+            rgb=int(palette[int(token)&255])
+            mixed=((((rgb&0x7c1f)*(alpha+1)+(target&0x7c1f)*(31-alpha))>>5)&0x7c1f)|((((rgb&0x3e0)*(alpha+1)+(target&0x3e0)*(31-alpha))>>5)&0x3e0)
+            table[code]=int(token)&255 if alpha==31 else lookup[mixed] if alpha else np.arange(256,dtype=np.uint8)
+        records.append((codes.astype(np.uint8).tobytes(),table.tobytes()))
+    size=max(len(table) for _,table in records)
+    return b"".join(codes+table+bytes(size-len(table)) for codes,table in records),len(records[0][0]),size

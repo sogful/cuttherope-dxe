@@ -19,6 +19,7 @@ void photo();
 void rect(clip bounds, unsigned color, int alpha);
 void line(int x, int y, int endx, int endy, unsigned color, int alpha);
 void finish();
+void acquire();
 void vblank();
 const unsigned char* pixels();
 const std::uint16_t* colors();

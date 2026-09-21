@@ -4,6 +4,8 @@
 #include "menuassets.hpp"
 #include "assets.hpp"
 #include "packed.hpp"
+#include "paged.hpp"
+#include "upperbgstore.hpp"
 #include "profiling.hpp"
 #include <nds.h>
 #include <algorithm>
@@ -34,6 +36,7 @@ static bool photograph = false;
 static bool moving = false;
 static bool mirrored = false;
 static bool starcovered=false, starcachevalid=false;
+static bool blendvalid[2]{},hudvalid=false;
 static int scrolltop=0;
 static constexpr clip starbounds{58,60,198,104};
 static_assert([] {
@@ -71,7 +74,11 @@ static bool read(FILE* file, unsigned offset, void* destination, unsigned bytes)
     if (!file || std::fseek(file,offset,SEEK_SET) || std::fread(destination,1,bytes,file)!=bytes) { fail(1); return false; }
     return true;
 }
-static bool keyframe(unsigned position) {
+static bool backgroundread(unsigned offset,void* destination,unsigned bytes) {
+    return paged::read(backgroundstore::upperbgpages,backgroundstore::upperbgshift,offset,destination,bytes,
+        [](unsigned physical,void* target,unsigned size) { return read(backgroundfile,physical,target,size); });
+}
+static bool keyframe(unsigned position, unsigned char* destination) {
     if (std::fseek(motionfile,position,SEEK_SET)) { fail(9); return false; }
     unsigned offset=0,available=0;
     auto next=[&]() -> int {
@@ -83,7 +90,7 @@ static bool keyframe(unsigned position) {
         }
         return input[offset++];
     };
-    if (!packed::stream(next,backdrop,256*192)) { fail(10); return false; }
+    if (!packed::stream(next,destination,256*192)) { fail(10); return false; }
     return true;
 }
 
@@ -122,7 +129,7 @@ void begin(int id, int top) {
     if (id != backgroundid || top < backgroundtop || top+192 > backgroundtop+208) {
         backgroundtop = top/16*16;
         const int rows = std::min(208,background.height-backgroundtop);
-        if (!read(backgroundfile,background.offset+backgroundtop*256,backdrop,rows*256)) return;
+        if (!backgroundread(background.offset+backgroundtop*256,backdrop,rows*256)) return;
         backgroundid = id;
     }
     std::memcpy(frontend::workspace(),backdrop+(top-backgroundtop)*256,256*192);
@@ -139,53 +146,104 @@ void begin(int id, int top) {
     ++age;
 }
 
+static entry* load(int id,unsigned size);
+static constexpr int motionbase=menuart::pagecount+21;
+static constexpr unsigned motioncache=256*192+upperart::motiontablebytes;
+
+static DS_HOT void remap(unsigned char* destination,const unsigned char* source,const unsigned char* codes,const unsigned char* table,unsigned size) {
+    for (unsigned i=0;i<size;++i) destination[i]=table[(source[i]<<5)|codes[i]];
+}
+
+struct playback {
+    int frame=-1;
+    unsigned bytes=0,consumed=0,fetched=0,offset=0,available=0,position=0,remaining=0;
+    const unsigned char *base=nullptr,*table=nullptr;
+    bool done=false;
+};
+static playback movie;
+
+static bool startpatch(int frame) {
+    const auto* index=reinterpret_cast<const unsigned*>(backdrop+256*192);
+    movie.frame=frame; movie.done=false;
+    movie.consumed=movie.fetched=movie.offset=movie.available=movie.remaining=0;
+    return read(motionfile,index[frame],&movie.bytes,4);
+}
+
+static DS_HOT bool advancepatch(unsigned budget) {
+    const unsigned limit=std::min(movie.bytes,movie.consumed+budget);
+    auto next=[]() -> unsigned {
+        if (movie.offset==movie.available) {
+            movie.available=std::fread(input,1,std::min(static_cast<unsigned>(sizeof(input)),movie.bytes-movie.fetched),motionfile);
+            movie.offset=0; movie.fetched+=movie.available; readbytes+=movie.available;
+            DS_PROFILE_DO(profiling::data[profiling::upperreads]+=movie.available);
+            if (!movie.available) { fail(7); return 255; }
+        }
+        ++movie.consumed;
+        return input[movie.offset++];
+    };
+    while (!movie.done && movie.consumed<limit) {
+        if (!movie.remaining) {
+            movie.position=next(); movie.position|=next()<<8;
+            if (movie.position==65535) { movie.done=true; break; }
+            movie.remaining=next(); movie.remaining|=next()<<8;
+            if (movie.position+movie.remaining>256*192 || movie.remaining>movie.bytes-movie.consumed) { fail(8); return false; }
+        }
+        if (movie.consumed>=limit) break;
+        if (movie.offset==movie.available) {
+            const unsigned code=next();
+            backdrop[movie.position]=movie.table[(movie.base[movie.position]<<5)|code];
+            ++movie.position; --movie.remaining;
+        }
+        const unsigned amount=std::min({movie.remaining,movie.available-movie.offset,limit-movie.consumed});
+        remap(backdrop+movie.position,movie.base+movie.position,input+movie.offset,movie.table,amount);
+        movie.position+=amount; movie.remaining-=amount; movie.offset+=amount; movie.consumed+=amount;
+        if (error) return false;
+    }
+    return true;
+}
+
 bool menu(int id,unsigned frame) {
     static int previous=-1;
     const bool animated=upperart::motion[id]>=0;
     const int step=animated?(frame/upperart::motioninterval)%upperart::motionsteps:0;
-    const bool changed=id!=backgroundid;
-    if (!changed && previous==step) return false;
+    const bool changed=id!=backgroundid || version!=frontend::workgeneration();
+    if (!changed && previous==step) {
+        if (animated) {
+            if (movie.frame<0 && !startpatch((step+1)%upperart::motionsteps)) return false;
+            if (!movie.done) advancepatch((movie.bytes+3)/4);
+        }
+        return false;
+    }
+    if (changed) movie.frame=-1;
     begin(id);
     if (animated) {
         // The scrolling background's spare sixteen rows hold the on-disk index.
         constexpr int entries=upperart::motionsteps+upperart::motionsteps/upperart::motionkey;
         static_assert(entries*4<=256*16);
         auto* index=reinterpret_cast<unsigned*>(backdrop+256*192);
-        if (changed && !read(motionfile,upperart::motion[id],index,entries*4)) return false;
+        if (changed && !read(motionfile,0,index,entries*4)) return false;
+        auto* cached=load(motionbase+id,motioncache);
+        if (!cached) return false;
+        const auto* base=frontend::workspace()+cachestart+cached->start;
+        const auto* table=base+256*192;
+        movie.base=base; movie.table=table;
         int first=previous+1;
         if (!changed && previous==upperart::motionsteps-1 && step==0) first=0;
         else if (changed || step<previous || step-previous>=upperart::motionkey) {
             const int key=step/upperart::motionkey;
-            if (!keyframe(index[upperart::motionsteps+key])) return false;
+            auto* codes=frontend::workspace();
+            if (!keyframe(index[upperart::motionsteps+key],codes)) return false;
+            remap(backdrop,base,codes,table,256*192);
             first=key*upperart::motionkey+1;
+            movie.frame=-1;
         }
         for (int current=first;current<=step;++current) {
-            if (std::fseek(motionfile,index[current],SEEK_SET)) { fail(6); return false; }
-            unsigned offset=0,available=0;
-            auto next=[&]() -> unsigned {
-                if (offset==available) {
-                    available=std::fread(input,1,sizeof(input),motionfile); offset=0;
-                    readbytes+=available;
-                    DS_PROFILE_DO(profiling::data[profiling::upperreads]+=available);
-                    if (!available) { fail(7); return 255; }
-                }
-                return input[offset++];
-            };
-            for (;;) {
-                unsigned position=next(); position|=next()<<8;
-                if (position==65535) break;
-                unsigned length=next(); length|=next()<<8;
-                if (position+length>256*192) { fail(8); return false; }
-                while (length) {
-                    if (offset==available) { backdrop[position++]=next(); --length; }
-                    const unsigned amount=std::min(length,available-offset);
-                    std::memcpy(backdrop+position,input+offset,amount);
-                    position+=amount; offset+=amount; length-=amount;
-                }
-            }
+            if (movie.frame!=current && !startpatch(current)) return false;
+            if (!movie.done && !advancepatch(movie.bytes)) return false;
         }
         std::memcpy(frontend::workspace(),backdrop,256*192);
     }
+    movie.frame=-1;
     previous=step;
     return true;
 }
@@ -205,12 +263,18 @@ static entry* load(int id, unsigned size) {
     target->id=id; target->start=cursor; target->size=size; target->touched=age;
     cursor += size;
     auto* destination = frontend::workspace()+cachestart+target->start;
+    if (id>=motionbase) {
+        const int background=id-motionbase;
+        if (!backgroundread(upperart::backgrounds[background].offset,destination,256*192) ||
+            !read(motionfile,upperart::motion[background],destination+256*192,upperart::motiontablebytes)) return nullptr;
+        return target;
+    }
     if (id==menuart::pagecount) {
         if (!read(photofile,0,destination,upperart::photowidth*upperart::photoheight*2)) return nullptr;
         return target;
     }
     if (id>menuart::pagecount) {
-        if (!read(hudfile,(id-menuart::pagecount-1)*upperart::hudbytes,destination,upperart::hudbytes)) return nullptr;
+        if (!read(hudfile,(id-menuart::pagecount-1)*(upperart::hudbytes+upperart::hudtablebytes),destination,upperart::hudbytes)) return nullptr;
         return target;
     }
     const auto& page = menuart::pages[id];
@@ -319,7 +383,8 @@ static const unsigned char* blendtable(const std::uint16_t* colors,int bits,int 
     static key keys[2];
     auto& key=keys[slot];
     auto* table=frontend::workspace()+65536*(slot+1);
-    if (key.profile!=paletteid || key.stamp!=frontend::workgeneration(65536) || key.page!=id || key.light!=brightness || key.ink!=color || key.opacity!=alpha) {
+    if (!blendvalid[slot] || key.profile!=paletteid || key.stamp!=frontend::workgeneration(65536) || key.page!=id || key.light!=brightness || key.ink!=color || key.opacity!=alpha) {
+        if (!slot) hudvalid=false;
         const unsigned mask=(1u<<(8-bits))-1, maximum=(1u<<bits)-1;
         for (unsigned pixel=0;pixel<256;++pixel) {
             auto* row=table+(pixel<<8);
@@ -334,6 +399,7 @@ static const unsigned char* blendtable(const std::uint16_t* colors,int bits,int 
                 row[destination]=amount?lookup[blend(rgb,palette[destination],amount)]:destination;
         }
         key={frontend::workgeneration(65536),color,paletteid,id,brightness,alpha};
+        blendvalid[slot]=true;
     }
     return table;
 }
@@ -382,9 +448,27 @@ static DS_HOT void blit(const texture& source,const transform& t,int flip,int al
         aligned(source,t,flip,nullptr,table);
         return;
     }
-    unsigned values[256]{};
+    struct colorset {
+        unsigned values[256]{},ink=0,stamp=0;
+        std::uint16_t palette[32]{};
+        int profile=-1,bits=0,alpha=-1,light=-1;
+    };
+    static colorset sets[8];
+    static unsigned stamp=0;
+    unsigned* values=nullptr;
     if (!source.direct) {
         const unsigned bits=8-source.bits, mask=(1u<<bits)-1;
+        colorset* selected=nullptr;
+        for (auto& entry:sets) if (entry.profile==paletteid && entry.bits==source.bits && entry.alpha==alpha &&
+            entry.light==brightness && entry.ink==color && !std::memcmp(entry.palette,source.palette,(mask+1)*2)) {
+            selected=&entry; break;
+        }
+        if (!selected) {
+        selected=&sets[0];
+        for (auto& entry:sets) if (entry.stamp<selected->stamp) selected=&entry;
+        selected->profile=paletteid; selected->bits=source.bits; selected->alpha=alpha; selected->light=brightness; selected->ink=color;
+        std::memcpy(selected->palette,source.palette,(mask+1)*2);
+        values=selected->values;
         unsigned pigments[32];
         for (unsigned i=0;i<=mask;++i) {
             const unsigned rgb=tint(source.palette[i],color);
@@ -394,6 +478,8 @@ static DS_HOT void blit(const texture& source,const transform& t,int flip,int al
             const unsigned opacity=source.bits==3?((i>>5)*alpha+3)/7:((i>>3)*alpha+15)/31;
             values[i]=pigments[i&mask]|(opacity<<16);
         }
+        }
+        selected->stamp=++stamp; values=selected->values;
     }
     if (!source.direct && !t.xy && !t.yx && !photograph) {
         aligned(source,t,flip,values,table);
@@ -483,15 +569,22 @@ void DS_HOT hud(int id,int x,int y) {
     auto* cached=load(menuart::pagecount+1+paletteid,upperart::hudbytes);
     if (!cached) return;
     const auto& glyph=upperart::hud[id];
-    const auto* source=reinterpret_cast<const std::uint16_t*>(frontend::workspace()+cachestart+cached->start)+glyph.offset;
+    static int profile=-1;
+    static unsigned stamp=~0u;
+    static_assert(upperart::hudtablebytes<=65536-8192);
+    auto* table=frontend::workspace()+65536+8192;
+    if (!hudvalid || profile!=paletteid || stamp!=frontend::workgeneration(65536)) {
+        if (!read(hudfile,paletteid*(upperart::hudbytes+upperart::hudtablebytes)+upperart::hudbytes,table,upperart::hudtablebytes)) return;
+        profile=paletteid; stamp=frontend::workgeneration(65536); hudvalid=true; blendvalid[0]=false;
+    }
+    const auto* source=frontend::workspace()+cachestart+cached->start+glyph.offset;
     x+=glyph.ox; y+=glyph.oy;
     for (int row=std::max(0,-y);row<std::min(glyph.height,192-y);++row) {
         auto* target=frontend::workspace()+(y+row)*256;
         const auto* line=source+row*glyph.width;
         for (int column=std::max(0,-x);column<std::min(glyph.width,256-x);++column) {
-            const unsigned pixel=line[column],alpha=pixel>>8;
-            if (alpha==31) target[x+column]=pixel;
-            else if (alpha) target[x+column]=lookup[blend(palette[pixel&255],palette[target[x+column]],alpha)];
+            const unsigned pixel=line[column];
+            if (pixel) target[x+column]=table[(pixel<<8)|target[x+column]];
         }
     }
 }
@@ -517,6 +610,7 @@ void stars(const int* frames) {
     std::copy(frames,frames+3,previous);
     background=backgroundid; top=scrolltop; stamp=frontend::workgeneration(65536);
     starcachevalid=true;
+    blendvalid[0]=false;
 }
 void photo() {
     auto* cached=load(menuart::pagecount,upperart::photowidth*upperart::photoheight*2);
@@ -565,6 +659,12 @@ void finish() {
 #else
     frontend::submit();
     ++completed;
+#endif
+}
+void acquire() {
+#ifdef __NDS__
+    DS_SCOPE(wait);
+    while (pending) swiWaitForVBlank();
 #endif
 }
 void vblank() {

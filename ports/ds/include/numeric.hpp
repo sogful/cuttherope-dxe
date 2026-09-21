@@ -22,4 +22,15 @@ inline float subtract(float a, float b) {
     return value(sign | ((exponent - shift) << 23) | ((magnitude << shift) & 0x7fffff));
 }
 
+template<unsigned factor> inline float scale(float a) {
+    static_assert(factor>=2 && factor<=127);
+    constexpr unsigned high=32-__builtin_clz(factor-1);
+    const unsigned raw=bits(a),exponent=(raw>>23)&255;
+    if (!exponent || exponent+high>=255) return a*factor;
+    const unsigned product=((raw&0x7fffffu)|0x800000u)*factor;
+    const unsigned shift=(product&(1u<<(23+high)))?high:high-1;
+    const unsigned rounded=(product+(1u<<(shift-1))-1+((product>>shift)&1))>>shift;
+    return value((raw&0x80000000u)+((exponent+shift-1)<<23)+rounded);
+}
+
 }

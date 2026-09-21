@@ -22,8 +22,34 @@ static void reference(int id,int x,int y,float zoom,unsigned ink=0x7fff) {
         source.x,source.y,source.w,source.h,source.ox,source.oy,page.alphabits,static_cast<bool>(page.direct)},transform,0,31,ink);
 }
 int main(int argc,char** argv) {
-    assert(argc==2);
+    assert(argc==2 || argc==3);
     upper::initialize(argv[1]);
+    if (argc==3) {
+        FILE* file=std::fopen(argv[2],"rb"); assert(file);
+        std::vector<std::uint16_t> original(upperart::hudbytes);
+        for (int scene=0;scene<20;++scene) {
+            assert(std::fread(original.data(),2,original.size(),file)==original.size());
+            for (int id=0;id<21;++id) for (int left : {-10,128,260}) {
+                upper::begin(scene);
+                for (int i=0;i<256*192;++i) frontend::workspace()[i]=(i*71+i/256*13)&255;
+                std::vector<unsigned char> expected(upper::pixels(),upper::pixels()+256*192);
+                const auto& glyph=upperart::hud[id];
+                const int x=left+glyph.ox,y=96+glyph.oy;
+                for (int row=0;row<glyph.height;++row) for (int column=0;column<glyph.width;++column) {
+                    const int px=x+column,py=y+row;
+                    if (px<0 || px>=256 || py<0 || py>=192) continue;
+                    const unsigned pixel=original[glyph.offset+row*glyph.width+column],alpha=pixel>>8;
+                    auto& target=expected[py*256+px];
+                    if (alpha==31) target=pixel;
+                    else if (alpha) target=upper::lookup[upper::blend(upper::palette[pixel&255],upper::palette[target],alpha)];
+                }
+                upper::hud(id,left,96);
+                assert(std::equal(expected.begin(),expected.end(),upper::pixels()));
+            }
+        }
+        std::fclose(file);
+        std::puts("PASS: all 21 native HUD glyphs / 20 palettes / clipped positions match retained RGBA compositing exactly");
+    }
     ui::controller menu;
     dx::simulation game;
     game.reset(dx::levels[0]);
@@ -191,6 +217,21 @@ int main(int argc,char** argv) {
         for (int i=0;i<256*192;++i) difference+=actual[i]!=upper::pixels()[i];
         // Python double vs ARM/host float can round one 16.16 edge differently.
         assert(difference<32);
+    }
+    for (int id=0;id<20;++id) {
+        upper::begin(upperart::worlds[0][0]);
+        assert(upper::menu(id,0));
+        const unsigned visible=hash();
+        for (unsigned frame=1;frame<5;++frame) {
+            assert(!upper::menu(id,frame));
+            assert(hash()==visible);
+        }
+        if (id!=2) {
+            assert(upper::menu(id,5));
+            const unsigned finished=hash();
+            upper::begin(upperart::worlds[0][0]);
+            assert(upper::menu(id,5) && hash()==finished);
+        }
     }
     upper::begin(upperart::worlds[0][0]);
     for (unsigned frame=0;frame<9000;frame+=5) {

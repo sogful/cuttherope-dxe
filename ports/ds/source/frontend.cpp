@@ -3,6 +3,8 @@
 #include "upperassets.hpp"
 #include "menuassets.hpp"
 #include "packed.hpp"
+#include "paged.hpp"
+#include "worldstore.hpp"
 #include "trace.hpp"
 #include "result.hpp"
 #include "geometry.hpp"
@@ -253,11 +255,11 @@ void present(bool synchronize) {
 }
 
 int background(int box, int sections, int top, int texture) {
-    FILE* file = std::fopen("nitro:/world.bin", "rb");
+    static FILE* file = std::fopen("nitro:/world.bin", "rb");
     const unsigned offset = art::backgrounds[box][std::clamp(sections, 1, 3) - 1] + top * 512;
     auto* pixels = staging(131072);
-    const bool valid = file && !std::fseek(file, offset, SEEK_SET) && std::fread(pixels, 1, 131072, file) == 131072;
-    if (file) std::fclose(file);
+    const bool valid = file && paged::read(backgroundstore::worldpages,backgroundstore::worldshift,offset,pixels,131072,
+        [&](unsigned physical,void* target,unsigned bytes) { return !std::fseek(file,physical,SEEK_SET) && std::fread(target,1,bytes,file)==bytes; });
     if (!valid) { nocashMessage("CTRD DS: background read failed"); while (true) swiWaitForVBlank(); }
     if (!texture) glGenTextures(1, &texture);
     glBindTexture(0, texture);

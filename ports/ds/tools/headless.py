@@ -49,6 +49,7 @@ def main():
     parser.add_argument("--upper", action="store_true", help="Check dual-screen menus, HUD, flashes, flaps and tall camera")
     parser.add_argument("--finished", action="store_true", help="Profile-only final-level popup test with synthetic completion")
     parser.add_argument("--benchmark", action="store_true", help="Measure DS update timing and host throughput without profiling overhead")
+    parser.add_argument("--ropebench", action="store_true", help="Benchmark six authored rope-heavy levels (with --benchmark)")
     parser.add_argument("--label", default="current", help="Benchmark output label")
     parser.add_argument("--first-box", type=int, default=1, choices=range(1,18))
     parser.add_argument("--last-box", type=int, default=17, choices=range(1,18))
@@ -358,7 +359,7 @@ def main():
         assert title["view"] == 5 and title["ticks"] == 0 and title["frames"] > 40, title
         if args.benchmark:
             import benchmark
-            benchmark.check(run,tap,key,telemetry,settle,snapshot,report,directory)
+            benchmark.check(run,tap,key,telemetry,settle,snapshot,report,directory,args.ropebench)
             return
         if args.upper:
             import uppercheck

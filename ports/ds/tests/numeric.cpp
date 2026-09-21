@@ -7,6 +7,14 @@ int main() {
     unsigned random = 0x4583a671;
     auto next = [&]() { random ^= random << 13; random ^= random >> 17; random ^= random << 5; return random; };
     auto check = [&](float a, float b) {
+        const float scaled[]={numeric::scale<50>(a),numeric::scale<51>(a),numeric::scale<100>(a)};
+        const float multipliers[]={50,51,100};
+        for (int i=0;i<3;++i) {
+            const float expected=a*multipliers[i];
+            if (numeric::bits(scaled[i])!=numeric::bits(expected) && !(std::isnan(scaled[i]) && std::isnan(expected))) {
+                std::printf("Scale mismatch: %08x * %.0f -> %08x != %08x\n",numeric::bits(a),multipliers[i],numeric::bits(scaled[i]),numeric::bits(expected)); return false;
+            }
+        }
         const float actual = numeric::subtract(a, b), expected = a - b;
         if (numeric::bits(actual) != numeric::bits(expected) && !(std::isnan(actual) && std::isnan(expected))) {
             std::printf("Mismatch: %08x %08x -> %08x != %08x\n", numeric::bits(a), numeric::bits(b), numeric::bits(actual), numeric::bits(expected));

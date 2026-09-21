@@ -6,6 +6,7 @@ from pathlib import Path
 import struct
 
 import numpy as np
+import backgroundstore
 from PIL import Image
 
 root = Path(__file__).resolve().parents[1]
@@ -79,7 +80,7 @@ def main():
         print("Upper palette", index+1, "/", len(samples), flush=True)
     palettebytes = b"".join(colors.astype("<u2").tobytes()+lookup.tobytes() for colors,lookup in zip(palettes,lookups))
     (output/"nitro/upperpal.bin").write_bytes(palettebytes)
-    hudbytes=b"".join(upperhud.encode(hudimages,lookup) for lookup in lookups)
+    hudbytes,hudpixels,hudtable=upperhud.packed(hudimages,palettes,lookups)
     (output/"nitro/upperhud.bin").write_bytes(hudbytes)
     preview=Image.new("RGBA",(256,96))
     for index in range(3): preview.alpha_composite(hudimages[(0,5,10)[index]],(index*80+15,0))
@@ -111,7 +112,7 @@ def main():
             extended.paste(image,(0,192))
             row.append(background(dim(extended,17),3+box))
         gamebacks.append(row)
-    (output/"nitro/upperbg.bin").write_bytes(backgrounds)
+    backgroundstore.pack(output,"upperbg",backgrounds,14)
     pixels = np.asarray(photo,dtype=np.uint16)
     rgb = pixels[:,:,:3]*31//255
     packed = rgb[:,:,0] | (rgb[:,:,1]<<5) | (rgb[:,:,2]<<10) | ((pixels[:,:,3]>0).astype(np.uint16)<<15)
@@ -122,7 +123,7 @@ def main():
         row=y-(96-photo.height//2)
         columns=np.flatnonzero(mask[row]) if 0<=row<photo.height else []
         spans.append((128-photo.width//2+int(columns[0]),128-photo.width//2+int(columns[-1])+1) if len(columns) else (0,0))
-    motion=uppermotion.bake(output,manifest,backgrounds,records,palettes,lookups,spans)
+    motion,motiontablebytes=uppermotion.bake(output,manifest,backgrounds,records,palettes,lookups,spans)
     header = ["#pragma once", "namespace upperart {", "struct background { unsigned offset; int height, palette; };",
         "inline constexpr background backgrounds[] = {"+",".join("{"+",".join(map(str,item))+"}" for item in records)+"};",
         "inline constexpr int menus[] = {"+",".join(map(str,mainmenus))+"};",
@@ -130,17 +131,17 @@ def main():
         "inline constexpr int worlds[17][3] = {"+",".join("{"+",".join(map(str,row))+"}" for row in gamebacks)+"};",
         f"inline constexpr int photowidth = {photo.width}, photoheight = {photo.height};",
         "inline constexpr unsigned char photospans[192][2] = {"+",".join("{"+",".join(map(str,row))+"}" for row in spans)+"};",
-        f"inline constexpr unsigned hudbytes = {len(hudbytes)//len(lookups)};",
+        f"inline constexpr unsigned hudbytes = {hudpixels}, hudtablebytes = {hudtable};",
         "struct glyph { unsigned offset; int width,height,ox,oy,advance; };",
         "inline constexpr glyph hud[] = {"+",".join("{"+",".join(map(str,row))+"}" for row in hudrecords)+"};",
         "inline constexpr int motion[] = {"+",".join(map(str,motion))+"};",
-        f"inline constexpr int motionsteps={uppermotion.steps}, motioninterval={uppermotion.interval}, motionkey={uppermotion.keyinterval};", "}"]
+        f"inline constexpr int motionsteps={uppermotion.steps}, motioninterval={uppermotion.interval}, motionkey={uppermotion.keyinterval}, motiontablebytes={motiontablebytes};", "}"]
     (output/"upperassets.hpp").write_text("\n".join(header)+"\n")
     (output/"uppermanifest.json").write_text(json.dumps(dict(palettes=len(palettes), backgrounds=records,
         photoSize=list(photo.size), menuManifestSha256=hashlib.sha256((output/"menumanifest.json").read_bytes()).hexdigest(),
         photoSha256=hashlib.sha256((root/"assets/feedcandy.png").read_bytes()).hexdigest(),
         dim=17/31, paletteBytes=len(palettebytes), backgroundBytes=len(backgrounds),hudRecords=hudrecords,
-        hudBytes=len(hudbytes),motionOffsets=motion,motionBytes=(output/"nitro/uppermotion.bin").stat().st_size),indent=2))
+        hudBytes=len(hudbytes),hudFormat=2,hudPixelBytes=hudpixels,hudTableBytes=hudtable,motionFormat=2,motionTableBytes=motiontablebytes,motionOffsets=motion,motionBytes=(output/"nitro/uppermotion.bin").stat().st_size),indent=2))
 
 
 if __name__ == "__main__":

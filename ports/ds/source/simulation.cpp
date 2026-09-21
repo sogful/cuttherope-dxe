@@ -178,7 +178,10 @@ DS_HOT void simulation::solve(const rope& item) {
             const body& second = bodies[link.other];
             assert(count < static_cast<int>(std::size(operations)));
             operations[count++] = {positions + id, positions + link.other, link.length, first.inverse,
-                second.inverse, first.inverse + second.inverse, (second.pinned ? 2u : 0u) | (link.maximum ? 4u : 0u)};
+                second.inverse, first.inverse + second.inverse, (second.pinned ? 2u : 0u) | (link.maximum ? 4u : 0u) |
+                (first.inverse==second.inverse ? 8u : 0u) | (first.inverse==1 ? 16u : 0u) |
+                (first.inverse==50 ? 32u : 0u) | (second.inverse==50 ? 64u : 0u) |
+                (first.inverse+second.inverse==100 ? 128u : first.inverse+second.inverse==51 ? 256u : 0u)};
         }
     }
     for (int iteration = 0; iteration < 30; ++iteration) for (int i = 0; i < count; ++i) {
@@ -191,9 +194,12 @@ DS_HOT void simulation::solve(const rope& item) {
         }
         const float length = difference.length();
         if ((op.flags & 4) && length <= op.length) continue;
-        const float factor = numeric::subtract(length, op.length) / (distancefloor(length) * op.sum);
-        *op.first = *op.first + difference * (op.inverse * factor);
-        if (!(op.flags & 2)) *op.second = *op.second - difference * (op.otherinverse * factor);
+        const float floor=distancefloor(length);
+        const float denominator=(op.flags&128)?numeric::scale<100>(floor):(op.flags&256)?numeric::scale<51>(floor):floor*op.sum;
+        const float factor = numeric::subtract(length, op.length) / denominator;
+        const point displacement=difference*((op.flags&16)?factor:(op.flags&32)?numeric::scale<50>(factor):op.inverse*factor);
+        *op.first = *op.first + displacement;
+        if (!(op.flags & 2)) *op.second = *op.second - ((op.flags&8)?displacement:difference*((op.flags&64)?numeric::scale<50>(factor):op.otherinverse*factor));
     }
     for (int i = 0; i < bodycount; ++i) bodies[i].pos = positions[i];
 #endif
@@ -436,7 +442,7 @@ bool simulation::tap(point position) {
     return sever(chosen, segment);
 }
 
-DS_HOT void simulation::samples(int index, int first, int count, point* output, int& size) const {
+DS_HOT void simulation::samples(int index, int first, int count, point* output, int& size, bool visual) const {
     DS_SCOPE(samples);
     size = 0;
     if (count < 3) return;
@@ -478,6 +484,28 @@ DS_HOT void simulation::samples(int index, int first, int count, point* output, 
                 row[0] *= u;
             }
         }
+    }
+    std::int32_t xs[32],ys[32];
+    if (visual) for (int part=0;part<count;++part) {
+        const auto& p=bodies[item.bodies[first+part]].pos;
+        if ((numeric::bits(p.x)&0x7fffffffu)>=0x47000000u || (numeric::bits(p.y)&0x7fffffffu)>=0x47000000u) { visual=false; break; }
+        xs[part]=static_cast<std::int32_t>(p.x*65536); ys[part]=static_cast<std::int32_t>(p.y*65536);
+    }
+    if (visual) {
+        for (int sample=0;sample<=steps;++sample) {
+            std::int64_t x=0,y=0;
+            for (int part=0;part<count;++part) {
+                const unsigned bits=numeric::bits(weights[sample*count+part]);
+                const int shift=126-static_cast<int>(bits>>23);
+                if (shift>24) continue;
+                const unsigned mantissa=(bits&0x7fffffu)|0x800000u;
+                const unsigned weight=shift<0?mantissa<<1:mantissa>>shift;
+                x+=static_cast<std::int64_t>(xs[part])*weight;
+                y+=static_cast<std::int64_t>(ys[part])*weight;
+            }
+            output[size++]={static_cast<std::int32_t>(x>>24)*(1.0f/65536),static_cast<std::int32_t>(y>>24)*(1.0f/65536)};
+        }
+        return;
     }
     for (int sample = 0; sample <= steps; ++sample) {
         point position{};
