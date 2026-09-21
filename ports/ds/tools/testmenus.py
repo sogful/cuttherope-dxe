@@ -4,7 +4,9 @@ import re
 import shutil
 import struct
 import subprocess
+import xml.etree.ElementTree as xml
 from pathlib import Path
+from levels import boxes
 
 from PIL import Image, ImageFilter
 
@@ -84,7 +86,10 @@ checked = 0
 previews = 0
 spriteids = {item["name"]:i for i,item in enumerate(manifest["sprites"])}
 circles = [item for item in manifest['sprites'] if 'catchRadius' in (item.get('source') or {})]
-assert len(circles) == 22
+expectedradii = {int(float(node.get("radius"))*3) for box in range(1,boxes+1) for level in range(1,26)
+    for node in xml.parse(repo/f"content/maps/{box}_{level}.xml").iter()
+    if node.tag in ("grab","ghost") and float(node.get("radius",-1)) >= 0}
+assert {item["source"]["catchRadius"] for item in circles} == expectedradii
 for item in circles:
     page = manifest['pages'][item['page']]
     assert page['alphabits'] == 5 and not page['dither']
@@ -92,7 +97,7 @@ for item in circles:
     visible = [p for p in image.getdata() if p[3] > 32]
     assert len({p[3] for p in visible}) > 8, 'Catch radius lost its supersampled alpha fringe'
     assert all(p[2] > p[1] > p[0] for p in visible), 'DX catch radius must be blue, not black'
-for stem, count, step in (("electro",5,1),("hat",5,1),("rail",5,1),("merge",5,1),("bouncer",10,1),("seat",10,1),("pump",4,2),("spike",4,2),("wheel",4,1),("gravity",3,1),("tool",8,1),("spider",13,1)):
+for stem, count, step in (("electro",5,1),("hat",5,1),("rail",5,1),("merge",5,1),("bouncer",10,1),("seat",boxes,1),("pump",4,2),("spike",4,2),("wheel",4,1),("gravity",3,1),("tool",8,1),("spider",13,1),("ghost",7,1),("ghosthook",2,1)):
     assert all(spriteids[stem+str(i)] == spriteids[stem+"0"] + i*step for i in range(count)), (stem,"Renderer animation IDs must match the atlas registration")
 for item in manifest["sprites"]:
     source = item.get("source") or {}

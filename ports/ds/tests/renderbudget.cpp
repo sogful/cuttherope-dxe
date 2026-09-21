@@ -3,7 +3,7 @@
 #include <cassert>
 namespace trace { system trail; }
 int main(int argc, char** argv) {
-    assert(argc==2);
+    assert(argc==2 || argc==3);
     ui::controller menu;
     dx::simulation game;
     unsigned peak=0, cases=0, failed=0;
@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
         assert(hud == 2);
     }
     std::puts("PASS: HUD retained through opening, replay, quit and result closing flaps");
-    for(int locale=0; locale<12; ++locale) for(int level=0; level<static_cast<int>(dx::levels.size()); ++level) {
+    for(int locale=0; argc==2 && locale<12; ++locale) for(int level=0; level<static_cast<int>(dx::levels.size()); ++level) {
         menu.locale=locale;
         game.reset(dx::levels[level]); game.state=dx::outcome::won;
         game.resulttick=200; game.resultvisual=200; game.ticks=200;
@@ -63,7 +63,46 @@ int main(int argc, char** argv) {
             ++cases;
         }
     }
+    for (int level=250; level<300; ++level) {
+        const auto& data=dx::levels[level];
+        int combinations=1;
+        for (int i=0; i<data.ghostcount; ++i) combinations*=3;
+        if (data.disccount) combinations=data.disccount*4;
+        for (int combination=0; combination<combinations; ++combination) {
+            game.reset(data); game.introduction=false;
+            for (int i=0, value=combination; i<data.ghostcount; ++i,value/=3) {
+                const int form=2<<(value%3);
+                for (int old : {2,4,8}) if (old!=form && (data.ghosts[i].forms&old)) { game.ghostform(i,old); break; }
+                if (data.ghosts[i].forms&form) game.ghostform(i,form);
+                game.ghosts[i].age=.06f;
+            }
+            for (auto& app : game.apparitions) if (app.form) { app.age=.24f; if (app.retirement>=0) app.retirement=.08f; }
+            if (data.disccount) {
+                game.pressdisc(game.dischandle(combination%data.disccount,true));
+                for (int i=0; i<game.disclayers; ++i) { game.discorder[i].fade=.2f; game.discorder[i].angle=(combination/data.disccount)*45; }
+            }
+            menu.pack=level/25; menu.level=level%25;
+            for (int skin=0; skin<16; ++skin) for (int phase=0; phase<3; ++phase) for (int camera=0; camera<3; ++camera) {
+                menu.skins[2]=skin; menu.locale=skin%12;
+                menu.mode=phase==0?ui::view::playing:phase==1?ui::view::paused:ui::view::results;
+                menu.door=0; menu.age=4; game.visuals=80; game.cameray=camera*(data.height-1440)/2;
+                try { frontend::preparegame(menu,game,80); frontend::prepareoverlay(menu,game); }
+                catch (const std::runtime_error&) { ++failed; }
+                bool needed[menuart::pagecount]{}; unsigned size=reserved;
+                for (int i=0; i<frontend::count; ++i) {
+                    const auto& command=frontend::commands[i];
+                    if(command.id<0 || !frontend::visible(command)) continue;
+                    const int page=menuart::sprites[command.id].page;
+                    if(!needed[page]) size+=frontend::bytes(page);
+                    needed[page]=true;
+                }
+                if(size>peak) { peak=size; peaklevel=level; peakskin=skin; peakage=combination; peaklocale=menu.locale; peakphase=phase; std::copy(std::begin(needed),std::end(needed),peakpages); }
+                ++cases;
+            }
+        }
+    }
     std::printf("Working sets: %u cases, peak %u / 393216 bytes at %d-%d costume %d age %d locale %d phase %d; %u failures\n",cases,peak,peaklevel/25+1,peaklevel%25+1,peakskin,peakage,peaklocale,peakphase,failed);
+    assert(!frontend::renderfault);
     if(failed) for(int i=0;i<menuart::pagecount;++i) if(peakpages[i]) std::printf("Page %d: %u bytes\n",i,frontend::bytes(i));
     frontend::reset(); frontend::reserve(reserved);
     frontend::catalog=std::fopen(argv[1],"rb"); assert(frontend::catalog);

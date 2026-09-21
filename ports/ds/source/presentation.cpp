@@ -151,7 +151,7 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
     const int backgroundy = backgroundtop - static_cast<int>(std::round(cameray * scale));
     glSprite(0, backgroundy, GL_FLIP_NONE, &background);
     frontend::render(false, true);
-    for (int index = 0; index < game.definition.hookcount; ++index) if (!game.definition.hooks[index].rail) image(art::hookback, game.anchors[index]);
+    for (int index = 0; index < game.definition.hookcount; ++index) if (!game.definition.hooks[index].rail && !game.ghostapp(4,index)) image(art::hookback, game.anchors[index]);
     for (int index = 0; index < game.definition.hookcount; ++index) {
         const dx::rope& item = game.ropes[index];
         const auto& hook = game.definition.hooks[index];
@@ -160,7 +160,7 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
             strand(game, index, 0, item.split, menu.skins[1]);
             if (!item.hidetail) strand(game, index, item.split, item.count - item.split, menu.skins[1]);
         }
-        if (!hook.rail) image(art::hookfront, game.anchors[index]);
+        if (!hook.rail && !game.ghostapp(4,index)) image(art::hookfront, game.anchors[index]);
     }
     for (int index = 0; index < 3; ++index) {
         if (game.stars[index] || game.expired[index]) continue;

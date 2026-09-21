@@ -41,6 +41,14 @@ const level& loadlevel(int index) {
     }
     data.switchcount = scalar();
     for (int i = 0; i < data.switchcount; ++i) data.switches[i] = vector();
+    data.disccount = scalar();
+    for (int i = 0; i < data.disccount; ++i) {
+        auto& item = data.discs[i]; item.position = vector(); item.size = scalar(); item.angle = scalar(); item.single = scalar();
+    }
+    data.ghostcount = scalar();
+    for (int i = 0; i < data.ghostcount; ++i) {
+        auto& item = data.ghosts[i]; item.position = vector(); item.radius = scalar(); item.angle = scalar(); item.forms = scalar();
+    }
     return data;
 }
 }

@@ -10,6 +10,7 @@ static bool musicpaused = false;
 static bool buzzing = false;
 static ui::view lastview = ui::view::playing;
 alignas(4) static unsigned char voicebuffers[2][art::voicemax];
+alignas(32) static unsigned char musicbuffer[gamemusicbytes > menumusicbytes ? gamemusicbytes : menumusicbytes];
 static int voiceslot = 0;
 static unsigned spoken = 0, spokenid = 0;
 
@@ -50,8 +51,13 @@ void update(const ui::controller& menu) {
     const int target = menu.frontend() ? 1 : 0;
     if (target != track) {
         soundKill(0);
-        soundPlaySampleChannel(0, target ? menumusicdata : gamemusicdata, SoundFormat_8Bit,
-                               target ? menumusicbytes : gamemusicbytes, 11025, menu.music ? 45 : 0, 64, true, 0);
+        const unsigned size = target ? menumusicbytes : gamemusicbytes;
+        FILE* file = std::fopen(target ? "nitro:/menumusic.bin" : "nitro:/gamemusic.bin", "rb");
+        const bool valid = file && std::fread(musicbuffer,1,size,file) == size;
+        if (file) std::fclose(file);
+        if (!valid) { nocashMessage("CTRD DS: music read failed"); return; }
+        DC_FlushRange(musicbuffer,size);
+        soundPlaySampleChannel(0, musicbuffer, SoundFormat_8Bit, size, 11025, menu.music ? 45 : 0, 64, true, 0);
         track = target;
         musicpaused = false;
     }

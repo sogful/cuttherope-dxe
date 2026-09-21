@@ -15,7 +15,7 @@ if not compiler:
 binary = build / "simulationtest.exe"
 subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", "-msse2", "-mfpmath=sse", "-ffp-contract=off",
                 "-I" + str(root / "include"), "-I" + str(root / "generated"),
-                str(root / "source/simulation.cpp"), str(root / "source/mechanics.cpp"), str(root / "source/advanced.cpp"), str(root / "tests/simulation.cpp"), "-o", str(binary)], check=True)
+                str(root / "source/simulation.cpp"), str(root / "source/mechanics.cpp"), str(root / "source/advanced.cpp"), str(root / "source/contraptions.cpp"), str(root / "tests/simulation.cpp"), "-o", str(binary)], check=True)
 result = json.loads(subprocess.check_output([str(binary)], text=True))
 traces = json.loads((root.parent / "roblox/tests/desktop-trajectories.json").read_text())
 reference = next(trace for trace in traces if trace["level"] == 1)["samples"]
@@ -33,7 +33,7 @@ print("PASS:", result["checks"])
 binary = build / "leveltest.exe"
 subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", "-msse2", "-mfpmath=sse", "-ffp-contract=off",
                 "-I" + str(root / "include"), "-I" + str(root / "generated"), str(root / "source/simulation.cpp"),
-                str(root / "source/mechanics.cpp"), str(root / "source/advanced.cpp"), str(root / "source/levelstore.cpp"), str(root / "tests/levels.cpp"), "-o", str(binary)], check=True)
+                str(root / "source/mechanics.cpp"), str(root / "source/advanced.cpp"), str(root / "source/contraptions.cpp"), str(root / "source/levelstore.cpp"), str(root / "tests/levels.cpp"), "-o", str(binary)], check=True)
 result = json.loads(subprocess.check_output([str(binary)], text=True))
 for actual in result["traces"]:
     expected = next(trace for trace in traces if trace["level"] == actual["level"])
@@ -45,7 +45,7 @@ subprocess.run([sys.executable, str(root / "tools/testmovers.py")], check=True)
 binary = build / "interfacetest.exe"
 subprocess.run([compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror",
                 "-I" + str(root / "include"), "-I" + str(root / "generated"),
-                str(root / "source/simulation.cpp"), str(root / "source/mechanics.cpp"), str(root / "source/advanced.cpp"), str(root / "source/interface.cpp"), str(root / "source/progress.cpp"),
+                str(root / "source/simulation.cpp"), str(root / "source/mechanics.cpp"), str(root / "source/advanced.cpp"), str(root / "source/contraptions.cpp"), str(root / "source/interface.cpp"), str(root / "source/progress.cpp"),
                 str(root / "tests/interface.cpp"), "-o", str(binary)], check=True)
 subprocess.run([str(binary)], check=True)
 binary = build / "progresstest.exe"
@@ -56,3 +56,4 @@ directory.mkdir()
 subprocess.run([str(binary), str(directory)], check=True)
 subprocess.run([sys.executable, str(root / "tools/testwheels.py")], check=True)
 subprocess.run([sys.executable, str(root / "tools/testadvanced.py")], check=True)
+subprocess.run([sys.executable, str(root / "tools/testcontraptions.py")], check=True)

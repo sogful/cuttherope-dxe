@@ -5,7 +5,7 @@ import math
 import struct
 import xml.etree.ElementTree as xml
 
-boxes = 10
+boxes = 12
 
 
 def build(content, output, sources):
@@ -32,7 +32,7 @@ def build(content, output, sources):
              f'inline constexpr std::array<level, {total}> levels = [] {{ std::array<level, {total}> items{{}};']
     audit, packed, offsets, routes, routepoints = [], [], [], [], []
     f = lambda value: struct.unpack("<f", struct.pack("<f", value))[0]
-    limits = dict(hooks=16, bubbles=32, spikes=16, pumps=8, hats=8, bouncers=16, switches=4)
+    limits = dict(hooks=16, bubbles=32, spikes=16, pumps=8, hats=8, bouncers=16, switches=4, discs=4, ghosts=4)
     for box in range(1, boxes + 1):
         for index in range(1, 26):
             path = content / "maps" / f"{box}_{index}.xml"
@@ -122,7 +122,13 @@ def build(content, output, sources):
                     records["bouncers"].append([position(node), motion(node), number(node.get("angle",0)), int(node.get("size"))])
                 elif node.tag == "gravitySwitch":
                     records["switches"].append(position(node))
-                elif node.tag in ("hidden03", "spikesSwitch"):
+                elif node.tag == "rotatedCircle":
+                    records["discs"].append([position(node), int(node.get("size")), int(node.get("handleAngle", 0)), node.get("oneHandle") == "true"])
+                elif node.tag == "ghost":
+                    radius = float(node.get("radius", -1))
+                    forms = 1 + sum(flag for name, flag in (("bubble", 2), ("grab", 4), ("bouncer", 8)) if node.get(name) == "true")
+                    records["ghosts"].append([position(node), radius * 3 if radius != -1 else -1.0, number(node.get("angle", 0)), forms])
+                elif node.tag in ("hidden02", "hidden03", "hiddenElement", "spikesSwitch"):
                     pass  # The C# LoadObjects switch also ignores this legacy map tag.
                 else:
                     raise ValueError((path, "Unsupported object", node.tag))
@@ -142,7 +148,7 @@ def build(content, output, sources):
             packed += flatten([left,width,height,speed,box-1,index-1,candy,target,split,halves,
                 float(design.get("globalGravityX", 0)),float(design.get("globalGravityY", 784))])
             for i in range(3): packed += flatten([stars[i], timeouts[i], motions[i]])
-            countnames = dict(hooks="hookcount",bubbles="bubblecount",spikes="spikecount",pumps="pumpcount",hats="hatcount",bouncers="bouncercount",switches="switchcount")
+            countnames = dict(hooks="hookcount",bubbles="bubblecount",spikes="spikecount",pumps="pumpcount",hats="hatcount",bouncers="bouncercount",switches="switchcount",discs="disccount",ghosts="ghostcount")
             for key, capacity in limits.items():
                 assert len(records[key]) <= capacity, (path,key,len(records[key]),capacity)
                 lines.append(f"value.{countnames[key]} = {len(records[key])};")

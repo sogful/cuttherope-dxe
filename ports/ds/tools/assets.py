@@ -162,7 +162,8 @@ def main():
 
     sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "win", "tap",
            "bubble", "bubble_break", "pump_1", "rope_get", "spider_activate", "spider_fall", "spider_win", "candy_break",
-           "bouncer", "teleport", "candy_link", "electric", "wheel", "gravity_on", "gravity_off", "spike_rotate_in", "spike_rotate_out"]
+           "bouncer", "teleport", "candy_link", "electric", "wheel", "gravity_on", "gravity_off", "spike_rotate_in", "spike_rotate_out",
+           "scratch_in", "scratch_out", "ghost_puff"]
     audio = []
     for name in sfx + ["game_music", "menu_music"]:
         music = name.endswith("_music")
@@ -178,6 +179,8 @@ def main():
         data += b"\0" * (-len(data) % 4)
         stem = name.replace("_", "")
         (output / (stem + ".bin")).write_bytes(data)
+        if music:
+            (output / "nitro" / (stem + ".bin")).write_bytes(data)
         audio.append((stem, len(data)))
     import voices
     voiceheader = voices.build(content, output, sources)
@@ -188,7 +191,7 @@ def main():
     # Only the immediate star/hook/default-candy renderer uses resident atlases.
     # All other gameplay/menu art now has pageable replacements.
     resident = {record['page'] for record in records if record['name'] in ('star0','hookback','candy0')}
-    blobs = [name for i,page in enumerate(pages) if i in resident for name in (page["name"], page["name"] + "palette")] + ["logo"] + [name for name, _ in audio]
+    blobs = [name for i,page in enumerate(pages) if i in resident for name in (page["name"], page["name"] + "palette")] + ["logo"] + [name for name, _ in audio if not name.endswith("music")]
     header = ["#pragma once", "#include <cstdint>", 'extern "C" {']
     header += [f"extern const unsigned char {name}data[];" for name in blobs]
     header += ["}", "namespace art {", "struct sprite { int x, y, w, h, ox, oy, advance, page; };",
@@ -214,6 +217,7 @@ def main():
                 "texturebytes": sum(page["bytes"] for page in pages) + 131072,
                 "upperbytes": 49152, "upperpalettebytes": 512, "logo": {"source": "assets/logods.png", "sha256": hashlib.sha256(logopath.read_bytes()).hexdigest()},
                 "audiobytes": sum(size for _, size in audio),
+                "residentaudiobytes": sum(size for name, size in audio if not name.endswith("music")) + max(size for name, size in audio if name.endswith("music")),
                 "sources": {str(path.relative_to(content)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)},
                 "sprites": [{key: value for key, value in record.items() if key != "image"} for record in records]}
     assert manifest["texturebytes"] <= 384 * 1024, "Main-engine textures exceed VRAM A+B+D"

@@ -62,7 +62,8 @@ def build(menu):
     lengths, radii = set(), set()
     for box in range(1, boxes + 1):
         for level in range(1, 26):
-            for node in xml.parse(menu["content"] / f"maps/{box}_{level}.xml").iter("grab"):
+            for node in xml.parse(menu["content"] / f"maps/{box}_{level}.xml").iter():
+                if node.tag not in ("grab", "ghost"): continue
                 length = float(node.get("moveLength", 0)) * 3
                 if length > 0: lengths.add(int(length))
                 radius = float(node.get("radius", -1)) * 3

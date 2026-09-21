@@ -39,13 +39,13 @@ def main():
     parser.add_argument("--menus", action="store_true", help="Check source-shaped title, packs, settings, languages and credits")
     parser.add_argument("--skins", action="store_true", help="Check fades, isolated unlock mode, picker scrolling, all cosmetic tabs and equipped gameplay")
     parser.add_argument("--flow", action="store_true", help="Capture box transitions and the complete animated result sequence")
-    parser.add_argument("--boxes", action="store_true", help="Launch all 250 maps across the first ten boxes")
+    parser.add_argument("--boxes", action="store_true", help="Launch all 300 maps across the first twelve boxes")
     parser.add_argument("--startup", action="store_true", help="Capture consecutive frames through early level texture paging")
     parser.add_argument("--regressions", action="store_true", help="Exercise outcome input races, flashes, costume voices, carousel and tall backgrounds")
     parser.add_argument("--profile", action="store_true", help="Read optional profiling build and capture framebuffer changes during stalled main updates")
     parser.add_argument("--pagingstress", action="store_true", help="Profile-only synthetic heavy completion and captured-frame recovery test")
-    parser.add_argument("--first-box", type=int, default=1, choices=range(1,11))
-    parser.add_argument("--last-box", type=int, default=10, choices=range(1,11))
+    parser.add_argument("--first-box", type=int, default=1, choices=range(1,13))
+    parser.add_argument("--last-box", type=int, default=12, choices=range(1,13))
     parser.add_argument("--level-only", type=int, choices=range(1,26), help="Limit box checks to one level number")
     parser.add_argument("--costume", type=int, default=0, choices=range(16), help="Equip a costume through the real picker before a test")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
@@ -227,11 +227,12 @@ def main():
         lastframe, stalled = -1, 0
         keys += ["gravity", "gravityevents", "wheel", "wheelevents", "wheelparts", "wheellength"]
         keys += ["spikeevents", "spikebutton", "beex", "beey", "spiderfalls", "spiderclimbers", "fadephase"]
+        keys += ["disc", "discangle", "discevents", "ghostforms", "ghostevents", "ghostapps", "bodypool"]
         faultsymbol = next((line for line in symbols if line.endswith(" renderfault")), None)
         faultaddress = memory + int(faultsymbol.split()[0], 16) - 0x02000000 if faultsymbol else None
         def telemetry():
             version = struct.unpack("<I", c.string_at(memory + offset + 4, 4))[0]
-            fields = 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
+            fields = 68 if version >= 12 else 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
             result = dict(zip(keys, struct.unpack(f"<10I2f{fields}I", c.string_at(memory + offset, 48 + fields * 4))))
             for key in keys: result.setdefault(key, 0)
             return result
@@ -309,6 +310,9 @@ def main():
             assert all(value < 1 or value > 80 for value in brightness[firstblack:]), ('Unexpected boot fade', brightness)
         else:
             run(60)
+        for _ in range(120):
+            if telemetry()["frames"] > 40: break
+            run(1)
         title = snapshot("title")
         if args.costume:
             tap(147,91); tap(153,16)
@@ -357,6 +361,35 @@ def main():
                     assert stage["level"] == box * 25 + level and stage["visuals"] > 0
                     assert math.isfinite(stage["x"]) and math.isfinite(stage["y"])
                     assert not stage["intro"], "Tall level introduction never handed control back"
+                    if box == 10 and level == 0:
+                        initial = telemetry()
+                        center = (128.4,92)
+                        radius = 48
+                        touch(center[0]+radius*math.cos(-math.pi/12),center[1]+radius*math.sin(-math.pi/12))
+                        pressed = snapshot("dj-handle-pressed")
+                        assert pressed["disc"] == 1, pressed
+                        for step in range(1,15):
+                            angle = -math.pi/12+step*.08
+                            touch(center[0]+radius*math.cos(angle),center[1]+radius*math.sin(angle))
+                        moved = snapshot("dj-disc-rotated")
+                        assert moved["discangle"] != initial["discangle"] and moved["discevents"] > 0 and moved["cuts"] == initial["cuts"], moved
+                        touch(center[0],center[1],False)
+                        run(5)
+                        assert not telemetry()["disc"]
+                    if box == 11 and level == 0:
+                        document = xml.parse(root.parents[1] / "content/maps/12_1.xml")
+                        ghost = document.find("./layer[@name='Objects']/ghost")
+                        width = float(document.find("./layer[@name='settings']/map").get("width"))
+                        point = (128+(float(ghost.get("x"))-width/2)*.4,float(ghost.get("y"))*.4-telemetry()["cameray"]*192/1440)
+                        before = telemetry()
+                        tap(*point); run(20)
+                        appeared = snapshot("spooky-bubble-form")
+                        assert appeared["ghostevents"] > before["ghostevents"] and appeared["ghostforms"] & 15 == 2 and appeared["ghostapps"], appeared
+                        tap(*point); run(20)
+                        changed = snapshot("spooky-bouncer-form")
+                        assert changed["ghostforms"] & 15 == 8 and changed["ghostevents"] > appeared["ghostevents"], changed
+                        tap(*point); run(20)
+                        snapshot("spooky-bubble-returned")
                     if box == 8 and level == 0:
                         before = telemetry()["cuts"]
                         touch(104,146)
@@ -462,7 +495,7 @@ def main():
                 assert any(item["bounces"] for item in report["stages"].values()), "No bouncer contact observed"
             maps = (args.last_box - args.first_box + 1) * (1 if args.level_only else 25)
             report.update(passed=True, maps=maps, referenceSamples=len(maperrors), maximumDesktopError=max(maperrors.values(),default=0), seconds=time.monotonic()-start)
-            filename = "boxreport" + ("" if maps == 250 else f"-{args.first_box}-{args.last_box}-{args.level_only or 'all'}") + ".json"
+            filename = "boxreport" + ("" if maps == 300 else f"-{args.first_box}-{args.last_box}-{args.level_only or 'all'}") + ".json"
             (directory / filename).write_text(json.dumps(report, indent=2), encoding="utf-8")
             print(f"PASS: {maps} maps launched through real UI, boxes {args.first_box}-{args.last_box}")
             return
@@ -486,13 +519,13 @@ def main():
             key(8)
             assert snapshot("unlocked-fabric-levels")["pack"] == 1 and telemetry()["view"] == 4
             key(0)
-            for _ in range(9): key(7)
+            for _ in range(11): key(7)
             run(180)
             key(8)
             tap(66, 26)
             assert telemetry()["view"] == 4 and telemetry()["resets"] == 0, "An unavailable map silently launched 1-1"
             key(0)
-            for _ in range(10): key(6)
+            for _ in range(12): key(6)
             run(180)
             key(0)
             tap(128, 170)

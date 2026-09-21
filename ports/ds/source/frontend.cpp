@@ -7,6 +7,7 @@
 #include "assets.hpp"
 #include "profiling.hpp"
 #include "routes.hpp"
+#include "contraptionview.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -440,7 +441,7 @@ static void doors(float progress, bool opening, bool loading, int box) {
     piece(menuart::doorshade, (opening ? -t : t - 1) * 891 * 4 * pixels + base, 0, 891 * 4 * pixels, 400 * 4 * pixels);
     const float leftside = opening ? (1280 - 12) * (1 - t) - 25 * t : -13 * (1 - t) + (1293 - 16) * t;
     const float rightside = opening ? (1280 + 14) * (1 - t) + 2560 * t : (2560 - 40) * (1 - t) + (1280 + 20) * t;
-    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0, menuart::boxcover7x0, menuart::boxcover8x0, menuart::boxcover9x0, menuart::boxcover10x0};
+    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0, menuart::boxcover7x0, menuart::boxcover8x0, menuart::boxcover9x0, menuart::boxcover10x0, menuart::boxcover11x0, menuart::boxcover12x0};
     static_assert(std::size(covers) == menuart::playableboxes, "Every playable box needs its authored flaps");
     const int cover = covers[box];
     piece(cover + 1, base + leftside * pixels, 0, side, 192 * (1 + .3f * closed));
@@ -638,14 +639,15 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     cameray = game.cameray;
     auto wx = [](float value) { return std::lround(128 + (value - 1280) * pixels); };
     auto wy = [](float value) { return std::lround((value - cameray) * pixels); };
-    auto world = [&](int sprite, dx::point position, int alpha = 31, float angle = 0) {
-        add(sprite, wx(position.x), wy(position.y), {}, GL_FLIP_NONE, 1, static_cast<int>(angle * 32768 / 360), alpha);
+    auto world = [&](int sprite, dx::point position, int alpha = 31, float angle = 0, float scale = 1, int flip = GL_FLIP_NONE) {
+        add(sprite, wx(position.x), wy(position.y), {}, flip, scale, static_cast<int>(angle * 32768 / 360), alpha);
     };
+    gamevisuals::discs(game,world);
     pollen(game,elapsed);
     for (int i = 0; i < game.definition.hookcount; ++i) {
         const auto& rope = game.ropes[i];
         const float radius = game.definition.hooks[i].radius;
-        const float alpha = rope.attached < 0 ? 1 : 1-(elapsed-rope.attached)*.016f*1.5f;
+        const float alpha = (rope.attached < 0 ? 1 : 1-(elapsed-rope.attached)*.016f*1.5f)*game.ghostalpha(4,i);
         if (radius < 0 || alpha <= 0) continue;
         for (const auto& ring : menuart::circles) if (ring.length == static_cast<int>(radius)) {
             world(ring.sprite,game.anchors[i],std::max(1,static_cast<int>(alpha*31))); break;
@@ -671,9 +673,13 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     }
     world(menuart::seat0 + menu.pack, game.definition.target);
     for (int i = 0; i < game.definition.bubblecount; ++i) {
+        const auto* app = game.ghostapp(2,i);
+        const int alpha = std::lround(game.ghostalpha(2,i)*31);
+        if (app) world(menuart::bubble1+i%3,game.definition.bubbles[i],alpha);
         if (!game.bubblesused[i]) {
-            world(menuart::bubble1 + i % 3, game.definition.bubbles[i]);
-            world(menuart::bubble0, game.definition.bubbles[i]);
+            if (!app) world(menuart::bubble1 + i % 3, game.definition.bubbles[i]);
+            world(menuart::bubble0, game.definition.bubbles[i],alpha);
+            if (app) gamevisuals::clouds(game,*app,game.definition.bubbles[i],alpha,false,world);
         }
     }
     for (int i = 0; i < game.definition.pumpcount; ++i) {
@@ -693,7 +699,11 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     for (int i = 0; i < game.definition.bouncercount; ++i) {
         const auto& item = game.definition.bouncers[i];
         const int frame = game.bounceages[i] * .016f / .04f;
-        world(menuart::bouncer0 + (item.size - 1) * 5 + (frame < 5 ? frame : 0), item.position + item.path.at(elapsed * .016f), 31, item.path.angle(item.angle, elapsed * .016f));
+        const auto* app = game.ghostapp(8,i);
+        const int alpha = std::lround(game.ghostalpha(8,i)*31);
+        if (app) gamevisuals::clouds(game,*app,item.position,alpha,true,world);
+        world(menuart::bouncer0 + (item.size - 1) * 5 + (frame < 5 ? frame : 0), item.position + item.path.at(elapsed * .016f), alpha, item.path.angle(item.angle, elapsed * .016f));
+        if (app) gamevisuals::clouds(game,*app,item.position,alpha,false,world);
     }
     for (int i = 0; i < game.definition.hatcount; ++i) {
         const auto& hat = game.definition.hats[i];
@@ -702,7 +712,14 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         world(menuart::hat0 + hat.group % 2, position, 31, angle);
         if (game.hatages[i] * .016f < .2f) world(menuart::hat2 + std::min(2, static_cast<int>(game.hatages[i] * .016f / .05f)), position, 31, angle);
     }
+    for (int i = 0; i < game.definition.hookcount; ++i) if (game.ghostapp(4,i))
+        world(menuart::ghosthook0,game.anchors[i],std::lround(game.ghostalpha(4,i)*31));
     groundend = count;
+    for (int i = 0; i < game.definition.hookcount; ++i) if (const auto* app = game.ghostapp(4,i)) {
+        const int alpha = std::lround(game.ghostalpha(4,i)*31);
+        world(menuart::ghosthook1,game.anchors[i],alpha);
+        gamevisuals::clouds(game,*app,game.anchors[i],alpha,false,world);
+    }
     for (int i = 0; i < game.definition.hookcount; ++i) if (game.definition.hooks[i].wheel) {
         const int angle = static_cast<int>(game.wheelangles[i] * 32768 / 360);
         add(menuart::wheel1, wx(game.anchors[i].x), wy(game.anchors[i].y), {}, GL_FLIP_NONE, game.wheelscale(i), angle);
@@ -805,7 +822,7 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
             wx(game.definition.target.x), wy(game.definition.target.y));
     }
     if (game.split && game.failreason != 2 && game.failreason != 3) {
-        for (int i = 0; i < 2; ++i) world(menuart::gamehalves[menu.skins[0]][i], game.bodies[i + 1].pos);
+        for (int i = 0; i < 2; ++i) if (game.halfalive[i]) world(menuart::gamehalves[menu.skins[0]][i], game.bodies[i + 1].pos);
     }
     if (!game.split && !game.hidden() && menu.skins[0] > 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
         const int px = wx(game.candy().pos.x), py = wy(game.candy().pos.y);
@@ -814,9 +831,13 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     if (game.mergeage * .016f < .25f) world(menuart::merge0 + static_cast<int>(game.mergeage * .016f / .05f), game.candy().pos);
     for (int part = 0; part < game.activecount(); ++part) {
         const int id = game.activeid(part);
-        if (game.bubblefor(id) >= 0) world(menuart::bubble4 + static_cast<int>(elapsed * .016f / .05f) % 13, game.bodies[id].pos);
+        if (game.bubblefor(id) >= 0) {
+            world(menuart::bubble4 + static_cast<int>(elapsed * .016f / .05f) % 13, game.bodies[id].pos);
+            if (const auto* app = game.ghostapp(2,game.bubblefor(id))) gamevisuals::clouds(game,*app,game.bodies[id].pos,31,false,world);
+        }
     }
     if (game.popage * .016f < .6f) world(menuart::bubble18 + std::min(11, static_cast<int>(game.popage * .016f / .05f)), game.popposition);
+    gamevisuals::ghosts(game,world);
     const auto& trail = trace::trail;
     auto px = [](float value) { return std::lround(128 + (value - 1280) * pixels); };
     auto py = [](float value) { return std::lround((value - cameray) * pixels); };

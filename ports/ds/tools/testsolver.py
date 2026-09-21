@@ -22,7 +22,7 @@ for reference in (True, False):
         compiler, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", "-msse2", "-mfpmath=sse",
         "-ffp-contract=off", *(["-DDS_REFERENCE_PHYSICS"] if reference else []),
         "-I" + str(root / "include"), "-I" + str(root / "generated"),
-        *(str(root / "source" / file) for file in ("simulation.cpp", "mechanics.cpp", "advanced.cpp")),
+        *(str(root / "source" / file) for file in ("simulation.cpp", "mechanics.cpp", "advanced.cpp", "contraptions.cpp")),
         str(root / "tests/solver.cpp"), "-o", str(target),
     ], check=True)
     results.append(subprocess.check_output([str(target)]).splitlines())

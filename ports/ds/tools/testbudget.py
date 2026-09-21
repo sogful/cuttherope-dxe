@@ -3,6 +3,7 @@ import subprocess
 import re
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -33,6 +34,7 @@ subprocess.run(
                 "source/simulation.cpp",
                 "source/mechanics.cpp",
                 "source/advanced.cpp",
+                "source/contraptions.cpp",
                 "source/interface.cpp",
                 "source/progress.cpp",
             )
@@ -44,13 +46,13 @@ subprocess.run(
     check=True,
 )
 result = subprocess.run(
-    [str(binary), str(root / "generated/nitro/menu.bin")],
+    [str(binary), str(root / "generated/nitro/menu.bin"), *(["contraptions"] if "--contraptions-only" in sys.argv else [])],
     capture_output=True,
     text=True,
 )
 print(result.stdout, end="")
 print(result.stderr, end="")
-(root / "build/budgetreport.json").write_text(
+(root / ("build/contraptionbudgetreport.json" if "--contraptions-only" in sys.argv else "build/budgetreport.json")).write_text(
     json.dumps(
         dict(
             passed=result.returncode == 0,

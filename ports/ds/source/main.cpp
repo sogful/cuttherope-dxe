@@ -13,7 +13,7 @@
 #include <cstdio>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 11;
+    std::uint32_t magic = 0x44585250, version = 12;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -28,6 +28,7 @@ struct diagnostics {
     std::uint32_t repacks = 0, renderfault = 0;
     std::uint32_t gravity = 0, gravityevents = 0, wheel = 0, wheelevents = 0, wheelparts = 0, wheellength = 0;
     std::uint32_t spikeevents = 0, spikebutton = 0, beex = 0, beey = 0, spiderfalls = 0, spiderclimbers = 0, fadephase = 0;
+    std::uint32_t disc = 0, discangle = 0, discevents = 0, ghostforms = 0, ghostevents = 0, ghostapps = 0, bodypool = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -62,6 +63,7 @@ int main() {
     int shownbounces = 0, shownteleports = 0, shownmerges = 0;
     int showngravity = 0, shownwheel = 0;
     int shownspikes = 0, shownspiderfalls = 0, shownspideractivations = 0;
+    int showndiscs = 0, shownghosts = 0;
     bool shownmouth = false, shownresult = false;
     bool greeting = false;
     unsigned total = 0, peak = 0, late = 0;
@@ -73,6 +75,7 @@ int main() {
         shownbounces = shownteleports = shownmerges = 0;
         showngravity = shownwheel = 0;
         shownspikes = shownspiderfalls = shownspideractivations = 0;
+        showndiscs = shownghosts = 0;
         telemetry.resets = telemetry.resets + 1;
         trace::trail.reset();
         greeting = menu.door == 1 && !menu.replaypanel;
@@ -141,6 +144,11 @@ int main() {
             audio::effect(game.spikedirection ? spikerotateindata : spikerotateoutdata, game.spikedirection ? spikerotateinbytes : spikerotateoutbytes);
             shownspikes = game.spikeevents;
         }
+        if (game.discevents != showndiscs) {
+            audio::effect(game.discdirection ? scratchoutdata : scratchindata,game.discdirection ? scratchoutbytes : scratchinbytes);
+            showndiscs = game.discevents;
+        }
+        if (game.ghostevents != shownghosts) { audio::effect(ghostpuffdata,ghostpuffbytes); shownghosts = game.ghostevents; }
         if (game.spiderfalls != shownspiderfalls) { audio::effect(spiderfalldata, spiderfallbytes); shownspiderfalls = game.spiderfalls; }
         if (game.spideractivations != shownspideractivations) { audio::effect(spideractivatedata, spideractivatebytes); shownspideractivations = game.spideractivations; }
         if (game.bubbleevents != shownbubbles) { audio::effect(bubbledata, bubblebytes); shownbubbles = game.bubbleevents; }
@@ -243,6 +251,13 @@ int main() {
         for (int i = 0; i < game.definition.hookcount; ++i) if (game.definition.hooks[i].wheel) {
             telemetry.wheelparts = game.ropes[i].count; telemetry.wheellength = game.ropelength(i); break;
         }
+        telemetry.disc = game.dragdisc + 1;
+        telemetry.discangle = 360000 + static_cast<int>(game.definition.discs[0].angle * 100);
+        telemetry.discevents = game.discevents; telemetry.ghostevents = game.ghostevents;
+        telemetry.ghostforms = telemetry.ghostapps = 0;
+        for (int i = 0; i < game.definition.ghostcount; ++i) telemetry.ghostforms |= game.ghosts[i].form << (i*4);
+        for (const auto& app : game.apparitions) if (app.form) ++telemetry.ghostapps;
+        telemetry.bodypool = game.bodycount;
         telemetry.spikeevents = game.spikeevents; telemetry.spikebutton = game.dragspike + 1;
         telemetry.beex = telemetry.beey = 0;
         telemetry.spiderfalls = game.spiderfalls; telemetry.spiderclimbers = 0;

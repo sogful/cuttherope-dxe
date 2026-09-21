@@ -34,6 +34,7 @@ int simulation::add(point position, float inverse, bool pinned) {
 
 void simulation::reset(const level& data) {
     definition = data;
+    resetcontraptions();
     freecount = 0;
     inverted = false; gravityevents = wheelevents = 0; gravityage = 100;
     dragspike = -1; spikeevents = spiderfalls = spideractivations = 0; spikedirection = false;
@@ -49,6 +50,7 @@ void simulation::reset(const level& data) {
     pumpages.fill(100);
     bounceages.fill(100); hatages.fill(100); hattimers.fill(0); electric.fill(false);
     halfbubbles.fill(-1); halfdraw = data.halves;
+    halfalive.fill(true);
     split = data.split; merging = false; mergedistance = exitspeed = 0;
     draghook = transit = -1; transitage = 0; mergeage = 100;
     bounceevents = teleportevents = mergeevents = 0;
@@ -94,7 +96,13 @@ void simulation::attach(int index, float length, int candy) {
         bodies[current].linkcount = 1;
         item.bodies[item.count++] = current;
     }
-    bodies[candy].links[bodies[candy].linkcount++] = {item.bodies[item.count - 1], length + 105 - segments * 105, true};
+    auto& tail = bodies[candy];
+    for (int i = 0; i < tail.linkcount;) {
+        if (!tail.links[i].active) { for (int j = i; j < tail.linkcount-1; ++j) tail.links[j] = tail.links[j+1]; --tail.linkcount; }
+        else ++i;
+    }
+    assert(tail.linkcount < static_cast<int>(tail.links.size()));
+    tail.links[tail.linkcount++] = {item.bodies[item.count - 1], length + 105 - segments * 105, true};
     item.bodies[item.count++] = candy;
 }
 
@@ -242,8 +250,11 @@ void simulation::tick(bool suppress) {
     camera();
     if (panning) return;
     animate();
+    advanceghosts(4);
     ropephysics();
-    if (state != outcome::playing) return;
+    if (state != outcome::playing && !(state == outcome::lost && split && activecount())) {
+        advanceghosts(2); advanceghosts(8); updateghosts(); return;
+    }
     ++ticks;
     const float step = delta * definition.speed;
     const point halfgap = halfdraw[0] - halfdraw[1];
@@ -251,9 +262,9 @@ void simulation::tick(bool suppress) {
     for (int part = 0; part < activecount() && !hidden(); ++part) {
         auto& item = bodies[activeid(part)];
         integrate(item, 784.0f * (step * step), 1.0f / step);
-        if (split) halfdraw[part] = item.pos;
+        if (split) halfdraw[activeid(part)-1] = item.pos;
     }
-    if (split) merge(touching);
+    if (split && activecount()==2) merge(touching);
     const point pos = candy().pos;
     const point distance = pos - definition.target;
     if (!split && !hidden() && !mouth && distance.length() < 200) { mouth = true; mouthtick = ticks; }
@@ -271,6 +282,7 @@ void simulation::tick(bool suppress) {
         }
     }
     bool captured = false;
+    advanceghosts(2);
     for (int i = 0; i < definition.bubblecount && !captured; ++i) {
         for (int part = 0; part < activecount() && !hidden(); ++part) {
             const int id = activeid(part);
@@ -279,23 +291,26 @@ void simulation::tick(bool suppress) {
                 if (bubblefor(id) >= 0) burst(id);
                 (id ? halfbubbles[id-1] : bubble) = i;
                 bubblesused[i] = true;
+                for (auto& app : apparitions) if (app.form == 2 && app.index == i) app.owner = id;
                 ++bubbleevents;
                 captured = true;
                 break;
             }
         }
     }
+    updateghosts();
     transports();
     hazards();
+    advanceghosts(8);
     bounce();
     spiders();
-    if (state != outcome::playing) return;
+    if (state != outcome::playing && !(state == outcome::lost && split && activecount())) return;
     for (int part = 0; part < activecount() && !hidden(); ++part) {
         const int id = activeid(part);
         if (bubblefor(id) >= 0) bodies[id].pos = bodies[id].pos + point{-bodies[id].velocity.x / 14,
             -bodies[id].velocity.y / 14 + (inverted ? 40.0f : -40.0f)} * delta;
     }
-    if (!suppressoutcome && !split && !hidden() && mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
+    if (!suppressoutcome && state == outcome::playing && !split && !hidden() && mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
         releasecandy(0);
         state = outcome::won;
         resulttick = ticks;
@@ -303,9 +318,12 @@ void simulation::tick(bool suppress) {
         bodies[0].pin = bodies[0].pos;
         bodies[0].pinned = true;
         if (bubble >= 0) burst();
-    } else if (!hidden()) for (int part = 0; part < activecount(); ++part) {
-        const auto position = bodies[activeid(part)].pos;
-        if (position.y > definition.height + 400 || position.y < -400 || position.x < -2560 || position.x > definition.width + 2560) fail(1);
+    } else if (!hidden()) for (int part = activecount()-1; part >= 0; --part) {
+        const int id = activeid(part);
+        const auto position = bodies[id].pos;
+        if (position.y > definition.height + 400 || position.y < -400 || position.x < -2560 || position.x > definition.width + 2560) {
+            if (split) retirehalf(id,1); else fail(1);
+        }
     }
 }
 
@@ -322,6 +340,7 @@ bool simulation::sever(int index, int segment) {
 
 static float cross(point a, point b) { return a.x * b.y - a.y * b.x; }
 bool simulation::swipe(point start, point end) {
+    if (dragdisc >= 0) return false;
     bool changed = false;
     for (int index = 0; index < definition.hookcount; ++index) {
         const rope& item = ropes[index];
@@ -347,6 +366,8 @@ bool simulation::swipe(point start, point end) {
 
 bool simulation::tap(point position) {
     if (state != outcome::playing) return false;
+    for (int i = 0; i < definition.disccount; ++i)
+        if ((position - dischandle(i,false)).length() < 90 || (position - dischandle(i,true)).length() < 90) return false;
     for (int i = 0; i < definition.hookcount; ++i) {
         const auto d = position - anchors[i];
         if (definition.hooks[i].wheel && d.x >= -110 && d.x < 110 && d.y >= -110 && d.y < 110) return false;

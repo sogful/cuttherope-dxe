@@ -15,23 +15,27 @@ def build(content, output, sources):
             path = content / "images/backgrounds" / (resource + ".png")
             sources.add(path)
             images.append(Image.open(path).convert("RGBA"))
-        first, seam = images
+        first, seam = images[0], images[1] if len(images) > 1 else None
+        cover = max(1920 / first.width, 1440 / first.height)
+        first = first.resize((round(first.width * cover), round(first.height * cover)), Image.Resampling.LANCZOS)
+        if seam:
+            seam = seam.resize((round(seam.width * cover), round(seam.height * cover)), Image.Resampling.LANCZOS)
         left = (first.width - 1920) // 2
         first = first.crop((left, 0, left + 1920, 1440)).resize(
             (256, 192), Image.Resampling.LANCZOS
         )
         seam = seam.crop((left, 0, left + 1920, seam.height)).resize(
             (256, round(seam.height * 192 / 1440)), Image.Resampling.LANCZOS
-        )
+        ) if seam else None
         row = []
         for sections in range(1, 4):
             canvas = Image.new("RGBA", (256, sections * 192 + 64))
             for top in range(0, canvas.height, 192):
                 canvas.paste(first, (0, top))
-            for index in range(sections - 1):
+            for index in range(sections - 1 if seam else 0):
                 canvas.alpha_composite(
                     seam,
-                    (0, round(config["boxBackgroundP2Y"] * 192 / 1440) + index * 192),
+                    (0, round(config.get("boxBackgroundP2Y", 0) * cover * 192 / 1440) + index * 192),
                 )
             row.append(len(data))
             data.extend(colors.direct(canvas.convert("RGB")))
@@ -42,7 +46,8 @@ def build(content, output, sources):
                     sections=sections,
                     offset=row[-1],
                     height=canvas.height,
-                    seamY=config["boxBackgroundP2Y"],
+                    seamY=config.get("boxBackgroundP2Y", 0),
+                    coverScale=cover,
                     resources=config["boxBackground"],
                 )
             )
@@ -59,3 +64,8 @@ def build(content, output, sources):
         + ["{" + ",".join(map(str, row)) + "}," for row in offsets]
         + ["};"]
     )
+
+
+if __name__ == "__main__":
+    from assets import content, output
+    build(content, output, set())

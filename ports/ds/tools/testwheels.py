@@ -21,7 +21,7 @@ assert len(traces) == 56
 binary = root / "build/wheeltest.exe"
 subprocess.run([shutil.which("g++"), "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", "-msse2", "-mfpmath=sse", "-ffp-contract=off",
     "-I" + str(root / "include"), "-I" + str(root / "generated"),
-    *(str(root / "source" / name) for name in ("simulation.cpp", "mechanics.cpp", "advanced.cpp")),
+    *(str(root / "source" / name) for name in ("simulation.cpp", "mechanics.cpp", "advanced.cpp", "contraptions.cpp")),
     str(root / "tests/wheels.cpp"), "-o", str(binary)], check=True)
 subprocess.run([str(binary)], check=True)
 results, failures = [], []

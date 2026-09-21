@@ -52,6 +52,7 @@ float motion::angle(float base, float time, bool reset) const {
 }
 void simulation::animate() {
     ++visuals;
+    updatediscs();
     for (int i = 0; i < definition.spikecount; ++i) spikeages[i] = std::min(spikeduration[i], spikeages[i] + delta);
     gravityage = std::min(100, gravityage + 1);
     ++popage;
@@ -79,6 +80,7 @@ void simulation::camera() {
 void simulation::burst(int id) {
     int& active = id ? halfbubbles[id - 1] : bubble;
     if (active < 0) return;
+    releaseghost(id);
     active = -1;
     popposition = bodies[id].pos;
     popage = 0;
@@ -88,6 +90,10 @@ bool simulation::interact(point position) {
     if (state != outcome::playing || introduction) return false;
     draghook = -1;
     dragwheel = dragswitch = dragspike = -1;
+    dragdisc = -1;
+    if (pressdisc(position)) return true;
+    for (int i = 0; i < definition.ghostcount; ++i)
+        if ((position - definition.ghosts[i].position).length() < 80 && ghosttap(i)) return true;
     for (int i = 0; i < definition.spikecount; ++i) if (spikehit(i, position)) { dragspike = i; return true; }
     for (int i = 0; i < definition.switchcount; ++i) {
         const auto d = position - definition.switches[i];
@@ -126,6 +132,12 @@ bool simulation::interact(point position) {
         return true;
     }
     return false;
+}
+void simulation::retirehalf(int id, int reason) {
+    if (suppressoutcome || !id || !halfalive[id-1]) return;
+    releasecandy(id); burst(id); halfalive[id-1] = false;
+    bodies[id].pin = bodies[id].pos; bodies[id].pinned = true;
+    if (state == outcome::playing) { state = outcome::lost; failreason = reason; resulttick = ticks; resultvisual = visuals; }
 }
 void simulation::fail(int reason) {
     if (suppressoutcome || state != outcome::playing) return;

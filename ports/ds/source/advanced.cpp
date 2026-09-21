@@ -5,16 +5,17 @@
 
 namespace dx {
 bool simulation::drag(point position, bool held) {
-    if (state != outcome::playing || introduction) { draghook = dragwheel = dragswitch = dragspike = -1; return false; }
+    if (state != outcome::playing || introduction) { draghook = dragwheel = dragswitch = dragspike = dragdisc = -1; return false; }
     if (!held) {
         if (dragspike >= 0 && spikehit(dragspike, position)) rotatespikes(definition.spikes[dragspike].group);
         if (dragswitch >= 0) {
             const auto d = position - definition.switches[dragswitch];
             if (d.x >= -115.5f && d.x < 115.5f && d.y >= -116.5f && d.y < 116.5f) togglegravity();
         }
-        draghook = dragwheel = dragswitch = dragspike = -1;
+        draghook = dragwheel = dragswitch = dragspike = dragdisc = -1;
         return false;
     }
+    if (dragdisc >= 0) { rotatedisc(position); return true; }
     if (dragspike >= 0) { if (!spikehit(dragspike, position)) dragspike = -1; return true; }
     if (dragswitch >= 0) return true;
     if (dragwheel >= 0) { rotatewheel(dragwheel, position); return true; }
@@ -106,7 +107,7 @@ void simulation::merge(bool touching) {
             whole.pos = left.pos;
             whole.previous = whole.pos - ((left.pos - left.previous) + (right.pos - right.previous)) * .5f;
             whole.velocity = (whole.pos - whole.previous) / (.016f * definition.speed);
-            bubble = halfbubbles[0] >= 0 ? halfbubbles[0] : halfbubbles[1]; halfbubbles.fill(-1);
+            mergeghosts();
             for (int i = 0; i < definition.hookcount; ++i) {
                 auto& rope = ropes[i];
                 if (rope.count < 2 || !rope.candy || (rope.cut && rope.split == rope.count - 1)) continue;
@@ -147,7 +148,7 @@ void simulation::releasecandy(int id) {
     for (int i = 0; i < definition.hookcount; ++i) {
         auto& rope = ropes[i];
         if (!rope.count || rope.candy != id) continue;
-        if (!rope.cut) sever(i, rope.count - 2);
+        if (!rope.cut) { rope.cut = true; rope.pending = rope.count - 2; rope.split = rope.count - 1; }
         if (rope.pending >= 0) detach(rope);
         rope.hidetail = true;
         dropspider(i);

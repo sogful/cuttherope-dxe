@@ -8,6 +8,15 @@ static void same(dx::motion a, dx::motion b) { same(a.offset,b.offset); assert(a
 static void decoded(const dx::level& a, const dx::level& b) {
     same(a.candy,b.candy); same(a.target,b.target);
     same(a.gravity,b.gravity); assert(a.switchcount == b.switchcount);
+    assert(a.disccount == b.disccount && a.ghostcount == b.ghostcount);
+    for (int i = 0; i < a.disccount; ++i) {
+        const auto& x=a.discs[i]; const auto& y=b.discs[i]; same(x.position,y.position);
+        assert(x.size==y.size && x.angle==y.angle && x.single==y.single);
+    }
+    for (int i = 0; i < a.ghostcount; ++i) {
+        const auto& x=a.ghosts[i]; const auto& y=b.ghosts[i]; same(x.position,y.position);
+        assert(x.radius==y.radius && x.angle==y.angle && x.forms==y.forms);
+    }
     for (int i = 0; i < a.switchcount; ++i) same(a.switches[i],b.switches[i]);
     assert(a.box == b.box && a.index == b.index && a.split == b.split && a.speed == b.speed && a.left == b.left && a.width == b.width && a.height == b.height);
     for (int i = 0; i < 2; ++i) same(a.halves[i],b.halves[i]);

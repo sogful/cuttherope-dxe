@@ -205,8 +205,8 @@ def pack():
             canvas.paste(record["image"], (x, y))
             record.update(x=x, y=y, w=record["image"].width, h=record["image"].height, page=page)
         pages.append(dict(name="menupage" + str(page), image=canvas, group=group, direct=False, bytes=width * height,
-                          alphabits=5 if group in ("menu_bgr_shadow", "doorshade") or group.startswith("catch") else 3,
-                          dither=False if group == "doorshade" or group.startswith(("text", "packtext", "credits", "catch")) else
+                          alphabits=5 if group in ("menu_bgr_shadow", "doorshade") or group.startswith(("catch", "vinylring", "vinylcontour")) else 3,
+                          dither=False if group == "doorshade" or group.startswith(("text", "packtext", "credits", "catch", "vinylring", "vinylcontour")) else
                           "low" if group.startswith(("menu_buttons", "menu_extra_buttons", "menu_options_packed", "skin_selection", "menu_level_ui", "hud_ui")) else True))
     members = defaultdict(list)
     for record in records:
@@ -277,6 +277,8 @@ def main():
     gameinfo = gameui.build(globals())
     import worldart
     rails = worldart.build(globals())
+    import contraptionart
+    contraptions = contraptionart.build(globals())
     keys = ["PLAY", "OPTIONS", "LANGUAGE", "RESET", "CREDITS", "YES", "NO", "RESET_TEXT", "DRAG_TO_CUT", "CLICK_TO_CUT",
             "CANDIES_BTN", "ROPE_SKINS_BTN", "OM_NOM_BTN", "TRACES_BTN", "unlockall", "unavailable"]
     keys += ["language" + str(i) for i in range(12)]
@@ -424,6 +426,7 @@ def main():
     header += skins.header(skininfo, ids, fit, scale)
     header += gameui.header(gameinfo, ids)
     header += worldart.header(rails, ids)
+    header += contraptionart.header(contraptions, ids)
     header += ['inline constexpr int levelbacks[] = {' + ','.join(str(ids['levelback' + str(i)]) for i in range(17)) + '};', '}']
     (output / "menuassets.hpp").write_text('\n'.join(header) + '\n', encoding="utf-8")
     (output / "menuassets.s").write_text('\n'.join(assembly) + '\n', encoding="utf-8")

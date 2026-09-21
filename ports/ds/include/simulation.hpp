@@ -27,10 +27,16 @@ struct spike { point anchor{}; motion path{}; float angle = 0; int size = 1; flo
 struct pump { point position{}; float angle = 0; };
 struct hat { point position{}; motion path{}; float angle = 0; int group = 0; bool resetangle = false; };
 struct bouncer { point position{}; motion path{}; float angle = 0; int size = 1; };
+struct disc { point position{}; float size = 0, angle = 0; bool single = false; };
+struct ghost { point position{}; float radius = -1, angle = 0; int forms = 1; };
+struct apparition { int ghost = -1, form = 0, index = -1; float age = 0, retirement = -1; int owner = -1; };
+struct ghoststate { int form = 1, app = -1, morphs = 0; float age = 0, idleage = 0; };
+struct discstate { int index = 0; float angle = 0, fade = .216f; bool copy = false; };
+struct discbaseline { point position{}; float angle = 0; int owner = -1; };
 struct level {
     point candy, target;
     std::array<point, 3> stars;
-    std::array<hook, 16> hooks;
+    std::array<hook, 24> hooks;
     int hookcount;
     float speed;
     float left, width, height;
@@ -44,11 +50,14 @@ struct level {
     bool split = false;
     std::array<point, 2> halves{};
     std::array<hat, 8> hats{};
-    std::array<bouncer, 16> bouncers{};
+    std::array<bouncer, 24> bouncers{};
     int hatcount = 0, bouncercount = 0;
     point gravity{0,784};
     std::array<point, 4> switches{};
     int switchcount = 0;
+    std::array<disc, 4> discs{};
+    std::array<ghost, 4> ghosts{};
+    int disccount = 0, ghostcount = 0;
 };
 const level& loadlevel(int index);
 struct constraint { int other = 0; float length = 0; bool active = false, maximum = false; };
@@ -56,7 +65,7 @@ struct body {
     point pos, previous, pin, velocity;
     float inverse = 50;
     bool initialized = false, pinned = false;
-    std::array<constraint, 20> links{};
+    std::array<constraint, 24> links{};
     int linkcount = 0;
 };
 struct rope {
@@ -93,15 +102,29 @@ public:
     int ropelength(int index) const;
     float wheelscale(int index) const;
     void camera();
+    bool pressdisc(point position);
+    void rotatedisc(point position);
+    point dischandle(int index, bool right) const;
+    bool ghosttap(int index);
+    void ghostform(int index, int form);
+    void burst(int id = 0);
+    const apparition* ghostapp(int form, int index) const;
+    float ghostalpha(int form, int index) const;
+    std::array<ghoststate, 4> ghosts{};
+    std::array<apparition, 24> apparitions{};
+    std::array<discstate, 12> discorder{};
+    int disclayers = 0, dragdisc = -1, discside = 0, discevents = 0, ghostevents = 0;
+    bool discdirection = false;
+    point disctouch{};
     void samples(int index, int first, int count, point* output, int& size) const;
     const body& candy() const { return bodies[0]; }
-    int activecount() const { return split ? 2 : 1; }
-    int activeid(int index) const { return split ? index + 1 : 0; }
+    int activecount() const { return split ? halfalive[0] + halfalive[1] : 1; }
+    int activeid(int index) const { return split ? halfalive[0] ? index + 1 : 2 : 0; }
     int bubblefor(int id) const { return id ? halfbubbles[id - 1] : bubble; }
     bool hidden() const { return transit >= 0; }
     level definition{};
     std::array<body, 256> bodies{};
-    std::array<rope, 16> ropes{};
+    std::array<rope, 24> ropes{};
     std::array<bool, 3> stars{};
     std::array<int, 3> collectedat{};
     int excitement = -1000, greeting = -1000;
@@ -118,13 +141,14 @@ public:
     bool mouth = false;
     int mouthtick = 0;
     outcome state = outcome::playing;
-    std::array<point, 16> anchors{};
+    std::array<point, 24> anchors{};
     std::array<float, 16> electrotimers{};
     std::array<bool, 16> electric{};
-    std::array<int, 16> bounceages{};
+    std::array<int, 24> bounceages{};
     std::array<float, 8> hattimers{};
     std::array<int, 8> hatages{};
     std::array<int, 2> halfbubbles{{-1,-1}};
+    std::array<bool, 2> halfalive{{true,true}};
     std::array<point, 2> halfdraw{};
     bool split = false, merging = false;
     float mergedistance = 0, exitspeed = 0;
@@ -132,14 +156,23 @@ public:
     int bounceevents = 0, teleportevents = 0, mergeevents = 0;
     bool inverted = false;
     int gravityevents = 0, wheelevents = 0, gravityage = 100, dragswitch = -1, dragwheel = -1;
-    std::array<float, 16> wheelangles{};
+    std::array<float, 24> wheelangles{};
     point wheeltouch{};
-    std::array<int, 16> beetargets{};
-    std::array<float, 16> beeangles{}, spikeages{}, spikefirst{}, spikelast{}, spikeduration{};
+    std::array<int, 24> beetargets{};
+    std::array<float, 24> beeangles{};
+    std::array<float, 16> spikeages{}, spikefirst{}, spikelast{}, spikeduration{};
     std::array<bool, 16> spikenormal{};
     int dragspike = -1, spikeevents = 0, spiderfalls = 0, spideractivations = 0;
     bool spikedirection = false;
 private:
+    void resetcontraptions();
+    void advanceghosts(int form);
+    void updateghosts();
+    void updatediscs();
+    void retireghost(int index);
+    void releaseghost(int id);
+    void mergeghosts();
+    std::array<discbaseline, 64> baselines{};
     void movebee(int index);
     void dropspider(int index, bool won = false);
     void releasecandy(int id);
@@ -153,8 +186,8 @@ private:
     void hazards();
     void spiders();
     void fail(int reason);
+    void retirehalf(int id, int reason);
     bool suppressoutcome = false;
-    void burst(int id = 0);
     void merge(bool touching);
     void transports();
     void bounce();

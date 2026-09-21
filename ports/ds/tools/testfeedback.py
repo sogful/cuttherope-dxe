@@ -17,6 +17,14 @@ root = Path(__file__).resolve().parents[1]
 repo, generated = root.parents[1], root / "generated"
 content = repo / "content"
 voice = json.loads((generated / "voicemanifest.json").read_text())
+for name in ("game", "menu"):
+    with wave.open(str(content / f"sounds/{name}_music.wav"),"rb") as sound:
+        pcm = sound.readframes(sound.getnframes()); width = sound.getsampwidth()
+        if sound.getnchannels()==2: pcm=audioop.tomono(pcm,width,.5,.5)
+        pcm,_ = audioop.ratecv(pcm,width,1,sound.getframerate(),11025,None)
+        pcm = audioop.lin2lin(pcm,width,1)
+    pcm += b"\0"*(-len(pcm)%4)
+    assert (generated / f"nitro/{name}music.bin").read_bytes()==pcm
 resourcepath = repo / "src/CutTheRopeDX.Core/GameMain/Resources.cs"
 assert voice["resourcesHash"] == hashlib.sha256(resourcepath.read_bytes()).hexdigest()
 resources = dict(
@@ -65,15 +73,18 @@ for entry in backgrounds:
     box, sections = entry["box"], entry["sections"]
     config = packs[box]
     assert (
-        entry["seamY"] == config["boxBackgroundP2Y"]
+        entry["seamY"] == config.get("boxBackgroundP2Y", 0)
         and entry["resources"] == config["boxBackground"]
     )
     image = Image.open(generated / f"background{box+1}x{sections}.png").convert("RGB")
     assert image.size == (256, sections * 192 + 64)
+    source = Image.open(content / "images/backgrounds" / (config["boxBackground"][0] + ".png"))
+    assert entry["coverScale"] == max(1920/source.width,1440/source.height)
+    assert Image.open(generated / f"background{box+1}x{sections}.png").getextrema()[3][0] >= 254, "Background cover fit left transparent gaps"
     assert world[
         entry["offset"] : entry["offset"] + image.width * image.height * 2
     ] == colors.direct(image)
-    if sections > 1:
+    if sections > 1 and len(config["boxBackground"]) > 1:
         ordinary = Image.open(generated / f"background{box+1}x1.png").convert("RGB")
         assert (
             image.crop((0, 0, 256, 256)).tobytes() != ordinary.tobytes()
