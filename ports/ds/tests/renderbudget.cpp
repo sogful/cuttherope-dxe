@@ -49,6 +49,20 @@ int main(int argc, char** argv) {
     menu={};
     frontend::reserve(reserved);
     for (int locale=0;locale<12;++locale) {
+        for (auto view : {ui::view::home,ui::view::languages,ui::view::resetmenu,ui::view::results}) {
+            menu={}; menu.locale=locale; menu.mode=view;
+            ui::button items[32]; const int count=menu.buttons(items);
+            for (int i=0;i<count;++i) {
+                const auto& item=items[i];
+                assert(item.x-item.width/2>=0 && item.x+(item.width+1)/2<=256);
+                assert(item.y-item.height/2>=0 && item.y+(item.height+1)/2<=192);
+                for (int j=0;j<i;++j) {
+                    const auto& other=items[j];
+                    assert(item.x+(item.width+1)/2<=other.x-other.width/2 || other.x+(other.width+1)/2<=item.x-item.width/2 ||
+                           item.y+(item.height+1)/2<=other.y-other.height/2 || other.y+(other.height+1)/2<=item.y-item.height/2);
+                }
+            }
+        }
         menu={}; menu.locale=locale; menu.mode=ui::view::packs; menu.pack=16; menu.settled=100;
         for (float position : {15.2f,15.5f,16.0f,16.5f}) {
             menu.packposition=position; frontend::count=0; frontend::packs(menu);

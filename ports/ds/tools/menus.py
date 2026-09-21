@@ -254,10 +254,11 @@ def main():
     background("titleback", fabric=True)
     background("skinback", skin=True)
     quad("shadow", "menu_bgr_shadow", 0, pixels=(256, 256), smooth=True)
-    quad("titlelogo", "menu_logo_new", 52, mainfit, group="title")
+    quad("titlelogo", "menu_logo_new", 52, mainfit*uiscale.title, group="title")
     for i in range(52):
-        quad("titlecandy" + str(i), "menu_logo_new", i, mainfit, group="titlecandies" + str(i // 8))
-    quad("titlehand", "candy_selection_fx", 1, mainfit, group="title")
+        quad("titlecandy" + str(i), "menu_logo_new", i, mainfit*uiscale.title, group="titlecandies" + str(i // 8))
+    quad("titlehand", "candy_selection_fx", 1, mainfit*uiscale.title, group="title")
+    titlepositions = [[round(128+(x-1280)*scale*mainfit*uiscale.title),round(56+(y-410)*scale*mainfit*uiscale.title)] for x,y in ((1280,410),(1423,685.5),(1603,729.5))]
     for i, name in enumerate(("longup", "longdown", "shortdown", "shortup")):
         quad(name, "menu_buttons", i)
     for i in range(11):
@@ -266,6 +267,8 @@ def main():
         quad("setting" + str(i), "menu_options_packed", i, factor=fit*uiscale.settings, group="menu_options_packedsettings")
     for i, name in enumerate(("settingup", "settingdown")):
         quad(name, "menu_buttons", i, factor=fit*uiscale.settings, group="menu_buttonssettings")
+    for i,name in ((2,"languagedown"),(3,"languageup")):
+        quad(name,"menu_buttons",i,factor=fit*uiscale.languages,group="menu_buttonslanguages")
     quad("backup", "menu_extra_buttons", 0)
     quad("backdown", "menu_extra_buttons", 1)
     for i in range(1, 10):
@@ -327,13 +330,22 @@ def main():
                 if key in ("DRAG_TO_CUT", "CLICK_TO_CUT"):
                     small, factor = True, fit * .75
                 if key == "RESET_TEXT":
-                    wrap = 1920 * .95 / fit
+                    wrap = 224/(scale*fit*uiscale.reset)
                 if key == "HARDEST_LABEL":
                     factor *= .35
             group = ("packtext" if key.startswith(("boxname", "hint", "required", "total", "count")) else "text") + code
             for prefix in ("boxname", "hint", "required"):
                 if key.startswith(prefix): group += "box" + key[len(prefix):]
             if key == "HARDEST_LABEL": group = "packtext" + code + "box16"
+            if key in ("PLAY","OPTIONS"):
+                factor=mainfit*uiscale.titlebuttons
+                group="texttitle"+code
+            if key in ("YES","NO","RESET_TEXT"):
+                factor*=uiscale.reset
+                group="textreset"+code
+            if key.startswith("language"):
+                factor*=uiscale.languages
+                group="textlanguages"+code
             if key.startswith(("total", "count")):
                 group += key[:5] + str(int(key[5:]) // 16)
             if key.startswith(("boxname", "hint", "required")) or key == "HARDEST_LABEL": factor *= uiscale.boxes
@@ -395,6 +407,20 @@ def main():
     for view in ("packs", "options", "languages", "credits", "resetmenu", "levels", "skins"):
         control(view, "back", 14, 178, 29, 29, "backup", "backdown", absolute=True)
     for item in controls:
+        if item["view"] in ("home","languages","resetmenu") and item["action"]!="back":
+            item["sourcePosition"]=[item["x"],item["y"]]
+            if item["view"]=="home":
+                item["x"],item["y"] = titlepositions[1] if item["action"]=="skinmenu" else (128,141 if item["action"]=="packs" else 175)
+                item["w"],item["h"] = (round(281*scale*mainfit*uiscale.title),)*2 if item["action"]=="skinmenu" else (135,32)
+                item["up"],item["down"] = ("","") if item["action"]=="skinmenu" else ("settingup","settingdown")
+            elif item["view"]=="languages":
+                item["x"],item["y"] = 48+(item["argument"]%3)*80,45+(item["argument"]//3)*34
+                item["w"],item["h"] = 76,32
+                item["up"],item["down"] = "languageup","languagedown"
+            else:
+                item["x"],item["y"] = 128,113 if item["action"]=="erase" else 154
+                item["w"],item["h"] = 135,32
+                item["up"],item["down"] = "settingup","settingdown"
         if item["view"] == "options" and item["action"] != "back":
             item["sourcePosition"] = [item["x"], item["y"]]
             item["x"], item["y"] = dict(effects=(95,18), music=(161,18), languages=(128,47), resetmenu=(128,75),
@@ -450,6 +476,8 @@ def main():
     header += ['};', f'inline constexpr int playableboxes = {boxes};', f'inline constexpr float fit = {fit:.8f}f;', f'inline constexpr float mainfit = {mainfit:.8f}f;']
     header += [f'inline constexpr float boxzoom = {uiscale.boxes}f, settingszoom = {uiscale.settings}f, hudzoom = {uiscale.hud}f;',
                'inline constexpr int creditbounds[] = {'+','.join(map(str,uiscale.creditbounds))+'};']
+    header += [f'inline constexpr float titlezoom = {uiscale.title}f, resultzoom = {uiscale.results}f;',
+               'inline constexpr int titlepositions[3][2] = {'+','.join('{'+','.join(map(str,p))+'}' for p in titlepositions)+'};']
     lockwidths = [[int(math.ceil(sum(font(code)[0].getlength(c) for c in str(config["unlockStars"]))) * .7) for config in configs] for code in codes]
     header += ['inline constexpr int lockwidths[12][17] = {'] + ['{' + ','.join(map(str,row)) + '},' for row in lockwidths] + ['};']
     header += skins.header(skininfo, ids, fit, scale)
@@ -462,7 +490,9 @@ def main():
     sources.update(assets.sources)
     manifest = dict(viewport=[256, 192], logical=[1920, 1440], design=[2560, 1440], fit=fit, mainfit=mainfit,
                     controls=controls, locales=codes, creditheights=creditheights, lockwidths=lockwidths,
-                    uiscale=dict(boxes=uiscale.boxes, settings=uiscale.settings, credits=uiscale.credits, hud=uiscale.hud, creditbounds=uiscale.creditbounds),
+                    uiscale=dict(boxes=uiscale.boxes, settings=uiscale.settings, credits=uiscale.credits, hud=uiscale.hud, creditbounds=uiscale.creditbounds,
+                                 title=uiscale.title,titlebuttons=uiscale.titlebuttons,languages=uiscale.languages,reset=uiscale.reset,results=uiscale.results),
+                    titlepositions=titlepositions,
                     pages=[{key: value for key, value in page.items() if key != "image"} for page in pages],
                     sprites=[{key: value for key, value in record.items() if key != "image"} for record in records],
                     sources={str(path.relative_to(content)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)})

@@ -96,11 +96,13 @@ int controller::buttons(button* out) const {
         }
         break;
     case view::results:
-    case view::failure:
-        add(action::restart, menuart::resultanchors[11][0], menuart::resultanchors[11][1], 54, 24, "");
-        add(action::next, menuart::resultanchors[10][0], menuart::resultanchors[10][1], 54, 24, "", mode == view::results && hasnext());
-        add(action::levels, menuart::resultanchors[9][0], menuart::resultanchors[9][1], 54, 24, "");
+    case view::failure: {
+        const auto& sprite=menuart::sprites[menuart::resultup];
+        add(action::restart, menuart::resultanchors[11][0], menuart::resultanchors[11][1], sprite.w+2, sprite.h+2, "");
+        add(action::next, menuart::resultanchors[10][0], menuart::resultanchors[10][1], sprite.w+2, sprite.h+2, "", mode == view::results && hasnext());
+        add(action::levels, menuart::resultanchors[9][0], menuart::resultanchors[9][1], sprite.w+2, sprite.h+2, "");
         break;
+    }
     default: break;
     }
     return count;

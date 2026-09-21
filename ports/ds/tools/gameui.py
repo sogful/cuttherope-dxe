@@ -11,15 +11,18 @@ def build(menu):
     quad, label, add = menu["quad"], menu["label"], menu["add"]
     fit, scale, content = menu["fit"], menu["scale"], menu["content"]
     assets = menu["assets"]
-    info = {"labels": [], "digits": [], "tutorials": [], "best": []}
+    info = {"labels": [], "digits": [], "resultdigits": [], "tutorials": [], "best": []}
     markers = json.loads((content / "images/menu_results.json").read_text())["frames"]
     points = [(f["spriteSourceSize"]["x"], f["spriteSourceSize"]["y"]) for f in markers[:13]]
     center = [(min(p[a] for p in points[:12]) + max(p[a] for p in points[:12])) / 2 for a in (0, 1)]
-    info["anchors"] = [[round(128 + (p[0] - center[0]) * fit * scale), round(96 + (p[1] - center[1]) * fit * scale)] for p in points]
+    resultfit = fit*uiscale.results
+    info["anchors"] = [[round(128 + (p[0] - center[0]) * resultfit * scale), round(96 + (p[1] - center[1]) * resultfit * scale)] for p in points]
     for i in (13, 14, 15):
-        quad("result" + str(i), "menu_results", i, group="resultart")
+        quad("result" + str(i), "menu_results", i, factor=resultfit, group="resultart"+str(i))
     for i in range(17, 28):
-        quad("stamp" + str(i), "menu_results", i, group="stamp" + str(i))
+        quad("stamp" + str(i), "menu_results", i, factor=resultfit, group="stamp" + str(i))
+    for i,name in ((2,"resultdown"),(3,"resultup")):
+        quad(name,"menu_buttons",i,factor=resultfit,group="menu_buttonsresult")
     for i in range(27):
         quad("confetti" + str(i), "confetti_particles", i, restore=True, group="confetti" + str(i // 9))
     for i in range(2):
@@ -48,7 +51,8 @@ def build(menu):
         for key in info["keys"]:
             name = "game" + code + key
             small = key in ("STAR_BONUS", "TIME", "FINAL_SCORE")
-            label(name, strings[key], code, small, group="textresult" + code if key in info["keys"][:10] else "textpause" + code)
+            result = key in info["keys"][:10]
+            label(name, strings[key], code, small, factor=resultfit if result else fit, group="textresult"+code+key if result else "textpause"+code)
             row.append(name)
         info["labels"].append(row)
         digits = []
@@ -59,6 +63,13 @@ def build(menu):
             add(name, image, "textdigits" + code, origin)
             digits.append((name, face.getlength(char) * fit * scale))
         info["digits"].append(digits)
+        digits = []
+        for i,char in enumerate("0123456789:"):
+            name="resultdigit"+code+str(i)
+            image,origin,_=menu["textimage"](char,code,True,factor=resultfit)
+            add(name,image,"textresultdigits"+code,origin)
+            digits.append((name,face.getlength(char)*resultfit*scale))
+        info["resultdigits"].append(digits)
         name = "bestlabel" + code
         value = strings["BEST_SCORE"] + ": "
         label(name, value, code, True, group="textpause" + code)
@@ -75,10 +86,10 @@ def build(menu):
         width = face.getlength(str(i))
         canvas = Image.new("RGBA", (math.ceil(width) + 20, 125))
         ImageDraw.Draw(canvas).text((10, 15 + face.getmetrics()[0]), str(i), font=face, anchor="ls", fill="black")
-        image = canvas.resize((round(canvas.width * fit * scale), round(canvas.height * fit * scale)), Image.Resampling.LANCZOS)
+        image = canvas.resize((round(canvas.width * resultfit * scale), round(canvas.height * resultfit * scale)), Image.Resampling.LANCZOS)
         name = "scoredigit" + str(i)
-        add(name, image, "textscoredigits", ((10 + width / 2) * fit * scale, 62.5 * fit * scale))
-        info["score"].append((name, width * fit * scale))
+        add(name, image, "textscoredigits", ((10 + width / 2) * resultfit * scale, 62.5 * resultfit * scale))
+        info["score"].append((name, width * resultfit * scale))
     info["hud"] = []
     info["pause"] = [menu["position"](1280, (1440 - 897) / 2 + 88 + i * 181) for i in range(4)]
     info["pause"] += [menu["position"](1280 + sign * 351 / 2, (1440 - 897) / 2 + 724 + 173 / 2) for sign in (-1, 1)]
@@ -100,6 +111,9 @@ def header(info, ids):
     lines += ["struct digit { int sprite; float advance; };", "inline constexpr digit digits[12][11] = {"]
     lines += ["{" + ",".join("{" + str(ids[n]) + f",{width:.6f}f" + "}" for n, width in row) + "}," for row in info["digits"]]
     lines += ["};", "inline constexpr digit scoredigits[10] = {" + ",".join("{" + str(ids[n]) + f",{width:.6f}f" + "}" for n, width in info["score"]) + "};"]
+    lines += ["inline constexpr digit resultdigits[12][11] = {"]
+    lines += ["{" + ",".join("{"+str(ids[n])+f",{width:.6f}f"+"}" for n,width in row)+"}," for row in info["resultdigits"]]
+    lines += ["};"]
     lines += ["inline constexpr digit bestlabels[12] = {" + ",".join("{" + str(ids[n]) + f",{width:.6f}f" + "}" for n, width in info["best"]) + "};"]
     for key in ("hudquads", "stamps"):
         lines += ["inline constexpr int " + key + "[] = {" + ",".join(map(str, info[key])) + "};"]

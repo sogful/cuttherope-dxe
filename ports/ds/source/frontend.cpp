@@ -422,11 +422,13 @@ static int animation(int index, float seconds, bool preview = false) {
 }
 
 static float unit(float value) { return std::clamp(value, 0.0f, 1.0f); }
-static void gamelabel(const ui::controller& menu, int key, int px, int py, float alpha = 1) {
-    add(menuart::gamelabels[menu.locale][key], px, py, {}, GL_FLIP_NONE, 1, 0, std::lround(unit(alpha) * 31));
+static void gamelabel(const ui::controller& menu, int key, int px, int py, float alpha = 1, float width = 0) {
+    const int id=menuart::gamelabels[menu.locale][key];
+    const float scale=width>0?std::min(1.0f,width/menuart::sprites[id].w):1;
+    add(id, px, py, {}, GL_FLIP_NONE, scale, 0, std::lround(unit(alpha) * 31));
 }
-static void digits(const ui::controller& menu, const char* value, int px, int py, bool score, float alpha = 1) {
-    const auto* font = score ? menuart::scoredigits : menuart::digits[menu.locale];
+static void digits(const ui::controller& menu, const char* value, int px, int py, bool score, float alpha = 1, bool result = false) {
+    const auto* font = score ? menuart::scoredigits : result ? menuart::resultdigits[menu.locale] : menuart::digits[menu.locale];
     float width = 0;
     for (const char* p = value; *p; ++p) width += font[*p == ':' ? 10 : *p - '0'].advance;
     float left = px - width / 2;
@@ -486,7 +488,7 @@ static void results(const ui::controller& menu, bool hiding = false) {
     char buffer[24];
     if (time) std::snprintf(buffer, sizeof(buffer), "%d:%02d", value / 60, value % 60);
     else std::snprintf(buffer, sizeof(buffer), "%d", value);
-    if (!final) digits(menu, buffer, a[6][0], a[6][1], false, opacity * alpha);
+    if (!final) digits(menu, buffer, a[6][0], a[6][1], false, opacity * alpha, true);
     std::snprintf(buffer, sizeof(buffer), "%d", total);
     digits(menu, buffer, a[8][0], a[8][1], true, opacity * scorealpha);
     if (menu.improved && t > 3.8f) {
@@ -496,8 +498,8 @@ static void results(const ui::controller& menu, bool hiding = false) {
     for (int i = 0; i < 3; ++i) {
         const int slot = i == 0 ? 11 : i == 1 ? 10 : 9;
         const float alpha = opacity * (i == 1 && !menu.hasnext() ? .35f : 1);
-        add(menu.pressed == i && !hiding ? menuart::shortdown : menuart::shortup, a[slot][0], a[slot][1], {}, GL_FLIP_NONE, 1, 0, std::lround(alpha * 31));
-        gamelabel(menu, menuart::gameREPLAY + i, a[slot][0], a[slot][1], alpha);
+        add(menu.pressed == i && !hiding ? menuart::resultdown : menuart::resultup, a[slot][0], a[slot][1], {}, GL_FLIP_NONE, 1, 0, std::lround(alpha * 31));
+        gamelabel(menu, menuart::gameREPLAY + i, a[slot][0], a[slot][1], alpha, menuart::sprites[menuart::resultup].w-6);
     }
     if (!hiding && menu.resultstars == 3 && t > .5f && t < 5.5f) {
         unsigned seed = 0x43545244;
@@ -989,15 +991,17 @@ void draw(const ui::controller& menu) {
     add(menu.mode == ui::view::home ? menuart::titleback : menu.mode == ui::view::levels ? menuart::levelbacks[menu.pack] : menu.mode == ui::view::skins ? menuart::skinback : menuart::menuback, 128, 96);
     if (menu.mode != ui::view::skins) add(menuart::shadow, 128, 96, {}, GL_FLIP_NONE, (1781 * 2 * pixels) / 256, 4096 + (frame % 4500) * 32768 / 4500);
     switch (menu.mode) {
-    case ui::view::home:
-        add(menuart::titlelogo, x(1280, menuart::mainfit), y(410, menuart::mainfit));
-        add(menuart::titlecandies[menu.skins[0]], x(1423, menuart::mainfit), y(685.5f, menuart::mainfit));
-        if (menu.candyhint) add(menuart::titlehand, x(1603 + 10 * std::cos(menu.age * .087266f), menuart::mainfit), y(729.5f, menuart::mainfit));
+    case ui::view::home: {
+        const auto& p=menuart::titlepositions;
+        add(menuart::titlelogo,p[0][0],p[0][1]);
+        add(menuart::titlecandies[menu.skins[0]],p[1][0],p[1][1]);
+        if (menu.candyhint) add(menuart::titlehand,p[2][0]+std::lround(10*std::cos(menu.age*.087266f)*pixels*menuart::mainfit*menuart::titlezoom),p[2][1]);
         break;
+    }
     case ui::view::packs: packs(menu); break;
     case ui::view::options: options(menu); break;
     case ui::view::skins: skins(menu); break;
-    case ui::view::resetmenu: label(menu, menuart::RESET_TEXT, 128, y(520)); break;
+    case ui::view::resetmenu: label(menu, menuart::RESET_TEXT, 128, 60); break;
     case ui::view::credits: {
         const auto& bounds = menuart::creditbounds;
         const int first = std::max(0, static_cast<int>(menu.creditoffset) / 96);
@@ -1029,9 +1033,13 @@ void draw(const ui::controller& menu) {
         bool pressed = menu.pressed == index || (menu.keyboard && menu.focus == index);
         if (item.action == ui::action::language && item.argument == menu.locale) pressed = !pressed;
         if (item.action == ui::action::skintab && item.argument == menu.skintab) pressed = true;
-        const float factor = menu.mode == ui::view::home ? menuart::mainfit / menuart::fit : menu.mode == ui::view::options && item.action != ui::action::back ? .85f : 1;
+        const float factor = menu.mode == ui::view::options && item.action != ui::action::back ? .85f : 1;
         add(pressed ? item.down : item.up, item.x, item.y, {}, item.action == ui::action::nextpack ? GL_FLIP_H : GL_FLIP_NONE, factor);
-        if (item.label >= 0) add(menuart::labels[menu.locale][item.label], item.x, item.y, {}, GL_FLIP_NONE, menu.mode==ui::view::options?1:factor);
+        if (item.label >= 0) {
+            const int id=menuart::labels[menu.locale][item.label];
+            const float scale=menu.mode==ui::view::languages?std::min(1.0f,(menuart::sprites[item.up].w-4.0f)/menuart::sprites[id].w):1;
+            add(id,item.x,item.y,{},GL_FLIP_NONE,scale);
+        }
         if (item.action == ui::action::music || item.action == ui::action::effects) {
             const bool enabled = item.action == ui::action::music ? menu.music : menu.effects;
             add(menuart::setting0 + item.argument, item.x, item.y, {}, GL_FLIP_NONE, factor, 0, enabled ? 31 : 16, enabled ? RGB15(31,31,31) : RGB15(15,15,15));

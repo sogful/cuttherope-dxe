@@ -198,7 +198,8 @@ markers = json.loads((repo / "content/images/menu_results.json").read_text())["f
 markers = [(f["spriteSourceSize"]["x"], f["spriteSourceSize"]["y"]) for f in markers[:13]]
 center = [(min(p[i] for p in markers[:12]) + max(p[i] for p in markers[:12])) / 2 for i in (0, 1)]
 for actual, marker in zip(generatedpoints("resultanchors"), markers):
-    expected = [128 + (marker[0] - center[0]) * manifest["fit"] * 192 / 1440, 96 + (marker[1] - center[1]) * manifest["fit"] * 192 / 1440]
+    factor=manifest["fit"]*manifest["uiscale"]["results"]*192/1440
+    expected = [128 + (marker[0] - center[0]) * factor, 96 + (marker[1] - center[1]) * factor]
     assert all(abs(a - b) <= .5 for a, b in zip(actual, expected))
 for actual, quad in zip(generatedpoints("hudpositions"), (12,14,13,12,18,12,12,12,16,15,17,17)):
     frames = json.loads((repo / "content/images/hud_ui.json").read_text())["frames"]
