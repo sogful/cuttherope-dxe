@@ -4,6 +4,7 @@
 #include "profiling.hpp"
 #include "upper.hpp"
 #include "upperassets.hpp"
+#include "candyview.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -26,6 +27,7 @@ static dx::point screen(dx::point position) { return {128 + (position.x - 1280) 
 dx::point world(int x, int y) { return {1280 + (x - 128) / scale, y / scale + cameray}; }
 
 static void image(int id, dx::point point, bool absolute = false, int alpha = 31, float size = 1) {
+    if (alpha<=0) return;
     const art::sprite& definition = art::sprites[id];
     const dx::point origin = absolute ? point : screen(point);
     if (paintingupper) { upper::immediate(id,std::lround(origin.x),std::lround(origin.y),alpha,size); return; }
@@ -171,9 +173,10 @@ static void objects(const dx::simulation& game,int frame,const ui::controller& m
     }
     paint(false,2);
     if (!game.split && !game.hidden() && menu.skins[0] == 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
-        image(art::candy0, game.candy().pos);
-        image(art::candy1, game.candy().pos);
-        image(art::candy2, game.candy().pos);
+        const int alpha=gamevisuals::candyalpha(game.candy().pos);
+        image(art::candy0, game.candy().pos,false,alpha);
+        image(art::candy1, game.candy().pos,false,alpha);
+        image(art::candy2, game.candy().pos,false,alpha);
     }
     paint();
 }
@@ -204,7 +207,7 @@ static void lower(const dx::simulation& game,int frame,const ui::controller& men
         glBoxFilled(0, 0, 255, 191, RGB15(31, 31, 31));
     }
     glEnd2D();
-    frontend::present();
+    frontend::present(menu.door || (menu.mode==ui::view::results && menu.age<32));
 }
 
 static void scene(const dx::simulation& game,int frame,const ui::controller& menu,bool,dx::point) {

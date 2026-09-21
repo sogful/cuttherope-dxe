@@ -558,8 +558,12 @@ void finish() {
 #ifdef __NDS__
     DC_FlushRange(frontend::workspace(),256*192);
     if (palettechanged) DC_FlushRange(palette,sizeof(palette));
+    const int lock=enterCriticalSection();
+    frontend::submit();
     pending=true;
+    leaveCriticalSection(lock);
 #else
+    frontend::submit();
     ++completed;
 #endif
 }

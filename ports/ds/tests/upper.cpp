@@ -27,6 +27,61 @@ int main(int argc,char** argv) {
     ui::controller menu;
     dx::simulation game;
     game.reset(dx::levels[0]);
+    const int submitted=submittedframes;
+    frontend::present(true);
+    assert(submittedframes==submitted);
+    upper::finish();
+    assert(submittedframes==submitted+1);
+    upper::finish();
+    assert(submittedframes==submitted+1);
+    frontend::present();
+    assert(submittedframes==submitted+2);
+    static_assert(GL_FLIP_NONE==1 && GL_FLIP_H==4 && GL_FLIP_V==2,"Match the real DS gl2d flags");
+    for (int angle : {0,4096}) for (int flip=0;flip<4;++flip) {
+        const int sdkflags=flip?((flip&1?GL_FLIP_H:0)|(flip&2?GL_FLIP_V:0)):GL_FLIP_NONE;
+        upper::begin(upperart::worlds[16][0]);
+        upper::sprite(menuart::boxcover17x0,128,96,.5f,.5f,angle,flip);
+        const unsigned expected=hash();
+        upper::begin(upperart::worlds[16][0]);
+        frontend::count=0;
+        frontend::add(menuart::boxcover17x0,128,96,{},sdkflags,.5f,angle);
+        frontend::paintupper();
+        assert(hash()==expected);
+    }
+    int previousalpha=31;
+    for (int y=0;y>=-500;--y) {
+        const int alpha=gamevisuals::candyalpha({1280,static_cast<float>(y)});
+        assert(alpha>=0 && alpha<=previousalpha);
+        if (y>=-200) assert(alpha==31);
+        if (y<=-400) assert(alpha==0);
+        previousalpha=alpha;
+    }
+    for (int candy : {0,1,51}) for (int y : {-100,-300,-400,-450}) {
+        menu.skins[0]=candy;
+        game.bodies[0].pos={1280,static_cast<float>(y)};
+        frontend::preparegame(menu,game,0);
+        bool found=false;
+        for (int i=0;i<frontend::count;++i) for (int id : menuart::gamecandies[candy])
+            if (frontend::commands[i].id==id) {
+                found=true;
+                assert(y>-400 && frontend::commands[i].alpha==gamevisuals::candyalpha(game.candy().pos));
+            }
+        assert(found==(candy>0 && y>-400));
+    }
+    for (int candy : {0,1,51}) {
+        game.reset(dx::levels[100]); menu.skins[0]=candy;
+        assert(game.split);
+        game.bodies[1].pos={1100,-300}; game.bodies[2].pos={1400,-450};
+        frontend::preparegame(menu,game,0);
+        bool found=false;
+        for (int i=frontend::starfront;i<frontend::count;++i) {
+            const auto& command=frontend::commands[i];
+            if (command.id==menuart::gamehalves[candy][0]) { assert(command.alpha==16); found=true; }
+            assert(command.id!=menuart::gamehalves[candy][1]);
+        }
+        assert(found);
+    }
+    menu={}; game.reset(dx::levels[0]);
     for (int box=0;box<17;++box) for (int sections=0;sections<3;++sections) {
         const int id=upperart::worlds[box][sections];
         for (int top : {0,1,15,16,64,96,192}) {

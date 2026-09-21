@@ -42,6 +42,7 @@ def check(run, tap, key, state, framebuffer, settle, stress, profiler, report, d
         if current["view"] == 2 and current["menuage"] >= 360:
             break
     assert repeated and state()["view"] == 2 and state()["menuage"] >= 360
+    framebuffer().save(directory/"heavy-closed-dual.png")
     before = state()["resets"]
     layout=json.loads((Path(__file__).resolve().parents[1]/"generated/menumanifest.json").read_text(encoding="utf-8"))
     tap(*layout["gameui"]["anchors"][11])

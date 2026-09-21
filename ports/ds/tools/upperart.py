@@ -107,8 +107,7 @@ def main():
         row = []
         for image in group:
             extended = Image.new("RGB",(256,image.height+192))
-            # Off-map space uses the authored interior of the tall-box composite.
-            extended.paste(worlds[box][2].crop((0,192,256,384)),(0,0))
+            extended.paste(worlds[box][0].crop((0,0,256,192)),(0,0))
             extended.paste(image,(0,192))
             row.append(background(dim(extended,17),3+box))
         gamebacks.append(row)

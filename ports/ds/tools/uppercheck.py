@@ -1,7 +1,8 @@
 """Actual dual-screen output checks, using only normal menu and stylus input."""
 
 import json
-from PIL import ImageChops, ImageStat
+from PIL import Image, ImageChops, ImageStat
+import statistics
 
 
 def check(run,tap,key,touch,state,framebuffer,settle,snapshot,report,directory):
@@ -61,6 +62,49 @@ def check(run,tap,key,touch,state,framebuffer,settle,snapshot,report,directory):
     assert state()["level"]==14 and not state()["intro"] and len(cameras)>25
     record("upper-tall-camera",scrolling)
     snapshot("upper-tall-level")
+    key(3); tap(128,102); settle(); key(0)
+    for _ in range(7): key(7)
+    run(120); key(8); tap(128,26); settle()
+    assert state()["level"]==177
+    touch(100,66); touch(155,66); touch(155,66,False)
+    rising=[]; heights=[]
+    for _ in range(900):
+        run(1)
+        if state()["y"]<0:
+            rising.append(framebuffer()); heights.append(state()["y"])
+        if state()["failure"]==1: break
+    assert state()["failure"]==1 and state()["y"]<-400 and len(rising)>8,state()
+    run(5); snapshot("upper-candy-retired")
+    cx=round(128+(state()["x"]-1280)*192/1440)
+    cy=round(192+state()["y"]*192/1440)
+    candy=top().crop((cx-7,cy-7,cx+8,cy+8))
+    red=sum(r>80 and r>g*1.5 and r>b*1.5 for r,g,b in candy.getdata())
+    assert red==0,("Frozen candy remained above the level",red,state())
+    record("upper-candy-fade",rising)
+    key(3); tap(128,102); settle(); key(0)
+    for _ in range(9): key(7)
+    run(120); key(8); tap(66,26); settle()
+    assert state()["level"]==400
+    snapshot("upper-mechanical-background")
+    key(3); touch(128,102); touch(128,102,False)
+    closing=[]; ages=[]
+    for _ in range(180):
+        run(1); closing.append(framebuffer()); ages.append(state()["doorframe"] if state()["door"]==2 else -1)
+        if state()["view"]==4 and not state()["transition"]: break
+    record("upper-mechanical-closing",closing)
+    comparisons={}
+    for lag in range(-3,4):
+        errors=[]
+        for index,age in enumerate(ages):
+            if not 19<=age<=29 or not 0<=index+lag<len(closing): continue
+            above=closing[index].crop((0,128,24,176)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+            below=closing[index+lag].crop((0,208,24,256))
+            errors.append(sum(ImageStat.Stat(ImageChops.difference(above,below)).mean)/3)
+        if errors: comparisons[lag]=statistics.median(errors)
+    report["flapLagErrors"]=comparisons
+    print("FLAP:",comparisons,flush=True)
+    assert comparisons and min(comparisons,key=comparisons.get)==0,("Mechanical flap timing drift",comparisons)
+    report["upperCandyRetiredRedPixels"]=red
     report.update(passed=True,upperChecks=True,scrollCameraPositions=len(cameras))
     (directory/"upperreport.json").write_text(json.dumps(report,indent=2))
-    print("PASS: fixed native photo / moving shadow, upper HUD >=50 updates/s, dual white flash, completion/flaps, static closed results and tall camera")
+    print("PASS: native photo/shadow, upper HUD >=50 updates/s, dual flashes, completion/flaps, tall camera, upper candy fade and synchronized Mechanical flaps")

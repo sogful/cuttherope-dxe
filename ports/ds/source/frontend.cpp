@@ -13,6 +13,7 @@
 #include "deviceview.hpp"
 #include "nocturnalview.hpp"
 #include "conveyorview.hpp"
+#include "candyview.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -32,6 +33,7 @@ extern "C" { volatile unsigned renderstamp = 0; }
 #endif
 alignas(32) static unsigned char staged[393216 + 512*64];
 static unsigned stagedbytes = 0;
+static bool submission=false;
 static unsigned workversion = 0, blendversion = 0, lookupversion = 0;
 unsigned char* workspace() { return staged; }
 unsigned workgeneration(unsigned boundary) { return boundary==65536?blendversion:boundary==196608?lookupversion:workversion; }
@@ -177,8 +179,18 @@ static unsigned char* staging(unsigned size) {
     return result;
 }
 
-void present() {
-    if (!transfercount) { glFlush(GL_TRANS_MANUALSORT); DS_PROFILE_DO(++renderstamp); return; }
+void submit() {
+    if (!submission) return;
+    glFlush(GL_TRANS_MANUALSORT);
+    submission=false;
+    DS_PROFILE_DO(++renderstamp);
+}
+void present(bool synchronize) {
+    if (!transfercount) {
+        submission=true;
+        if (!synchronize) submit();
+        return;
+    }
 #ifdef __NDS__
     unsigned bytes = 0;
     for (unsigned i = 0; i < transfercount; ++i) {
@@ -748,7 +760,9 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         world(item.sprite, position, std::lround(alpha * 31), item.angle);
     }
     gamevisuals::discs(game,world);
-    gamevisuals::conveyors(game,world);
+    gamevisuals::conveyors(game,[&](int sprite,dx::point position,int alpha,float angle,float scale,int flip,float vertical) {
+        world(sprite,position,alpha,angle,scale,((flip&1)?GL_FLIP_H:0)|((flip&2)?GL_FLIP_V:0),vertical);
+    });
     for (int i = 0; i < game.definition.bubblecount; ++i) {
         const auto* app = game.ghostapp(2,i);
         const int alpha = std::lround(game.ghostalpha(2,i)*31);
@@ -862,11 +876,14 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     }
     starfront = count;
     if (game.split && game.failreason != 3) {
-        for (int i = 0; i < 2; ++i) if (game.halfalive[i]) world(menuart::gamehalves[menu.skins[0]][i], game.bodies[i + 1].pos);
+        for (int i = 0; i < 2; ++i) if (game.halfalive[i]) {
+            const auto position=game.bodies[i+1].pos;
+            world(menuart::gamehalves[menu.skins[0]][i],position,gamevisuals::candyalpha(position));
+        }
     }
     if (!game.split && !game.hidden() && menu.skins[0] > 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
         const int px = wx(game.candy().pos.x), py = wy(game.candy().pos.y);
-        for (int id : menuart::gamecandies[menu.skins[0]]) add(id, px, py);
+        for (int id : menuart::gamecandies[menu.skins[0]]) add(id,px,py,{},GL_FLIP_NONE,1,0,gamevisuals::candyalpha(game.candy().pos));
     }
     if (game.mergeage * .016f < .25f) world(menuart::merge0 + static_cast<int>(game.mergeage * .016f / .05f), game.candy().pos);
     if (game.inlantern && game.captureage < .1f) {
@@ -1093,7 +1110,10 @@ void paintupper(bool ground,int stars) {
         const auto& item=commands[i];
         const upper::clip bounds{item.bounds.left,item.bounds.top,item.bounds.right,item.bounds.bottom};
         if (item.id<0) upper::rect(bounds,item.color,item.alpha);
-        else upper::sprite(item.id,item.x,item.y,item.scale,item.vertical,item.angle,item.flip,item.alpha,item.color,bounds);
+        else {
+            const int flip=((item.flip&GL_FLIP_H)?1:0)|((item.flip&GL_FLIP_V)?2:0);
+            upper::sprite(item.id,item.x,item.y,item.scale,item.vertical,item.angle,flip,item.alpha,item.color,bounds);
+        }
     }
 }
 

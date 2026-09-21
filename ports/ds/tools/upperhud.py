@@ -27,7 +27,7 @@ def build():
         width=face.getlength(str(digit))
         canvas=Image.new("RGBA",(math.ceil(width)+20,125))
         ImageDraw.Draw(canvas).text((10,15+face.getmetrics()[0]),str(digit),font=face,anchor="ls",
-                                   fill="white",stroke_width=round(1/ratio),stroke_fill="black")
+                                   fill="white",stroke_width=round(1.5/ratio),stroke_fill="black")
         image=canvas.resize(tuple(round(value*ratio) for value in canvas.size),Image.Resampling.LANCZOS)
         add(image,((10+width/2)*ratio,62.5*ratio),width*ratio)
     return images,records
