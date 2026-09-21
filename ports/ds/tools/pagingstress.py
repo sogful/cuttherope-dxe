@@ -1,6 +1,7 @@
 """Synthetic GPU pressure, explicitly not evidence of solving the real puzzle."""
 
 import json
+from pathlib import Path
 from PIL import ImageStat
 
 
@@ -42,7 +43,8 @@ def check(run, tap, key, state, framebuffer, settle, stress, profiler, report, d
             break
     assert repeated and state()["view"] == 2 and state()["menuage"] >= 360
     before = state()["resets"]
-    tap(98, 125)
+    layout=json.loads((Path(__file__).resolve().parents[1]/"generated/menumanifest.json").read_text(encoding="utf-8"))
+    tap(*layout["gameui"]["anchors"][11])
     settle()
     run(90)
     assert state()["view"] == 0 and state()["resets"] == before + 1

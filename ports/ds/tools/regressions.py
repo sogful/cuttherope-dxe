@@ -10,7 +10,9 @@ def check(
     run, tap, key, touch, state, framebuffer, snapshot, settle, report, directory
 ):
     start = time.monotonic()
-    layouts=json.loads((Path(__file__).resolve().parents[1]/"generated/menumanifest.json").read_text(encoding="utf-8"))["gameui"]["hud"]
+    layout=json.loads((Path(__file__).resolve().parents[1]/"generated/menumanifest.json").read_text(encoding="utf-8"))
+    layouts=layout["gameui"]["hud"]
+    replaypoint=layout["gameui"]["anchors"][11]
     def hud(): return layouts[state()["locale"]]
 
     def screen():
@@ -108,8 +110,8 @@ def check(
     key(3)
     assert state()["view"] == 2
     snapshot("regression-results-hud-input")
-    touch(98, 125)
-    touch(98, 125, False)
+    touch(*replaypoint)
+    touch(*replaypoint,False)
     replay = []
     for _ in range(100):
         run(1)

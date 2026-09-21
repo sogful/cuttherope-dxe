@@ -25,6 +25,11 @@ assert len(belts) == 7 and [item["source"]["quad"] for item in belts] == list(ra
 assert all(item["source"]["resource"] == "obj_conveyor" for item in belts)
 for item in manifest["sprites"]:
     source = item.get("source") or {}
+    page = manifest["pages"][item["page"]]
+    if item["group"].startswith(("text", "packtext", "credits")):
+        assert not page["dither"], "UI scaling must not introduce dithering into fonts"
+    if item["group"].startswith("menu_buttons"):
+        assert page["dither"] == "low", "Scaled buttons must retain low dithering"
     if re.fullmatch(r"level[0-5]",item["name"]) or item["name"]=="pack3":
         assert source["factor"]==manifest["fit"], "Level selection must retain its original scale"
     if item["name"].endswith("HARDEST_LABEL"):

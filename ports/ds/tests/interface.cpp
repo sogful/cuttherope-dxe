@@ -11,6 +11,11 @@ int main() {
     ui::controller menu;
     auto pen = [&](int x, int y, bool held) { menu.update(game, {x, y, 0, held}); };
     auto tap = [&](int x, int y) { pen(x, y, true); pen(x, y, false); pen(x, y, false); };
+    auto choose = [&](ui::action id,int argument=0) {
+        ui::button buttons[32]; const int count=menu.buttons(buttons);
+        for (int i=0;i<count;++i) if (buttons[i].id==id && buttons[i].argument==argument) { tap(buttons[i].x,buttons[i].y); return; }
+        assert(false);
+    };
     auto key = [&](int value) { menu.update(game, {0, 0, value, false}); };
     auto settle = [&]() { for (int i = 0; i < 40 && menu.blocked(); ++i) menu.advance(game); assert(!menu.blocked()); };
     assert(menu.mode == ui::view::home);
@@ -106,19 +111,19 @@ int main() {
     assert(menu.mode == ui::view::levels);
     key(ui::cancel);
     key(ui::cancel);
-    tap(128, 170);
+    choose(ui::action::options);
     assert(menu.mode == ui::view::options);
     tap(128, 77);
     assert(menu.mode == ui::view::resetmenu && menu.bestscore == 5200);
-    tap(128, 138);
+    choose(ui::action::options);
     assert(menu.mode == ui::view::options && menu.bestscore == 5200);
     tap(128, 77);
-    tap(128, 108);
+    choose(ui::action::erase);
     assert(menu.mode == ui::view::options && menu.bestscore == 0 && menu.beststars == 0);
     tap(148, 150);
     assert(menu.clickcut);
     tap(128, 53);
-    tap(128, 59);
+    choose(ui::action::language,1);
     assert(menu.mode == ui::view::languages && menu.locale == 1);
     key(ui::cancel);
     tap(128, 102);

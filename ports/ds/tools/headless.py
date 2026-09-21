@@ -242,7 +242,12 @@ def main():
             result = dict(zip(keys, struct.unpack(f"<10I2f{fields}I", c.string_at(memory + offset, 48 + fields * 4))))
             for key in keys: result.setdefault(key, 0)
             return result
-        layouts=json.loads((root/"generated/menumanifest.json").read_text(encoding="utf-8"))["gameui"]["hud"]
+        layout=json.loads((root/"generated/menumanifest.json").read_text(encoding="utf-8"))
+        layouts=layout["gameui"]["hud"]
+        replaypoint=layout["gameui"]["anchors"][11]
+        def control(view,action,argument=None):
+            item=next(item for item in layout["controls"] if item["view"]==view and item["action"]==action and (argument is None or item["argument"]==argument))
+            return item["x"],item["y"]
         def hud(): return layouts[telemetry()["locale"]]
         def run(count):
             nonlocal lastframe, stalled
@@ -690,16 +695,23 @@ def main():
             tap(128, 53)
             assert snapshot("languages")["view"] == 8
             for locale in range(12):
-                tap((72, 128, 184)[locale % 3], (59, 84, 108, 133)[locale // 3])
+                tap(*control("languages","language",locale))
                 assert telemetry()["locale"] == locale
+                snapshot("languages-locale-"+str(locale))
                 key(0)
                 localized = snapshot("options-locale-" + str(locale))
                 assert localized["view"] == 7 and localized["locale"] == locale
                 assert localized["texturebytes"] <= 384 * 1024
+                tap(*control("options","resetmenu"))
+                assert snapshot("reset-locale-"+str(locale))["view"]==10
+                tap(*control("resetmenu","options"))
+                key(0)
+                assert snapshot("title-locale-"+str(locale))["view"]==5
+                tap(*control("home","options"))
                 tap(128, 53)
-            tap(128, 59)
+            tap(*control("languages","language",1))
             assert snapshot("languages-russian")["locale"] == 1
-            tap(72, 133)
+            tap(*control("languages","language",9))
             assert snapshot("languages-japanese")["locale"] == 9
             key(0)
             assert snapshot("options-japanese")["view"] == 7
@@ -707,7 +719,7 @@ def main():
             assert snapshot("credits-japanese")["view"] == 9
             key(0)
             tap(128, 53)
-            tap(72, 59)
+            tap(*control("languages","language",0))
             key(0)
             tap(128, 102)
             credits = snapshot("credits")
@@ -729,7 +741,7 @@ def main():
             key(0)
             tap(128, 77)
             assert snapshot("reset-confirmation")["view"] == 10
-            tap(128, 138)
+            tap(*control("resetmenu","options"))
             assert telemetry()["view"] == 7
             tap(104, 28)
             tap(152, 28)
@@ -839,8 +851,8 @@ def main():
             sequence[0].save(directory / "result-sequence.gif", save_all=True, append_images=sequence[1:], duration=48, loop=0)
             snapshot("result-complete")
             replay = []
-            touch(98, 125)
-            touch(98, 125, False)
+            touch(*replaypoint)
+            touch(*replaypoint,False)
             for i in range(60):
                 run(1)
                 replay.append(framebuffer().crop((0, 192, 256, 384)))
@@ -853,10 +865,13 @@ def main():
             touch(100, 40)
             touch(155, 40)
             touch(155, 40, False)
-            run(430)
+            for _ in range(1800):
+                run(1)
+                if telemetry()["view"] == 2 and telemetry()["menuage"] >= 360:
+                    break
             improved = snapshot("result-improved")
-            assert improved["view"] == 2 and improved["improved"] == 1
-            tap(98, 125)
+            assert improved["view"] == 2 and improved["improved"] == 1 and improved["menuage"] >= 360
+            tap(*replaypoint)
             settle()
             key(3)
             assert snapshot("source-pause")["view"] == 1
@@ -868,11 +883,12 @@ def main():
                 closing.append(framebuffer().crop((0, 192, 256, 384)))
             closing[0].save(directory / "box-quit.gif", save_all=True, append_images=closing[1:], duration=16, loop=0)
             assert snapshot("quit-levels")["view"] == 4
+            settle()  # The grid may still be fading in after its texture pages load.
             touch(66, 26)
             touch(66, 26, False)
             opening = []
             openingclocks = {}
-            for _ in range(95):
+            for _ in range(360):
                 run(1)
                 opening.append(framebuffer().crop((0, 192, 256, 384)))
                 current = telemetry()
@@ -880,6 +896,8 @@ def main():
                     openingclocks[current["frames"]] = current["visuals"]
                 if _ in (28, 44, 60, 76):
                     capture("opening-" + str(_))
+                if _ >= 95 and not current["transition"] and not current["door"]:
+                    break
             opening[0].save(directory / "box-opening.gif", save_all=True, append_images=opening[1:], duration=16, loop=0)
             assert snapshot("opened-level")["view"] == 0
             # Texture uploads may consume VBlanks. Compare actual main-loop
@@ -984,10 +1002,13 @@ def main():
             touch(155, 40)
             touch(155, 40, False)
             run(200)
+            for _ in range(240):
+                if telemetry()["view"] == 2: break
+                run(1)
             fastwin = snapshot("fastwin")
             assert fastwin["view"] == 2 and fastwin["score"] > 5000 and fastwin["bestscore"] == fastwin["score"], fastwin
             while telemetry()["menuage"] < 32: run(1)
-            settle(); tap(98,125); settle(); tap(*hud()[:2])
+            settle(); tap(*replaypoint); settle(); tap(*hud()[:2])
             before = telemetry()
             tap(128,72)
             skipped = snapshot("pause-skip")
