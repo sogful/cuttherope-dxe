@@ -107,7 +107,7 @@ void simulation::advancedevices() {
     }
 }
 void simulation::updatedevices() {
-    for (int i = 0; i < definition.tubecount && (state == outcome::playing || (state == outcome::lost && split && activecount())) && !hidden(); ++i) {
+    for (int i = 0; i < definition.tubecount && (state == outcome::playing || failreason == 4 || bulbalive || (state == outcome::lost && split && activecount())); ++i) {
         const auto& tube = definition.tubes[i];
         const float width = 10*tube.scale, radius = 17.5f*tube.scale, height = steamheight(i);
         const bool aligned = (tube.angle == 0 && !inverted) || (tube.angle == 180 && inverted);
@@ -116,6 +116,7 @@ void simulation::updatedevices() {
         const auto forward = tubes[i].forward, backward = tubes[i].backward;
         auto transform = [](point p, point axis) { return point{p.x*axis.x-p.y*axis.y,p.x*axis.y+p.y*axis.x}; };
         for (int part = 0; part < activecount(); ++part) {
+            if (!available(activeid(part))) continue;
             auto& body = bodies[activeid(part)];
             const auto p = transform(body.pos-tube.position,backward)+tube.position;
             const auto v = transform(body.velocity,backward);

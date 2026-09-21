@@ -70,16 +70,21 @@ void simulation::reset(const level& data) {
         const int id = add(position, 1, false);
         bodies[id].previous = position; bodies[id].initialized = true;
     }
+    if (data.bulbcount) {
+        while (bodycount < 3) add(data.candy,1,true);
+        add(data.bulbs[0].position,1,false);
+    }
     introduction = data.height > 1440;
     cameray = introduction && data.candy.y < data.height / 2 ? data.height - 1440 : 0;
     cameraspeed = 20;
     cameradistance = std::abs(cameray - std::clamp(data.candy.y - 720, 0.0f, data.height - 1440));
     resetdevices();
+    resetnocturnal();
     for (int index = 0; index < data.hookcount; ++index) {
         const hook& source = data.hooks[index];
         anchors[index] = source.anchor;
         ropes[index].spiderpos = source.anchor;
-        if (source.radius < 0 && !inlantern) attach(index, source.length, split ? 1 + source.part : 0);
+        if (source.radius < 0 && !inlantern) attach(index, source.length, source.bulb ? 3 : split ? 1 + source.part : 0);
     }
 }
 
@@ -212,7 +217,7 @@ void simulation::detach(rope& item) {
         break;
     }
     for (int index = 0; index < item.count; ++index) {
-        if (item.bodies[index] >= (definition.split ? 3 : 1)) bodies[item.bodies[index]].inverse = 100000;
+        if (item.bodies[index] >= bodybase()) bodies[item.bodies[index]].inverse = 100000;
     }
 }
 
@@ -230,13 +235,14 @@ DS_HOT void simulation::ropephysics() {
             }
             for (int part = 0; part < item.count; ++part) {
                 const int id = item.bodies[part];
-                if (id >= (definition.split ? 3 : 1)) integrate(bodies[id], 784.0f * (step * delta));
+                if (id >= bodybase()) integrate(bodies[id], 784.0f * (step * delta));
             }
             solve(item);
         }
         const auto& hook = definition.hooks[index];
-        for (int part = 0; part < activecount() && !hidden() && state == outcome::playing; ++part) {
+        for (int part = 0; part < activecount() && state == outcome::playing; ++part) {
             const int id = activeid(part);
+            if (!available(id)) continue;
             if (ropes[index].count == 0 && hook.radius >= 0 && (bodies[id].pos - anchors[index]).length() <= hook.radius + 42) {
                 attach(index, hook.radius + 42, id);
                 ++ropeevents;
@@ -251,19 +257,28 @@ void simulation::tick(bool suppress) {
     camera();
     if (panning) return;
     animate();
+    advancelighttransport();
     advanceghosts(4);
     ropephysics();
-    if (state != outcome::playing && !(state == outcome::lost && split && activecount())) {
-        advanceghosts(2); advanceghosts(8); updateghosts(); updatedevices(); return;
+    if (state != outcome::playing && failreason != 4 && !bulbalive && !(state == outcome::lost && split && activecount())) {
+        advanceghosts(2); advanceghosts(8); updateghosts(); updatedevices(); stopmice(); updatemice(); return;
     }
     ++ticks;
     const float step = delta * definition.speed;
     const point halfgap = halfdraw[0] - halfdraw[1];
     const bool touching = std::abs(halfgap.x) < 88 && std::abs(halfgap.y) < 76;
-    for (int part = 0; part < activecount() && transit < 0; ++part) {
-        auto& item = bodies[activeid(part)];
-        integrate(item, nogravity ? 0 : 784.0f * (step * step), 1.0f / step);
-        if (split) halfdraw[activeid(part)-1] = item.pos;
+    for (int part = 0; part < activecount(); ++part) {
+        const int id = activeid(part);
+        if (id != 3 && state != outcome::playing && failreason != 4 && !split) continue;
+        if (id == 3 ? bulbtransit >= 0 : transit >= 0) continue;
+        auto& item = bodies[id];
+        integrate(item, id == 0 && nogravity ? 0 : 784.0f * (step * step), 1.0f / step);
+        if (split && id != 3) halfdraw[id-1] = item.pos;
+    }
+    collidelight();
+    if (bulbalive) {
+        const auto position = bodies[3].pos;
+        if (position.y > definition.height+400 || position.y < -400 || position.x < -2560 || position.x > definition.width+2560) retirebulb();
     }
     candydraw = candy().pos;
     if (captureage < .1f) {
@@ -273,12 +288,13 @@ void simulation::tick(bool suppress) {
     if (split && activecount()==2) merge(touching);
     const point pos = candy().pos;
     const point distance = pos - definition.target;
-    if (!split && !hidden() && !mouth && distance.length() < 200) { mouth = true; mouthtick = ticks; }
+    updatelight();
+    if (!split && !hidden() && (!definition.night || awake) && !mouth && distance.length() < 200) { mouth = true; mouthtick = ticks; }
     else if (mouth && distance.length() >= 220) mouth = false;
     for (int index = 0; index < 3; ++index) {
         const float timeout = definition.timeouts[index];
         if (timeout > 0 && ticks * delta >= timeout) expired[index] = true;
-        for (int part = 0; part < activecount() && !hidden(); ++part) {
+        for (int part = 0; part < candycount() && (state == outcome::playing || failreason == 4) && !hidden() && (!definition.night || starlit[index]); ++part) {
             const point difference = bodies[activeid(part)].pos + (split ? point{-1,14} : point{}) - starpositions[index];
             if (!stars[index] && !expired[index] && std::abs(difference.x) < (split ? 98 : 97) && std::abs(difference.y) < (split ? 89 : 93)) {
                 stars[index] = true;
@@ -290,12 +306,13 @@ void simulation::tick(bool suppress) {
     bool captured = false;
     advanceghosts(2);
     for (int i = 0; i < definition.bubblecount && !captured; ++i) {
-        for (int part = 0; part < activecount() && !hidden(); ++part) {
+        for (int part = 0; part < activecount(); ++part) {
             const int id = activeid(part);
+            if (!available(id)) continue;
             const auto d = bodies[id].pos - definition.bubbles[i];
             if (!bubblesused[i] && d.x >= -85 && d.x < 85 && d.y >= -85 && d.y < 85) {
                 if (bubblefor(id) >= 0) burst(id);
-                (id ? halfbubbles[id-1] : bubble) = i;
+                bubbleindex(id) = i;
                 bubblesused[i] = true;
                 for (auto& app : apparitions) if (app.form == 2 && app.index == i) app.owner = id;
                 ++bubbleevents;
@@ -306,36 +323,40 @@ void simulation::tick(bool suppress) {
     }
     updateghosts();
     updatedevices();
+    updatemice();
     transports();
     hazards();
     advanceghosts(8);
     bounce();
     spiders();
-    if (state != outcome::playing && !(state == outcome::lost && split && activecount())) return;
-    for (int part = 0; part < activecount() && !hidden(); ++part) {
+    if (state != outcome::playing && failreason != 4 && !bulbalive && !(state == outcome::lost && split && activecount())) return;
+    for (int part = 0; part < activecount(); ++part) {
         const int id = activeid(part);
+        if (!available(id)) continue;
         if (bubblefor(id) >= 0) bodies[id].pos = bodies[id].pos + point{-bodies[id].velocity.x / 14,
             -bodies[id].velocity.y / 14 + (inverted ? 40.0f : -40.0f)} * delta;
     }
-    if (!suppressoutcome && state == outcome::playing && !split && !hidden() && mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
+    if (!suppressoutcome && state == outcome::playing && !split && !hidden() && (!definition.night || awake) && mouth && distance.x > -113.5f && distance.x < 106.5f && distance.y > -22 && distance.y < 84) {
         releasecandy(0);
         state = outcome::won;
+        stopmice();
         resulttick = ticks;
         resultvisual = visuals;
         bodies[0].pin = bodies[0].pos;
         bodies[0].pinned = true;
         if (bubble >= 0) burst();
-    } else if (!hidden()) for (int part = activecount()-1; part >= 0; --part) {
+    } else for (int part = activecount()-1; part >= 0; --part) {
         const int id = activeid(part);
+        if (!available(id)) continue;
         const auto position = bodies[id].pos;
         if (position.y > definition.height + 400 || position.y < -400 || position.x < -2560 || position.x > definition.width + 2560) {
-            if (split) retirehalf(id,1); else fail(1);
+            if (id == 3) retirebulb(); else if (split) retirehalf(id,1); else fail(1);
         }
     }
 }
 
 bool simulation::sever(int index, int segment) {
-    if (state != outcome::playing || index < 0 || index >= definition.hookcount) return false;
+    if ((state != outcome::playing && failreason != 4) || index < 0 || index >= definition.hookcount) return false;
     rope& item = ropes[index];
     if (item.cut || segment < 0 || segment >= item.count - 1 || introduction) return false;
     item.cut = true;

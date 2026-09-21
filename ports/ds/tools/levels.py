@@ -5,7 +5,7 @@ import math
 import struct
 import xml.etree.ElementTree as xml
 
-boxes = 14
+boxes = 16
 
 
 def build(content, output, sources):
@@ -32,7 +32,7 @@ def build(content, output, sources):
              f'inline constexpr std::array<level, {total}> levels = [] {{ std::array<level, {total}> items{{}};']
     audit, packed, offsets, routes, routepoints = [], [], [], [], []
     f = lambda value: struct.unpack("<f", struct.pack("<f", value))[0]
-    limits = dict(hooks=16, bubbles=32, spikes=16, pumps=8, hats=8, bouncers=16, switches=4, discs=4, ghosts=4, tubes=6, lanterns=6)
+    limits = dict(hooks=16, bubbles=32, spikes=16, pumps=8, hats=8, bouncers=16, switches=4, discs=4, ghosts=4, tubes=6, lanterns=6, mice=5, bulbs=1)
     for box in range(1, boxes + 1):
         for index in range(1, 26):
             path = content / "maps" / f"{box}_{index}.xml"
@@ -109,7 +109,7 @@ def build(content, output, sources):
                     records["hooks"].append([position(node), float(node.get("length", 0)) * 3, radius, node.get("spider") == "true",
                         0.0 if route >= 0 else max(0.0, float(node.get("moveLength", -1)) * 3), float(node.get("moveOffset", 0)) * 3,
                         node.get("moveVertical") == "true", int(node.get("part") != "L"), node.get("wheel") == "true",
-                        route, float(int(float(node.get("moveSpeed", 0)) * 3.3)), node.get("hidePath") == "true"])
+                        route, float(int(float(node.get("moveSpeed", 0)) * 3.3)), node.get("hidePath") == "true", node.get("bindBulb") == "true"])
                 elif node.tag == "star":
                     stars.append(position(node)); timeouts.append(float(node.get("timeout", -1))); motions.append(motion(node))
                 elif node.tag == "bubble":
@@ -154,6 +154,12 @@ def build(content, output, sources):
                         routes.append([len(routepoints),len(points),value.startswith("R")])
                         routepoints.extend(points)
                     records["lanterns"].append([position(node), movement, node.get("candyCaptured") == "true", route])
+                elif node.tag == "gap":
+                    records["mice"].append([position(node), number(node.get("angle",0)), number(node.get("radius",0))*3 or 240.0,
+                        number(node.get("activeTime",0)) or 3.0, int(node.get("index",0)) or len(records["mice"])+1])
+                elif node.tag == "lightBulb":
+                    assert node.get("bulbNumber") == "first", (path,node.attrib)
+                    records["bulbs"].append([position(node), number(node.get("litRadius",0))*3])
                 elif node.tag in ("hidden02", "hidden03", "hiddenElement", "spikesSwitch"):
                     pass  # The C# LoadObjects switch also ignores this legacy map tag.
                 else:
@@ -164,7 +170,7 @@ def build(content, output, sources):
                 candy = [(halves[0][axis] + halves[1][axis]) / 2 for axis in (0,1)]
             lines.append(f"{{ auto& value = items[{(box-1)*25+index-1}];")
             for key, value in dict(left=left, width=width, height=height, speed=speed, box=box-1, index=index-1,
-                                   candy=candy, target=target, split=split,
+                                   candy=candy, target=target, split=split, night=design.get("nightLevel") == "true",
                                    gravity=[float(design.get("globalGravityX", 0)), float(design.get("globalGravityY", 784))]).items():
                 lines.append(f"value.{key} = {literal(value)};")
             for i in range(2): lines.append(f"value.halves[{i}] = {literal(halves[i])};")
@@ -172,9 +178,9 @@ def build(content, output, sources):
                 lines.append(f"value.stars[{i}] = {literal(stars[i])}; value.timeouts[{i}] = {literal(timeouts[i])}; value.starmotions[{i}] = {literal(motions[i])};")
             offsets.append(len(packed))
             packed += flatten([left,width,height,speed,box-1,index-1,candy,target,split,halves,
-                float(design.get("globalGravityX", 0)),float(design.get("globalGravityY", 784))])
+                float(design.get("globalGravityX", 0)),float(design.get("globalGravityY", 784)),design.get("nightLevel") == "true"])
             for i in range(3): packed += flatten([stars[i], timeouts[i], motions[i]])
-            countnames = dict(hooks="hookcount",bubbles="bubblecount",spikes="spikecount",pumps="pumpcount",hats="hatcount",bouncers="bouncercount",switches="switchcount",discs="disccount",ghosts="ghostcount",tubes="tubecount",lanterns="lanterncount")
+            countnames = dict(hooks="hookcount",bubbles="bubblecount",spikes="spikecount",pumps="pumpcount",hats="hatcount",bouncers="bouncercount",switches="switchcount",discs="disccount",ghosts="ghostcount",tubes="tubecount",lanterns="lanterncount",mice="mousecount",bulbs="bulbcount")
             for key, capacity in limits.items():
                 assert len(records[key]) <= capacity, (path,key,len(records[key]),capacity)
                 lines.append(f"value.{countnames[key]} = {len(records[key])};")

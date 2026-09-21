@@ -162,18 +162,21 @@ static void scene(const dx::simulation& game, int frame, const ui::controller& m
         }
         if (!hook.rail && !game.ghostapp(4,index)) image(art::hookfront, game.anchors[index]);
     }
+    frontend::render(false, false, 1);
     for (int index = 0; index < 3; ++index) {
         if (game.stars[index] || game.expired[index]) continue;
-        image(art::star0, game.starpositions[index], false, 12);
-        image(art::star1 + (frame / 3 + index * 5) % 18, game.starpositions[index]);
+        if (!game.definition.night) image(art::star0, game.starpositions[index], false, 12);
+        const int alpha = game.definition.night ? std::lround(game.lightalpha[index]*31) : 31;
+        if (alpha) image(art::star1 + (frame / 3 + index * 5) % 18, game.starpositions[index],false,alpha);
     }
+    frontend::render(false, false, 2);
     if (!game.split && !game.hidden() && menu.skins[0] == 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
         image(art::candy0, game.candy().pos);
         image(art::candy1, game.candy().pos);
         image(art::candy2, game.candy().pos);
     }
-    frontend::ribbon();
     frontend::render();
+    frontend::ribbon();
     frontend::render(true);
     if (menu.white() > 0) {
         glPolyFmt(POLY_ALPHA(std::max(1, static_cast<int>(std::lround(menu.white() * 31)))) | POLY_CULL_NONE | POLY_ID(63));

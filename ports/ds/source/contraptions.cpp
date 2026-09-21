@@ -73,7 +73,7 @@ void simulation::rotatedisc(point position) {
     }
     for (int i = 0; i < definition.bubblecount; ++i) {
         auto& p = definition.bubbles[i];
-        bool carried = bubble == i || halfbubbles[0] == i || halfbubbles[1] == i;
+        bool carried = bubble == i || halfbubbles[0] == i || halfbubbles[1] == i || bulbbubble == i;
         if (!carried && !ghostapp(2,i) && (p - d.position).length() <= radius + 10) p = move(p,32+i);
     }
     const auto target = definition.target - d.position;
@@ -165,8 +165,8 @@ void simulation::retireghost(int slot) {
         const auto rope = ropes[index];
         for (int i = 0; i < rope.count; ++i) {
             const int id = rope.bodies[i];
-            if (id < (definition.split ? 3 : 1)) continue;
-            for (int candy = 0; candy < (definition.split ? 3 : 1); ++candy) {
+            if (id < bodybase()) continue;
+            for (int candy = 0; candy < bodybase(); ++candy) {
                 auto& body = bodies[candy];
                 for (int j = 0; j < body.linkcount;) {
                     if (body.links[j].other == id) {
@@ -185,7 +185,7 @@ void simulation::retireghost(int slot) {
     } else if (retired.form == 2) {
         --definition.bubblecount;
         for (int i = index; i < definition.bubblecount; ++i) { definition.bubbles[i] = definition.bubbles[i+1]; bubblesused[i] = bubblesused[i+1]; }
-        for (int* id : {&bubble, &halfbubbles[0], &halfbubbles[1]}) { if (*id == index) *id = -1; else if (*id > index) --*id; }
+        for (int* id : {&bubble, &halfbubbles[0], &halfbubbles[1], &bulbbubble}) { if (*id == index) *id = -1; else if (*id > index) --*id; }
     } else if (retired.form == 8) {
         --definition.bouncercount;
         for (int i = index; i < definition.bouncercount; ++i) { definition.bouncers[i] = definition.bouncers[i+1]; bounceages[i] = bounceages[i+1]; }

@@ -19,6 +19,9 @@ def build(content, output, sources):
         ("MonsterSad", "Sad"),
         ("MonsterExcited", "Excited"),
         ("MonsterGreeting", "Greeting"),
+        ("MonsterSleep1", "Sleep01"),
+        ("MonsterSleep2", "Sleep02"),
+        ("MonsterSleep3", "Sleep03"),
     ]
     data, cached, rows, records = bytearray(), {}, [], []
     for skin, config in enumerate([{}] + json.loads(configpath.read_text())):
@@ -26,7 +29,7 @@ def build(content, output, sources):
         for index, (classic, suffix) in enumerate(events):
             unique = classic in config.get("uniqueSounds", [])
             resource = resources[classic]
-            if index >= 4 and not unique:
+            if 4 <= index < 6 and not unique:
                 row.append((0, 0))
                 continue
             if unique and config.get("name"):
@@ -58,7 +61,18 @@ def build(content, output, sources):
                 )
             )
         rows.append(row)
-    maximum = max(size for _, size in cached.values())
+    effects = []
+    for resource in ("mouse_rustle", "mouse_idle", "mouse_tap", "star_light01", "star_light02"):
+        path = content / "sounds/sfx" / (resource + ".wav")
+        sources.add(path)
+        with wave.open(str(path), "rb") as sound:
+            pcm = sound.readframes(sound.getnframes()); width = sound.getsampwidth()
+            if sound.getnchannels() == 2: pcm = audioop.tomono(pcm,width,.5,.5)
+            pcm, _ = audioop.ratecv(pcm,width,1,sound.getframerate(),16000,None)
+            pcm = audioop.lin2lin(pcm,width,2)
+        pcm += b"\0" * (-len(pcm)%4)
+        effects.append((len(data),len(pcm))); data.extend(pcm)
+    maximum = max(size for _, size in list(cached.values())+effects)
     (output / "nitro/voices.bin").write_bytes(data)
     (output / "voicemanifest.json").write_text(
         json.dumps(
@@ -74,11 +88,11 @@ def build(content, output, sources):
         [
             "struct voice { unsigned offset, size; };",
             f"inline constexpr unsigned voicemax = {maximum};",
-            "inline constexpr voice voices[16][6] = {",
+            "inline constexpr voice voices[16][9] = {",
         ]
         + [
             "{" + ",".join("{" + str(a) + "," + str(b) + "}" for a, b in row) + "},"
             for row in rows
         ]
-        + ["};"]
+        + ["};", "inline constexpr voice streameffects[] = {" + ",".join("{"+str(a)+","+str(b)+"}" for a,b in effects) + "};"]
     )

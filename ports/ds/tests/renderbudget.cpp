@@ -27,6 +27,26 @@ int main(int argc, char** argv) {
         assert(hud == 2);
     }
     std::puts("PASS: HUD retained through opening, replay, quit and result closing flaps");
+    for (int skin=0;skin<16;++skin) for (int candy=0;candy<52;++candy) {
+        menu={}; menu.mode=ui::view::playing; menu.skins[0]=candy; menu.skins[2]=skin;
+        game.reset(dx::levels[0]); game.definition.hooks[0].spider=true;
+        game.ropes[0].spiderpos=game.definition.target; game.bodies[0].pos=game.definition.target;
+        game.stars[0]=true; game.collectedat[0]=0;
+        frontend::preparegame(menu,game,1); frontend::prepareoverlay(menu,game);
+        int target=-1, sweet=-1, spider=-1, burst=-1;
+        for (int i=0;i<frontend::count;++i) {
+            const int id=frontend::commands[i].id;
+            if (id==(skin?frontend::animation(menuart::costumes[skin-1][0],.016f):menuart::body0)) target=i;
+            if (id==menuart::gamecandies[candy][0]) sweet=i;
+            if (id==menuart::spider0) spider=i;
+            if (id==menuart::starburst0) burst=i;
+        }
+        assert(target>=0 && target<frontend::groundend);
+        assert(burst>=frontend::starback && burst<frontend::starfront);
+        assert(!candy || (sweet>=frontend::starfront && sweet<spider));
+        assert(spider>=frontend::starfront && spider<frontend::overlaystart);
+    }
+    std::puts("PASS: all 16 costumes / 52 candies retain target, hook, star, candy, spider and HUD pass order");
     for(int locale=0; argc==2 && locale<12; ++locale) for(int level=0; level<static_cast<int>(dx::levels.size()); ++level) {
         menu.locale=locale;
         game.reset(dx::levels[level]); game.state=dx::outcome::won;
@@ -68,9 +88,16 @@ int main(int argc, char** argv) {
         int combinations=1;
         for (int i=0; i<data.ghostcount; ++i) combinations*=3;
         if (data.disccount) combinations=data.disccount*4;
-        if (data.tubecount || data.lanterncount) combinations=std::max(combinations,36);
+        if (data.tubecount || data.lanterncount || data.mousecount || data.night) combinations=std::max(combinations,36);
         for (int combination=0; combination<combinations; ++combination) {
             game.reset(data); game.introduction=false;
+            if (data.mousecount) {
+                game.activemouse=combination%data.mousecount;
+                auto& mouse=game.mice[game.activemouse]; mouse.phase=combination%7; mouse.quad=combination%29;
+                mouse.eyes=.05f*(combination%9); mouse.bounce=.01f*(combination%15);
+            }
+            game.awake=combination%2; game.nightstart=80-combination*4;
+            game.lightalpha.fill((combination%11)/10.0f); game.lightchange.fill(80-combination%16);
             for (int i=0; i<data.tubecount; ++i) {
                 game.valvetap(i); game.valvetap(i);
                 if (combination%3==0) game.valvetap(i);

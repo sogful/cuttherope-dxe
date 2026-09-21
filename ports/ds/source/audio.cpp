@@ -9,7 +9,10 @@ static int track = -1, channel = 1;
 static bool musicpaused = false;
 static bool buzzing = false;
 static ui::view lastview = ui::view::playing;
-alignas(4) static unsigned char voicebuffers[2][art::voicemax];
+// Only long sleep clips need the large slot. Normal voices and mouse/star
+// sounds retain a second simultaneous channel without doubling that maximum.
+static constexpr unsigned shortvoice = 72964;
+alignas(4) static unsigned char longbuffer[art::voicemax], shortbuffer[shortvoice];
 alignas(32) static unsigned char musicbuffer[gamemusicbytes > menumusicbytes ? gamemusicbytes : menumusicbytes];
 static int voiceslot = 0;
 static unsigned spoken = 0, spokenid = 0;
@@ -22,22 +25,27 @@ void effect(const unsigned char* data, unsigned size) {
     channel = channel % 12 + 1;
 }
 
-bool speak(int costume, voice kind) {
+static bool playstream(const art::voice& sample) {
     if (!enabled) return false;
-    const auto& sample = art::voices[costume][static_cast<int>(kind)];
     if (!sample.size) return false;
-    const int slot = voiceslot++ % 2;
+    const int slot = sample.size > shortvoice ? 0 : voiceslot++ % 2;
+    unsigned char* buffer = slot ? shortbuffer : longbuffer;
     soundKill(13 + slot);
     FILE* file = std::fopen("nitro:/voices.bin", "rb");
     const bool valid = file && !std::fseek(file, sample.offset, SEEK_SET) &&
-        std::fread(voicebuffers[slot], 1, sample.size, file) == sample.size;
+        std::fread(buffer, 1, sample.size, file) == sample.size;
     if (file) std::fclose(file);
     if (!valid) { nocashMessage("CTRD DS: voice read failed"); return false; }
-    DC_FlushRange(voicebuffers[slot], sample.size);
-    soundPlaySampleChannel(13 + slot, voicebuffers[slot], SoundFormat_16Bit, sample.size, 16000, 100, 64, false, 0);
+    DC_FlushRange(buffer, sample.size);
+    soundPlaySampleChannel(13 + slot, buffer, SoundFormat_16Bit, sample.size, 16000, 100, 64, false, 0);
+    return true;
+}
+bool speak(int costume, voice kind) {
+    if (!playstream(art::voices[costume][static_cast<int>(kind)])) return false;
     ++spoken; spokenid = costume * 6 + static_cast<int>(kind) + 1;
     return true;
 }
+bool stream(int index) { return playstream(art::streameffects[index]); }
 unsigned voices() { return spoken; }
 unsigned lastvoice() { return spokenid; }
 

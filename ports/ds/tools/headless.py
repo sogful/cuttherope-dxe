@@ -39,13 +39,13 @@ def main():
     parser.add_argument("--menus", action="store_true", help="Check source-shaped title, packs, settings, languages and credits")
     parser.add_argument("--skins", action="store_true", help="Check fades, isolated unlock mode, picker scrolling, all cosmetic tabs and equipped gameplay")
     parser.add_argument("--flow", action="store_true", help="Capture box transitions and the complete animated result sequence")
-    parser.add_argument("--boxes", action="store_true", help="Launch all 350 maps across the first fourteen boxes")
+    parser.add_argument("--boxes", action="store_true", help="Launch all 400 maps across the first sixteen boxes")
     parser.add_argument("--startup", action="store_true", help="Capture consecutive frames through early level texture paging")
     parser.add_argument("--regressions", action="store_true", help="Exercise outcome input races, flashes, costume voices, carousel and tall backgrounds")
     parser.add_argument("--profile", action="store_true", help="Read optional profiling build and capture framebuffer changes during stalled main updates")
     parser.add_argument("--pagingstress", action="store_true", help="Profile-only synthetic heavy completion and captured-frame recovery test")
-    parser.add_argument("--first-box", type=int, default=1, choices=range(1,15))
-    parser.add_argument("--last-box", type=int, default=14, choices=range(1,15))
+    parser.add_argument("--first-box", type=int, default=1, choices=range(1,17))
+    parser.add_argument("--last-box", type=int, default=16, choices=range(1,17))
     parser.add_argument("--level-only", type=int, choices=range(1,26), help="Limit box checks to one level number")
     parser.add_argument("--costume", type=int, default=0, choices=range(16), help="Equip a costume through the real picker before a test")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
@@ -229,11 +229,12 @@ def main():
         keys += ["spikeevents", "spikebutton", "beex", "beey", "spiderfalls", "spiderclimbers", "fadephase"]
         keys += ["disc", "discangle", "discevents", "ghostforms", "ghostevents", "ghostapps", "bodypool"]
         keys += ["steamevents", "steamstates", "captures", "releases", "occupied", "shared", "lanternx", "lanterny"]
+        keys += ["mouse", "mousecaptures", "mousereleases", "mousehandoffs", "mousecarry", "bulb", "bulbx", "bulby", "awake", "lit"]
         faultsymbol = next((line for line in symbols if line.endswith(" renderfault")), None)
         faultaddress = memory + int(faultsymbol.split()[0], 16) - 0x02000000 if faultsymbol else None
         def telemetry():
             version = struct.unpack("<I", c.string_at(memory + offset + 4, 4))[0]
-            fields = 76 if version >= 13 else 68 if version >= 12 else 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
+            fields = 86 if version >= 14 else 76 if version >= 13 else 68 if version >= 12 else 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
             result = dict(zip(keys, struct.unpack(f"<10I2f{fields}I", c.string_at(memory + offset, 48 + fields * 4))))
             for key in keys: result.setdefault(key, 0)
             return result
@@ -519,7 +520,7 @@ def main():
                 assert any(item["bounces"] for item in report["stages"].values()), "No bouncer contact observed"
             maps = (args.last_box - args.first_box + 1) * (1 if args.level_only else 25)
             report.update(passed=True, maps=maps, referenceSamples=len(maperrors), maximumDesktopError=max(maperrors.values(),default=0), seconds=time.monotonic()-start)
-            filename = "boxreport" + ("" if maps == 350 else f"-{args.first_box}-{args.last_box}-{args.level_only or 'all'}") + ".json"
+            filename = "boxreport" + ("" if maps == 400 else f"-{args.first_box}-{args.last_box}-{args.level_only or 'all'}") + ".json"
             (directory / filename).write_text(json.dumps(report, indent=2), encoding="utf-8")
             print(f"PASS: {maps} maps launched through real UI, boxes {args.first_box}-{args.last_box}")
             return
@@ -543,13 +544,13 @@ def main():
             key(8)
             assert snapshot("unlocked-fabric-levels")["pack"] == 1 and telemetry()["view"] == 4
             key(0)
-            for _ in range(13): key(7)
+            for _ in range(15): key(7)
             run(180)
             key(8)
             tap(66, 26)
             assert telemetry()["view"] == 4 and telemetry()["resets"] == 0, "An unavailable map silently launched 1-1"
             key(0)
-            for _ in range(14): key(6)
+            for _ in range(16): key(6)
             run(180)
             key(0)
             tap(128, 170)

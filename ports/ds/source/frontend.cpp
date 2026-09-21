@@ -9,6 +9,7 @@
 #include "routes.hpp"
 #include "contraptionview.hpp"
 #include "deviceview.hpp"
+#include "nocturnalview.hpp"
 #include <nds.h>
 #include <gl2d.h>
 #include <algorithm>
@@ -23,7 +24,7 @@ static unsigned touched[menuart::pagecount]{}, frame = 0, occupied = 0;
 static unsigned reserved = 0;
 static unsigned repacks = 0;
 extern "C" { volatile unsigned renderfault = 0; }
-alignas(32) static unsigned char staged[393216];
+alignas(32) static unsigned char staged[393216 + 512*64];
 static unsigned stagedbytes = 0;
 struct transfer { void* destination; const void* source; unsigned bytes; };
 static transfer transfers[784];
@@ -61,7 +62,7 @@ static std::array<command, 512> commands;
 static std::array<bool, 512> visibility;
 static int count = 0;
 static int overlaystart = -1;
-static int groundend = 0;
+static int groundend = 0, starback = 0, starfront = 0;
 static constexpr float pixels = 192.0f / 1440;
 static float cameray = 0;
 
@@ -301,6 +302,8 @@ static void upload(bool repacked = false) {
             glBindTexture(0, textures[index]);
         }
         unsigned char* pixels = staging(bytes(index));
+        const int colors = page.direct ? 0 : 1 << (8-page.alphabits);
+        unsigned char* palette = staging(colors*2);
         unsigned remaining = page.packed, cursor = 0, available = 0;
         auto next = [&]() -> int {
             if (cursor == available) {
@@ -314,12 +317,14 @@ static void upload(bool repacked = false) {
         };
         {
             DS_SCOPE(decode);
-            if (std::fseek(catalog, page.offset, SEEK_SET) || !packed::stream(next, pixels, bytes(index))) {
+            bool valid = !std::fseek(catalog, page.offset, SEEK_SET);
+            for (int i=0;i<colors*2 && valid;++i) { const int value=next(); valid=value>=0; palette[i]=value; }
+            if (!valid || !packed::stream(next, pixels, bytes(index))) {
                 nocashMessage("CTRD DS: invalid packed menu texture");
                 while (true) swiWaitForVBlank();
             }
         }
-        stage(textures[index], pixels, bytes(index), page.palette, page.direct ? 0 : 1 << (8 - page.alphabits));
+        stage(textures[index], pixels, bytes(index), palette, colors);
         DS_PROFILE_DO(++profiling::data[profiling::uploads]; profiling::data[profiling::uploadbytes] += bytes(index));
         occupied += bytes(index);
     }
@@ -444,7 +449,7 @@ static void doors(float progress, bool opening, bool loading, int box) {
     piece(menuart::doorshade, (opening ? -t : t - 1) * 891 * 4 * pixels + base, 0, 891 * 4 * pixels, 400 * 4 * pixels);
     const float leftside = opening ? (1280 - 12) * (1 - t) - 25 * t : -13 * (1 - t) + (1293 - 16) * t;
     const float rightside = opening ? (1280 + 14) * (1 - t) + 2560 * t : (2560 - 40) * (1 - t) + (1280 + 20) * t;
-    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0, menuart::boxcover7x0, menuart::boxcover8x0, menuart::boxcover9x0, menuart::boxcover10x0, menuart::boxcover11x0, menuart::boxcover12x0, menuart::boxcover13x0, menuart::boxcover14x0};
+    static constexpr int covers[] = {menuart::cover0, menuart::fabriccover0, menuart::boxcover3x0, menuart::boxcover4x0, menuart::boxcover5x0, menuart::boxcover6x0, menuart::boxcover7x0, menuart::boxcover8x0, menuart::boxcover9x0, menuart::boxcover10x0, menuart::boxcover11x0, menuart::boxcover12x0, menuart::boxcover13x0, menuart::boxcover14x0, menuart::boxcover15x0, menuart::boxcover16x0};
     static_assert(std::size(covers) == menuart::playableboxes, "Every playable box needs its authored flaps");
     const int cover = covers[box];
     piece(cover + 1, base + leftside * pixels, 0, side, 192 * (1 + .3f * closed));
@@ -637,7 +642,7 @@ static void pollen(const dx::simulation& game, int elapsed) {
 
 void preparegame(const ui::controller& menu, const dx::simulation& game, int elapsed) {
     count = 0;
-    groundend = 0;
+    groundend = starback = starfront = 0;
     overlaystart = -1;
     cameray = game.cameray;
     auto wx = [](float value) { return std::lround(128 + (value - 1280) * pixels); };
@@ -647,36 +652,75 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         add(sprite, wx(position.x), wy(position.y), {}, flip, scale, static_cast<int>(angle * 32768 / 360), alpha, RGB15(shade,shade,shade));
         if (vertical >= 0 && count > before) commands[count-1].vertical = vertical;
     };
-    gamevisuals::discs(game,world);
-    pollen(game,elapsed);
-    for (int i = 0; i < game.definition.hookcount; ++i) {
-        const auto& rope = game.ropes[i];
-        const float radius = game.definition.hooks[i].radius;
-        const float alpha = (rope.attached < 0 ? 1 : 1-(elapsed-rope.attached)*.016f*1.5f)*game.ghostalpha(4,i);
-        if (radius < 0 || alpha <= 0) continue;
-        for (const auto& ring : menuart::circles) if (ring.length == static_cast<int>(radius)) {
-            world(ring.sprite,game.anchors[i],std::max(1,static_cast<int>(alpha*31))); break;
-        }
-    }
     if (menu.pack == 7) {
         const float turn = std::min(1.0f, game.gravityage * .016f / .3f);
         const float angle = game.inverted ? 180 * turn : 180 * (1 - turn);
         for (int row = -1; row <= 3; ++row) world(menuart::gravity2, {1284,724.0f + row * 1440}, 31, angle);
     }
+    pollen(game,elapsed);
     for (int i = 0; i < game.definition.switchcount; ++i)
         world(menuart::gravity0 + game.inverted, game.definition.switches[i]);
-    for (int i = 0; i < game.definition.hookcount; ++i)
-        if (game.definition.hooks[i].wheel) world(menuart::wheel0, game.anchors[i]);
-    for (int i = 0; i < game.definition.hookcount; ++i) {
-        const auto& hook = game.definition.hooks[i];
-        if (hook.rail <= 0) continue;
-        const float angle = hook.vertical ? 90 : 0;
-        for (const auto& rail : menuart::rails) if (rail.length == static_cast<int>(hook.rail)) {
-            world(rail.sprite, hook.anchor + dx::rotate({hook.rail * .5f - hook.offset - 3, 0}, angle), 31, angle);
-            break;
-        }
-    }
+    gamevisuals::mouseholes(game,world);
     world(menuart::seat0 + menu.pack, game.definition.target);
+    const bool sleeping = game.definition.night && !game.awake && game.state == dx::outcome::playing;
+    const float sleepage = (elapsed-game.nightstart)*.016f;
+    if (menu.skins[2] == 0) {
+        int target = menuart::body0 + elapsed / 3 % 19;
+        if (game.mouth) target = menuart::body19 + std::min(8, (game.ticks - game.mouthtick) / 3);
+        if (game.state == dx::outcome::won) {
+            const int since = elapsed - game.resultvisual;
+            target = since < 12 ? menuart::body28 + since / 3 : menuart::body32 + (since - 12) / 3 % 9;
+        }
+        if (game.state == dx::outcome::lost) target = menuart::bodysad0 + std::min(12, (elapsed - game.resultvisual) / 3);
+        if (sleeping) target = menuart::sleep0+std::min(6,static_cast<int>(sleepage/.05f));
+        const float pulse = sleeping && sleepage >= .35f ? .95f+(std::sin(sleepage*2)+1)*.05f : 1;
+        world(target, game.definition.target+dx::point{0,86*(1-pulse)},31,0,1,GL_FLIP_NONE,pulse);
+    }
+    if (menu.skins[2] > 0) {
+        int state = 0, since = elapsed;
+        const auto& states = menuart::costumes[menu.skins[2] - 1];
+        if ((elapsed - game.excitement) * .016f < menuart::animations[states[1]].duration) { state = 1; since = elapsed - game.excitement; }
+        if ((elapsed - game.greeting) * .016f < menuart::animations[states[6]].duration) { state = 6; since = elapsed - game.greeting; }
+        if (game.mouth) { state = 2; since = game.ticks - game.mouthtick; }
+        if (game.state == dx::outcome::won) { state = 4; since = elapsed - game.resultvisual; }
+        if (game.state == dx::outcome::lost) { state = 3; since = elapsed - game.resultvisual; }
+        if (sleeping) { state = 8; since = elapsed-game.nightstart; }
+        add(animation(menuart::costumes[menu.skins[2] - 1][state], since * .016f),
+            wx(game.definition.target.x), wy(game.definition.target.y));
+    }
+    gamevisuals::sleep(game,world);
+    const float time = elapsed * .016f;
+    static int tutoriallevel = -1, tutorialframe = -1, tutorialstart[32];
+    if (tutoriallevel != menu.levelid() * 12 + menu.locale || elapsed < tutorialframe || menu.reset) {
+        std::fill(std::begin(tutorialstart), std::end(tutorialstart), -1);
+        tutoriallevel = menu.levelid() * 12 + menu.locale;
+    }
+    tutorialframe = elapsed;
+    const auto& span = menuart::tutorialspans[menu.levelid()][menu.locale];
+    for (int i = 0; i < span[1] && i < 32; ++i) {
+        const auto& item = menuart::tutorials[span[0] + i];
+        if (tutorialstart[i] < 0 && item.trigger) {
+            const auto p = game.candy().pos;
+            const bool triggered = item.trigger == 1 ? game.bubble >= 0 : item.trigger == 2 ? game.captures > 0 : item.trigger == 3 ? game.steamevents > 0 : game.mousecaptures > 0;
+            if (triggered && (!item.width || (p.x >= item.left && p.x < item.left + item.width && p.y >= item.top && p.y < item.top + item.height))) tutorialstart[i] = elapsed;
+            else continue;
+        }
+        float t = item.trigger ? time - tutorialstart[i] * .016f : time;
+        const float period = item.fadein + item.hold + item.fadeout;
+        if (t >= period * item.repeat) continue;
+        t = std::fmod(t, period);
+        const float alpha = t < item.fadein ? unit(t / item.fadein) : t > item.fadein + item.hold ? 1 - unit((t - item.fadein - item.hold) / item.fadeout) : 1;
+        dx::point position{item.x, item.y};
+        if (item.speed > 0 && t > item.delay) {
+            const dx::point first{item.firstx, item.firsty}, last{item.lastx, item.lasty};
+            const float firsttime = first.length() / item.speed, secondtime = (last - first).length() / item.speed;
+            float f = unit((t - item.delay) / firsttime);
+            if (t - item.delay <= firsttime) position = position + first * (f * f);
+            else { f = unit((t - item.delay - firsttime) / secondtime); position = position + first + (last - first) * (1 - (1 - f) * (1 - f)); }
+        }
+        world(item.sprite, position, std::lround(alpha * 31), item.angle);
+    }
+    gamevisuals::discs(game,world);
     for (int i = 0; i < game.definition.bubblecount; ++i) {
         const auto* app = game.ghostapp(2,i);
         const int alpha = std::lround(game.ghostalpha(2,i)*31);
@@ -710,6 +754,7 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         world(menuart::bouncer0 + (item.size - 1) * 5 + (frame < 5 ? frame : 0), item.position + item.path.at(elapsed * .016f), alpha, item.path.angle(item.angle, elapsed * .016f));
         if (app) gamevisuals::clouds(game,*app,item.position,alpha,false,world);
     }
+    gamevisuals::mice(game,world);
     for (int i = 0; i < game.definition.hatcount; ++i) {
         const auto& hat = game.definition.hats[i];
         const auto position = hat.position + hat.path.at(elapsed * .016f) + dx::point{0, -.5f};
@@ -719,6 +764,27 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     }
     gamevisuals::steam(game,false,world);
     gamevisuals::lanterns(game,menu.skins[0],world);
+    gamevisuals::ghosts(game,world);
+    for (int i = 0; i < game.definition.hookcount; ++i)
+        if (game.definition.hooks[i].wheel) world(menuart::wheel0, game.anchors[i]);
+    for (int i = 0; i < game.definition.hookcount; ++i) {
+        const auto& hook = game.definition.hooks[i];
+        if (hook.rail <= 0) continue;
+        const float angle = hook.vertical ? 90 : 0;
+        for (const auto& rail : menuart::rails) if (rail.length == static_cast<int>(hook.rail)) {
+            world(rail.sprite, hook.anchor + dx::rotate({hook.rail * .5f - hook.offset - 3, 0}, angle), 31, angle);
+            break;
+        }
+    }
+    for (int i = 0; i < game.definition.hookcount; ++i) {
+        const auto& rope = game.ropes[i];
+        const float radius = game.definition.hooks[i].radius;
+        const float alpha = (rope.attached < 0 ? 1 : 1-(elapsed-rope.attached)*.016f*1.5f)*game.ghostalpha(4,i);
+        if (radius < 0 || alpha <= 0) continue;
+        for (const auto& ring : menuart::circles) if (ring.length == static_cast<int>(radius)) {
+            world(ring.sprite,game.anchors[i],std::max(1,static_cast<int>(alpha*31))); break;
+        }
+    }
     for (int i = 0; i < game.definition.hookcount; ++i) if (game.ghostapp(4,i))
         world(menuart::ghosthook0,game.anchors[i],std::lround(game.ghostalpha(4,i)*31));
     groundend = count;
@@ -742,6 +808,54 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
             world(menuart::bee1,game.anchors[i],31,game.beeangles[i]);
             world(menuart::bee1 + wings[(static_cast<int>(elapsed*.016f/.03f)+i)%4]-1,game.anchors[i],31,game.beeangles[i]);
         }
+    }
+    for (int i = 0; i < 3; ++i) {
+        const float timeout = game.definition.timeouts[i];
+        if (timeout <= 0 || game.stars[i] || game.expired[i]) continue;
+        world(menuart::timedstar20, game.starpositions[i]);
+        const int phase = std::clamp(static_cast<int>(std::ceil((1 - game.ticks * .016f / timeout) * 32)), 1, 32);
+        world(menuart::ring1 + phase - 1, game.starpositions[i]);
+    }
+    gamevisuals::light(game,false,world);
+    if (game.definition.night) for (int i=0;i<3;++i) if (!game.stars[i] && !game.expired[i])
+        world(menuart::nightstar0,game.starpositions[i],std::lround(game.lightalpha[i]*31));
+    starback = count;
+    if (game.definition.night) for (int i=0;i<3;++i) if (!game.stars[i] && !game.expired[i]) {
+        world(menuart::nightstar1+(elapsed/3+i*5)%18,game.starpositions[i],std::lround((1-game.lightalpha[i])*31));
+        const float age = (elapsed-game.lightchange[i])*.016f;
+        if (game.lightchange[i]>1 && age<.25f) world((game.starlit[i]?menuart::nightstar25:menuart::nightstar19)+std::min(5,static_cast<int>(age/.05f)),game.starpositions[i]);
+    }
+    for (int i = 0; i < 3; ++i) {
+        if (game.stars[i]) {
+            const int frame = static_cast<int>((elapsed - game.collectedat[i]) * .016f / .05f);
+            if (frame >= 0 && frame < 13) world(menuart::starburst0 + frame, game.starpositions[i]);
+        }
+    }
+    starfront = count;
+    if (game.split && game.failreason != 3) {
+        for (int i = 0; i < 2; ++i) if (game.halfalive[i]) world(menuart::gamehalves[menu.skins[0]][i], game.bodies[i + 1].pos);
+    }
+    if (!game.split && !game.hidden() && menu.skins[0] > 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
+        const int px = wx(game.candy().pos.x), py = wy(game.candy().pos.y);
+        for (int id : menuart::gamecandies[menu.skins[0]]) add(id, px, py);
+    }
+    if (game.mergeage * .016f < .25f) world(menuart::merge0 + static_cast<int>(game.mergeage * .016f / .05f), game.candy().pos);
+    if (game.inlantern && game.captureage < .1f) {
+        const float t = game.captureage/.1f;
+        for (int id : menuart::gamecandies[menu.skins[0]]) world(id,game.candydraw,std::lround((1-t)*31),0,1-(1-.3f/.71f)*t);
+    }
+    gamevisuals::light(game,true,world);
+    for (int part = 0; part < game.activecount(); ++part) {
+        const int id = game.activeid(part);
+        if (!game.available(id)) continue;
+        if (game.bubblefor(id) >= 0) {
+            world(menuart::bubble4 + static_cast<int>(elapsed * .016f / .05f) % 13, game.bodies[id].pos);
+            if (const auto* app = game.ghostapp(2,game.bubblefor(id))) gamevisuals::clouds(game,*app,game.bodies[id].pos,31,false,world);
+        }
+    }
+    if (game.popage * .016f < .6f) world(menuart::bubble18 + std::min(11, static_cast<int>(game.popage * .016f / .05f)), game.popposition);
+    gamevisuals::steam(game,true,world);
+    for (int i = 0; i < game.definition.hookcount; ++i) {
         const auto& rope = game.ropes[i];
         if (!game.definition.hooks[i].spider) continue;
         if (rope.spiderstate) {
@@ -766,91 +880,7 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         const int frame = time < .75f ? std::min(6, time < .25f ? static_cast<int>(time / .05f) : time < .65f ? 5 : 6) : 7 + static_cast<int>((time - .75f) / .1f) % 4;
         world(menuart::spider0 + frame, rope.spiderpos, 31, rope.spiderangle);
     }
-    for (int i = 0; i < 3; ++i) {
-        if (game.stars[i]) {
-            const int frame = static_cast<int>((elapsed - game.collectedat[i]) * .016f / .05f);
-            if (frame >= 0 && frame < 13) world(menuart::starburst0 + frame, game.starpositions[i]);
-        }
-        const float timeout = game.definition.timeouts[i];
-        if (timeout <= 0 || game.stars[i] || game.expired[i]) continue;
-        world(menuart::timedstar20, game.starpositions[i]);
-        const int phase = std::clamp(static_cast<int>(std::ceil((1 - game.ticks * .016f / timeout) * 32)), 1, 32);
-        world(menuart::ring1 + phase - 1, game.starpositions[i]);
-    }
-    const float time = elapsed * .016f;
-    static int tutoriallevel = -1, tutorialframe = -1, tutorialstart[32];
-    if (tutoriallevel != menu.levelid() * 12 + menu.locale || elapsed < tutorialframe || menu.reset) {
-        std::fill(std::begin(tutorialstart), std::end(tutorialstart), -1);
-        tutoriallevel = menu.levelid() * 12 + menu.locale;
-    }
-    tutorialframe = elapsed;
-    const auto& span = menuart::tutorialspans[menu.levelid()][menu.locale];
-    for (int i = 0; i < span[1] && i < 32; ++i) {
-        const auto& item = menuart::tutorials[span[0] + i];
-        if (tutorialstart[i] < 0 && item.trigger) {
-            const auto p = game.candy().pos;
-            const bool triggered = item.trigger == 1 ? game.bubble >= 0 : item.trigger == 2 ? game.captures > 0 : game.steamevents > 0;
-            if (triggered && (!item.width || (p.x >= item.left && p.x < item.left + item.width && p.y >= item.top && p.y < item.top + item.height))) tutorialstart[i] = elapsed;
-            else continue;
-        }
-        float t = item.trigger ? time - tutorialstart[i] * .016f : time;
-        const float period = item.fadein + item.hold + item.fadeout;
-        if (t >= period * item.repeat) continue;
-        t = std::fmod(t, period);
-        const float alpha = t < item.fadein ? unit(t / item.fadein) : t > item.fadein + item.hold ? 1 - unit((t - item.fadein - item.hold) / item.fadeout) : 1;
-        dx::point position{item.x, item.y};
-        if (item.speed > 0 && t > item.delay) {
-            const dx::point first{item.firstx, item.firsty}, last{item.lastx, item.lasty};
-            const float firsttime = first.length() / item.speed, secondtime = (last - first).length() / item.speed;
-            float f = unit((t - item.delay) / firsttime);
-            if (t - item.delay <= firsttime) position = position + first * (f * f);
-            else { f = unit((t - item.delay - firsttime) / secondtime); position = position + first + (last - first) * (1 - (1 - f) * (1 - f)); }
-        }
-        world(item.sprite, position, std::lround(alpha * 31), item.angle);
-    }
-    if (menu.skins[2] == 0) {
-        int target = menuart::body0 + elapsed / 3 % 19;
-        if (game.mouth) target = menuart::body19 + std::min(8, (game.ticks - game.mouthtick) / 3);
-        if (game.state == dx::outcome::won) {
-            const int since = elapsed - game.resultvisual;
-            target = since < 12 ? menuart::body28 + since / 3 : menuart::body32 + (since - 12) / 3 % 9;
-        }
-        if (game.state == dx::outcome::lost) target = menuart::bodysad0 + std::min(12, (elapsed - game.resultvisual) / 3);
-        world(target, game.definition.target);
-    }
-    if (menu.skins[2] > 0) {
-        int state = 0, since = elapsed;
-        const auto& states = menuart::costumes[menu.skins[2] - 1];
-        if ((elapsed - game.excitement) * .016f < menuart::animations[states[1]].duration) { state = 1; since = elapsed - game.excitement; }
-        if ((elapsed - game.greeting) * .016f < menuart::animations[states[6]].duration) { state = 6; since = elapsed - game.greeting; }
-        if (game.mouth) { state = 2; since = game.ticks - game.mouthtick; }
-        if (game.state == dx::outcome::won) { state = 4; since = elapsed - game.resultvisual; }
-        if (game.state == dx::outcome::lost) { state = 3; since = elapsed - game.resultvisual; }
-        add(animation(menuart::costumes[menu.skins[2] - 1][state], since * .016f),
-            wx(game.definition.target.x), wy(game.definition.target.y));
-    }
-    if (game.split && game.failreason != 3) {
-        for (int i = 0; i < 2; ++i) if (game.halfalive[i]) world(menuart::gamehalves[menu.skins[0]][i], game.bodies[i + 1].pos);
-    }
-    if (!game.split && !game.hidden() && menu.skins[0] > 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
-        const int px = wx(game.candy().pos.x), py = wy(game.candy().pos.y);
-        for (int id : menuart::gamecandies[menu.skins[0]]) add(id, px, py);
-    }
-    if (game.mergeage * .016f < .25f) world(menuart::merge0 + static_cast<int>(game.mergeage * .016f / .05f), game.candy().pos);
-    if (game.inlantern && game.captureage < .1f) {
-        const float t = game.captureage/.1f;
-        for (int id : menuart::gamecandies[menu.skins[0]]) world(id,game.candydraw,std::lround((1-t)*31),0,1-(1-.3f/.71f)*t);
-    }
-    for (int part = 0; part < game.activecount(); ++part) {
-        const int id = game.activeid(part);
-        if (game.bubblefor(id) >= 0) {
-            world(menuart::bubble4 + static_cast<int>(elapsed * .016f / .05f) % 13, game.bodies[id].pos);
-            if (const auto* app = game.ghostapp(2,game.bubblefor(id))) gamevisuals::clouds(game,*app,game.bodies[id].pos,31,false,world);
-        }
-    }
-    if (game.popage * .016f < .6f) world(menuart::bubble18 + std::min(11, static_cast<int>(game.popage * .016f / .05f)), game.popposition);
-    gamevisuals::ghosts(game,world);
-    gamevisuals::steam(game,true,world);
+
     const auto& trail = trace::trail;
     auto px = [](float value) { return std::lround(128 + (value - 1280) * pixels); };
     auto py = [](float value) { return std::lround((value - cameray) * pixels); };
@@ -943,7 +973,7 @@ void ribbon() {
 
 void draw(const ui::controller& menu) {
     count = 0;
-    groundend = 0;
+    groundend = starback = starfront = 0;
     overlaystart = -1;
     add(menu.mode == ui::view::home ? menuart::titleback : menu.mode == ui::view::levels ? menuart::levelbacks[menu.pack] : menu.mode == ui::view::skins ? menuart::skinback : menuart::menuback, 128, 96);
     if (menu.mode != ui::view::skins) add(menuart::shadow, 128, 96, {}, GL_FLIP_NONE, (1781 * 2 * pixels) / 256, 4096 + (frame % 4500) * 32768 / 4500);
@@ -1004,10 +1034,10 @@ void draw(const ui::controller& menu) {
     present();
 }
 
-void render(bool overlay, bool ground) {
+void render(bool overlay, bool ground, int stars) {
     DS_SCOPE(render);
-    const int first = ground ? 0 : overlay ? overlaystart : groundend;
-    const int last = ground ? groundend : !overlay && overlaystart >= 0 ? overlaystart : count;
+    const int first = ground ? 0 : overlay ? overlaystart : stars == 1 ? groundend : stars == 2 ? starback : starfront;
+    const int last = ground ? groundend : stars == 1 ? starback : stars == 2 ? starfront : !overlay && overlaystart >= 0 ? overlaystart : count;
     for (int i = first; i < last; ++i) {
         const command& item = commands[i];
         if (!visibility[i]) continue;

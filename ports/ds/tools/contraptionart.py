@@ -6,6 +6,15 @@ from PIL import Image, ImageDraw
 
 def build(menu):
     quad, add, scale = menu["quad"], menu["add"], menu["scale"]
+    for i in range(29):
+        quad("mouse"+str(i),"obj_mouse",i,factor=1,restore=True,group="mouse"+str(i//8))
+    for i in range(43):
+        quad("lighter"+str(i),"obj_lighter",i,factor=1,restore=i in (1,2),group="lightglow" if i==0 else "lighter"+str(i//8))
+    for i in range(31):
+        quad("nightstar"+str(i),"obj_star_night",i,factor=1,group="nightstar"+str(i//8))
+    for i in range(7):
+        quad("sleep"+str(i),"char_animations_sleeping",i,factor=1,restore=True,group="sleep")
+    quad("zzz","fx_sleep",0,factor=1,group="zzz")
     for i in range(35):
         quad("pipe"+str(i),"obj_pipe",i,factor=1,restore=i>=2,group="pipebody" if i<2 else "steampuffs")
     for i in range(3):

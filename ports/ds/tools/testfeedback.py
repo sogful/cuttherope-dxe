@@ -42,11 +42,14 @@ events = [
     ("MonsterSad", "Sad"),
     ("MonsterExcited", "Excited"),
     ("MonsterGreeting", "Greeting"),
+    ("MonsterSleep1", "Sleep01"),
+    ("MonsterSleep2", "Sleep02"),
+    ("MonsterSleep3", "Sleep03"),
 ]
 for skin, config in enumerate(configs):
     for index, (event, suffix) in enumerate(events):
         unique = event in config.get("uniqueSounds", [])
-        if index >= 4 and not unique:
+        if 4 <= index < 6 and not unique:
             assert (skin, event) not in records
             continue
         expected = resources[event]

@@ -22,7 +22,10 @@ struct point {
     }
 };
 struct motion { point offset{}; float speed = 0, rotation = 0, circle = 0; int route = -1; point at(float time) const; float angle(float base, float time, bool reset = false) const; };
-struct hook { point anchor; float length; float radius = -1; bool spider = false; float rail = 0, offset = 0; bool vertical = false; int part = 0; bool wheel = false; int route = -1; float speed = 0; bool hidepath = false; };
+struct hook { point anchor; float length; float radius = -1; bool spider = false; float rail = 0, offset = 0; bool vertical = false; int part = 0; bool wheel = false; int route = -1; float speed = 0; bool hidepath = false, bulb = false; };
+struct mouse { point position{}; float angle = 0, radius = 240, duration = 3; int index = 1; };
+struct mousestate { point offset{}; std::array<point,4> entry{}; std::array<point,3> exit{}; float elapsed = 0, age = 0, pathage = 0, bounce = -1, eyes = -1; int phase = 6, quad = 18, path = 0; bool active = false, retreat = false, grabbing = false, carry = false, container = false; };
+struct lightbulb { point position{}; float radius = 225; };
 struct spike { point anchor{}; motion path{}; float angle = 0; int size = 1; float on = 0, off = 0, delay = 0; int group = -1; };
 struct pump { point position{}; float angle = 0; };
 struct hat { point position{}; motion path{}; float angle = 0; int group = 0; bool resetangle = false; };
@@ -66,6 +69,10 @@ struct level {
     std::array<tube, 6> tubes{};
     std::array<lantern, 6> lanterns{};
     int tubecount = 0, lanterncount = 0;
+    std::array<mouse,5> mice{};
+    std::array<lightbulb,1> bulbs{};
+    int mousecount = 0, bulbcount = 0;
+    bool night = false;
 };
 const level& loadlevel(int index);
 struct constraint { int other = 0; float length = 0; bool active = false, maximum = false; };
@@ -137,10 +144,26 @@ public:
     point disctouch{};
     void samples(int index, int first, int count, point* output, int& size) const;
     const body& candy() const { return bodies[0]; }
-    int activecount() const { return split ? halfalive[0] + halfalive[1] : 1; }
-    int activeid(int index) const { return split ? halfalive[0] ? index + 1 : 2 : 0; }
-    int bubblefor(int id) const { return id ? halfbubbles[id - 1] : bubble; }
+    int candycount() const { return split ? halfalive[0] + halfalive[1] : 1; }
+    int activecount() const { return candycount() + (definition.bulbcount && bulbalive); }
+    int activeid(int index) const { return index >= candycount() ? 3 : split ? halfalive[0] ? index + 1 : 2 : 0; }
+    int bodybase() const { return definition.bulbcount ? 4 : definition.split ? 3 : 1; }
+    int& bubbleindex(int id) { return id == 3 ? bulbbubble : id ? halfbubbles[id - 1] : bubble; }
+    int bubblefor(int id) const { return id == 3 ? bulbbubble : id ? halfbubbles[id - 1] : bubble; }
+    bool available(int id) const { return id == 3 ? bulbalive && bulbtransit < 0 : !hidden() && (state == outcome::playing || failreason == 4 || (split && id >= 1 && id <= 2 && halfalive[id-1])); }
     bool hidden() const { return transit >= 0 || inlantern; }
+    bool mousepress(point position);
+    bool illuminated(point position) const;
+    std::array<mousestate,5> mice{};
+    int activemouse = -1, mousecaptures = 0, mousereleases = 0, mousehandoffs = 0, mouseevents = 0, mousesound = 0;
+    bool micelocked = false;
+    bool bulbalive = false, awake = false;
+    int bulbbubble = -1, bulbtransit = -1, nightstart = 0, sleepevents = 0;
+    float bulbtime = 0, bulbspeed = 0, candytime = 0, sleeptime = 0;
+    std::array<bool,3> starlit{}, pickuplit{};
+    std::array<float,3> lightalpha{};
+    std::array<float,3> lightedge{};
+    std::array<int,3> lightchange{};
     level definition{};
     std::array<body, 256> bodies{};
     std::array<rope, 24> ropes{};
@@ -184,6 +207,18 @@ public:
     int dragspike = -1, spikeevents = 0, spiderfalls = 0, spideractivations = 0;
     bool spikedirection = false;
 private:
+    void resetnocturnal();
+    void updatemice();
+    void spawnmouse(int index, bool carry);
+    void attachmouse(int index);
+    void retreatmouse(int index);
+    void dropmouse();
+    void stopmice();
+    void collidelight();
+    void updatelight();
+    void retirebulb();
+    void advancelighttransport();
+    void lighttransports();
     void resetdevices();
     void advancedevices();
     void updatedevices();

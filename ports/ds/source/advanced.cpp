@@ -208,6 +208,7 @@ void simulation::movebee(int index) {
 }
 
 void simulation::transports() {
+    if (definition.bulbcount) { lighttransports(); return; }
     if (split || inlantern || state != outcome::playing) return;
     if (transit >= 0) {
         if (++transitage < 7) return;
@@ -235,7 +236,7 @@ void simulation::transports() {
         if (!hit) continue;
         for (int j = 0; j < definition.hatcount; ++j) if (j != i && definition.hats[j].group == hat.group) {
             exitspeed = candy().velocity.length() * .9f * 1.4f;
-            cutattached(0); burst();
+            dropmouse(); retreatmouse(activemouse); cutattached(0); burst();
             transit = j; transitage = 0; hattimers[j] = .8f; hatages[i] = 0; ++teleportevents;
             return;
         }
@@ -243,13 +244,14 @@ void simulation::transports() {
 }
 
 void simulation::bounce() {
-    if (hidden() || (state != outcome::playing && !(state == outcome::lost && split && activecount()))) return;
+    if ((hidden() && !definition.bulbcount) || (state != outcome::playing && failreason != 4 && !bulbalive && !(state == outcome::lost && split && activecount()))) return;
     for (int i = 0; i < definition.bouncercount; ++i) {
         const auto& item = definition.bouncers[i];
         const auto center = item.position + item.path.at(visuals * .016f);
         const float angle = item.path.angle(item.angle, visuals * .016f);
         const float width = item.size == 1 ? 194 : 302;
         for (int part = 0; part < activecount(); ++part) {
+            if (!available(activeid(part))) continue;
             auto& body = bodies[activeid(part)];
             bool hit = false;
             for (int side : {-1,1}) {

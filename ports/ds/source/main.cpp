@@ -11,9 +11,10 @@
 #include <fat.h>
 #include <sys/stat.h>
 #include <cstdio>
+#include <algorithm>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 13;
+    std::uint32_t magic = 0x44585250, version = 14;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -30,6 +31,8 @@ struct diagnostics {
     std::uint32_t spikeevents = 0, spikebutton = 0, beex = 0, beey = 0, spiderfalls = 0, spiderclimbers = 0, fadephase = 0;
     std::uint32_t disc = 0, discangle = 0, discevents = 0, ghostforms = 0, ghostevents = 0, ghostapps = 0, bodypool = 0;
     std::uint32_t steamevents = 0, steamstates = 0, captures = 0, releases = 0, occupied = 0, shared = 0, lanternx = 0, lanterny = 0;
+    std::uint32_t mouse = 0, mousecaptures = 0, mousereleases = 0, mousehandoffs = 0, mousecarry = 0;
+    std::uint32_t bulb = 0, bulbx = 0, bulby = 0, awake = 0, lit = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -66,6 +69,7 @@ int main() {
     int shownspikes = 0, shownspiderfalls = 0, shownspideractivations = 0;
     int showndiscs = 0, shownghosts = 0;
     int shownsteam = 0, showncaptures = 0, shownreleases = 0;
+    int shownmice = 0, shownsleep = 0, shownlight[3] = {-1000,-1000,-1000};
     bool shownmouth = false, shownresult = false;
     bool greeting = false;
     unsigned total = 0, peak = 0, late = 0;
@@ -79,6 +83,7 @@ int main() {
         shownspikes = shownspiderfalls = shownspideractivations = 0;
         showndiscs = shownghosts = 0;
         shownsteam = showncaptures = shownreleases = 0;
+        shownmice = shownsleep = 0; std::fill(std::begin(shownlight),std::end(shownlight),-1000);
         telemetry.resets = telemetry.resets + 1;
         trace::trail.reset();
         greeting = menu.door == 1 && !menu.replaypanel;
@@ -165,6 +170,12 @@ int main() {
         }
         if (game.captures != showncaptures) { audio::effect(lanternteleportindata,lanternteleportinbytes); showncaptures = game.captures; }
         if (game.releases != shownreleases) { audio::effect(lanternteleportoutdata,lanternteleportoutbytes); shownreleases = game.releases; }
+        if (game.mouseevents != shownmice) { audio::stream(game.mousesound); shownmice = game.mouseevents; }
+        if (game.sleepevents != shownsleep) { audio::speak(menu.skins[2],static_cast<audio::voice>(6+game.sleepevents%3)); shownsleep = game.sleepevents; }
+        for (int i=0;i<3;++i) if (game.lightchange[i] != shownlight[i]) {
+            if (game.starlit[i] && game.lightchange[i] > 1) audio::stream(3+i%2);
+            shownlight[i] = game.lightchange[i];
+        }
         if (game.spiderfalls != shownspiderfalls) { audio::effect(spiderfalldata, spiderfallbytes); shownspiderfalls = game.spiderfalls; }
         if (game.spideractivations != shownspideractivations) { audio::effect(spideractivatedata, spideractivatebytes); shownspideractivations = game.spideractivations; }
         if (game.bubbleevents != shownbubbles) { audio::effect(bubbledata, bubblebytes); shownbubbles = game.bubbleevents; }
@@ -279,6 +290,10 @@ int main() {
         telemetry.captures = game.captures; telemetry.releases = game.releases;
         telemetry.occupied = game.inlantern; telemetry.shared = game.sharedlantern;
         telemetry.lanternx = game.lanterns[0].position.x; telemetry.lanterny = game.lanterns[0].position.y;
+        telemetry.mouse = game.activemouse+1; telemetry.mousecaptures = game.mousecaptures; telemetry.mousereleases = game.mousereleases;
+        telemetry.mousehandoffs = game.mousehandoffs; telemetry.mousecarry = game.activemouse >= 0 && game.mice[game.activemouse].carry;
+        telemetry.bulb = game.definition.bulbcount && game.available(3); telemetry.bulbx = game.bodies[3].pos.x; telemetry.bulby = game.bodies[3].pos.y;
+        telemetry.awake = game.awake; telemetry.lit = game.starlit[0] | (game.starlit[1]<<1) | (game.starlit[2]<<2);
         telemetry.spikeevents = game.spikeevents; telemetry.spikebutton = game.dragspike + 1;
         telemetry.beex = telemetry.beey = 0;
         telemetry.spiderfalls = game.spiderfalls; telemetry.spiderclimbers = 0;

@@ -11,7 +11,7 @@ root = Path(__file__).resolve().parents[1]
 binary = root / "build/devicetest.exe"
 subprocess.run([shutil.which("g++"), "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", "-msse2", "-mfpmath=sse", "-ffp-contract=off",
     "-I"+str(root/"include"), "-I"+str(root/"generated"),
-    *(str(root/"source"/name) for name in ("simulation.cpp","mechanics.cpp","advanced.cpp","contraptions.cpp","devices.cpp","levelstore.cpp")),
+    *(str(root/"source"/name) for name in ("simulation.cpp","mechanics.cpp","advanced.cpp","contraptions.cpp","devices.cpp","nocturnal.cpp","levelstore.cpp")),
     str(root/"tests/devices.cpp"), "-o",str(binary)],check=True)
 runs, hashes, failures = [], {}, []
 array = lambda s: json.loads(s.replace("{","[").replace("}","]"))

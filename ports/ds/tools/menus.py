@@ -205,8 +205,8 @@ def pack():
             canvas.paste(record["image"], (x, y))
             record.update(x=x, y=y, w=record["image"].width, h=record["image"].height, page=page)
         pages.append(dict(name="menupage" + str(page), image=canvas, group=group, direct=False, bytes=width * height,
-                          alphabits=5 if group in ("menu_bgr_shadow", "doorshade", "steampuffs") or group.startswith(("catch", "vinylring", "vinylcontour")) else 3,
-                          dither=False if group in ("doorshade", "steampuffs") or group.startswith(("text", "packtext", "credits", "catch", "vinylring", "vinylcontour")) else
+                          alphabits=5 if group in ("menu_bgr_shadow", "doorshade", "steampuffs", "lightglow") or group.startswith(("catch", "vinylring", "vinylcontour")) else 3,
+                          dither=False if group in ("doorshade", "steampuffs", "lightglow") or group.startswith(("text", "packtext", "credits", "catch", "vinylring", "vinylcontour")) else
                           "low" if group.startswith(("menu_buttons", "menu_extra_buttons", "menu_options_packed", "skin_selection", "menu_level_ui", "hud_ui")) else True))
     members = defaultdict(list)
     for record in records:
@@ -452,6 +452,8 @@ def main():
         path = "src/CutTheRopeDX.Core/GameMain/" + name + ".cs"
         manifest["layoutSources"][path] = hashlib.sha256((root.parents[1] / path).read_bytes()).hexdigest()
     (output / "menumanifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    import palettepack
+    palettepack.build(output)
     print(f"DX menus: {len(records)} sprites, {len(pages)} pageable textures, {sum(page['compressed'] for page in pages):,} compressed bytes")
 
 

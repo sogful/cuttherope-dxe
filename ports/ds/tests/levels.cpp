@@ -10,6 +10,12 @@ static void decoded(const dx::level& a, const dx::level& b) {
     same(a.gravity,b.gravity); assert(a.switchcount == b.switchcount);
     assert(a.disccount == b.disccount && a.ghostcount == b.ghostcount);
     assert(a.tubecount == b.tubecount && a.lanterncount == b.lanterncount);
+    assert(a.mousecount == b.mousecount && a.bulbcount == b.bulbcount && a.night == b.night);
+    for (int i=0;i<a.mousecount;++i) {
+        const auto& x=a.mice[i]; const auto& y=b.mice[i]; same(x.position,y.position);
+        assert(x.angle==y.angle && x.radius==y.radius && x.duration==y.duration && x.index==y.index);
+    }
+    for (int i=0;i<a.bulbcount;++i) { same(a.bulbs[i].position,b.bulbs[i].position); assert(a.bulbs[i].radius==b.bulbs[i].radius); }
     for (int i=0;i<a.tubecount;++i) {
         const auto& x=a.tubes[i]; const auto& y=b.tubes[i]; same(x.position,y.position);
         assert(x.angle==y.angle && x.scale==y.scale);
@@ -34,7 +40,7 @@ static void decoded(const dx::level& a, const dx::level& b) {
     for (int i = 0; i < a.hookcount; ++i) {
         const auto& x = a.hooks[i]; const auto& y = b.hooks[i]; same(x.anchor,y.anchor);
         assert(x.length == y.length && x.radius == y.radius && x.spider == y.spider && x.rail == y.rail && x.offset == y.offset && x.vertical == y.vertical && x.part == y.part && x.wheel == y.wheel);
-        assert(x.route == y.route && x.speed == y.speed && x.hidepath == y.hidepath);
+        assert(x.route == y.route && x.speed == y.speed && x.hidepath == y.hidepath && x.bulb==y.bulb);
     }
     for (int i = 0; i < a.bubblecount; ++i) same(a.bubbles[i],b.bubbles[i]);
     for (int i = 0; i < a.spikecount; ++i) {
@@ -96,8 +102,9 @@ int main() {
             if (frame % 30 == 0 && !game.introduction) for (int i = 0; i < level.pumpcount; ++i) game.interact(level.pumps[i].position);
             game.tick();
             assert(std::isfinite(game.candy().pos.x) && std::isfinite(game.candy().pos.y));
-            if (game.state != dx::outcome::playing) {
+            if (game.state != dx::outcome::playing && game.failreason != 4) {
                 for (int i = 0; i < level.hookcount; ++i) if (game.ropes[i].count) {
+                    if (game.ropes[i].candy==3 && game.bulbalive) continue;
                     if (game.split && game.ropes[i].candy && game.halfalive[game.ropes[i].candy-1]) continue;
                     assert(game.ropes[i].cut && game.ropes[i].pending < 0);
                     if (level.hooks[i].spider) assert(game.ropes[i].spiderstate);

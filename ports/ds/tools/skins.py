@@ -86,6 +86,7 @@ def build(menu):
         preview = states.get("IdleVariationThree") if slot == 1 else states.get("Excited", states["IdleLoop"])
         active = next(iter(config["idleVariants"]), states["IdleLoop"])
         chosen = [states["IdleLoop"], states.get("Excited", states["IdleLoop"]), states["MouthOpening"], states["Sad"], states["Chewing"], active, states.get("Greeting", states["IdleLoop"])]
+        chosen += [states["Sleeping"], states.get("IdleToSleep",states["Sleeping"])]
         required = set(chosen + [preview])
         pending = list(required)
         for timeline in pending:
@@ -119,7 +120,7 @@ def build(menu):
                 previewframes.append(previewname)
             references[timeline] = len(info["animations"])
             following = config.get("followups", {}).get(str(timeline), -1)
-            if timeline == states["IdleLoop"]:
+            if timeline in (states["IdleLoop"],states["Sleeping"]):
                 following = timeline
             info["animations"].append(dict(frames=frames, previewframes=previewframes, fps=details["fps"], duration=details["duration"], followup=following))
             if timeline == preview:
@@ -167,7 +168,7 @@ def header(info, ids, fit, scale):
     lines += ["struct animation { const int* frames; const int* previewframes; int count; float fps, duration; int followup; };", "inline constexpr animation animations[] = {"]
     for index, animation in enumerate(info["animations"]):
         lines.append(f"{{animation{index},slotanimation{index},{len(animation['frames'])},{float(animation['fps'])}f,{animation['duration']}f,{animation['followup']}}},")
-    lines += ["};", "inline constexpr int costumes[15][7] = {"]
+    lines += ["};", "inline constexpr int costumes[15][9] = {"]
     lines += ["{" + ",".join(map(str, values)) + "}," for values in info["costumes"]]
     lines += ["};"]
     fields = list(info["presets"][0])

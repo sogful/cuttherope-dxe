@@ -60,7 +60,12 @@ for first in range(0, len(files), 64):
     native.extend(subprocess.check_output([str(binary), *map(str, files[first:first + 64])], text=True).splitlines())
 assert len(native) == len(files)
 atlases = []
+streamed = (generated / "nitro/menu.bin").read_bytes()
 for page, path, result in zip(manifest["pages"], files, native):
+    palette = b"" if page["direct"] else (generated / (page["name"]+"palette.bin")).read_bytes()
+    start=page["offset"]
+    assert streamed[start:start+len(palette)] == palette
+    assert streamed[start+len(palette):start+len(palette)+page["compressed"]] == path.read_bytes()
     data = unpack(path.read_bytes())
     expected = 2166136261
     for value in data:

@@ -14,12 +14,13 @@ const level& loadlevel(int index) {
     data.box = scalar(); data.index = scalar(); data.candy = vector(); data.target = vector(); data.split = scalar();
     for (auto& half : data.halves) half = vector();
     data.gravity = vector();
+    data.night = scalar();
     for (int i = 0; i < 3; ++i) { data.stars[i] = vector(); data.timeouts[i] = scalar(); data.starmotions[i] = mover(); }
     data.hookcount = scalar();
     for (int i = 0; i < data.hookcount; ++i) {
         auto& item = data.hooks[i]; item.anchor = vector(); item.length = scalar(); item.radius = scalar(); item.spider = scalar();
         item.rail = scalar(); item.offset = scalar(); item.vertical = scalar(); item.part = scalar(); item.wheel = scalar();
-        item.route = scalar(); item.speed = scalar(); item.hidepath = scalar();
+        item.route = scalar(); item.speed = scalar(); item.hidepath = scalar(); item.bulb = scalar();
     }
     data.bubblecount = scalar();
     for (int i = 0; i < data.bubblecount; ++i) data.bubbles[i] = vector();
@@ -57,6 +58,12 @@ const level& loadlevel(int index) {
     for (int i = 0; i < data.lanterncount; ++i) {
         auto& item = data.lanterns[i]; item.position = vector(); item.path = mover(); item.captured = scalar(); item.route = scalar();
     }
+    data.mousecount = scalar();
+    for (int i = 0; i < data.mousecount; ++i) {
+        auto& item = data.mice[i]; item.position = vector(); item.angle = scalar(); item.radius = scalar(); item.duration = scalar(); item.index = scalar();
+    }
+    data.bulbcount = scalar();
+    for (int i = 0; i < data.bulbcount; ++i) { data.bulbs[i].position = vector(); data.bulbs[i].radius = scalar(); }
     return data;
 }
 }

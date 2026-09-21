@@ -94,7 +94,7 @@ void simulation::camera() {
     } else cameray += difference * 14 * delta;
 }
 void simulation::burst(int id) {
-    int& active = id ? halfbubbles[id - 1] : bubble;
+    int& active = bubbleindex(id);
     if (active < 0) return;
     releaseghost(id);
     active = -1;
@@ -107,6 +107,7 @@ bool simulation::interact(point position) {
     draghook = -1;
     dragwheel = dragswitch = dragspike = -1;
     dragdisc = -1;
+    if (mousepress(position)) return true;
     for (int i = 0; i < definition.tubecount; ++i)
         if ((position-valvepoint(i)).length() < 40*definition.tubes[i].scale) return valvetap(i);
     for (int i = 0; i < definition.lanterncount; ++i)
@@ -119,8 +120,9 @@ bool simulation::interact(point position) {
         const auto d = position - definition.switches[i];
         if (d.x >= -115.5f && d.x < 115.5f && d.y >= -116.5f && d.y < 116.5f) { dragswitch = i; return true; }
     }
-    for (int part = 0; part < activecount() && !hidden(); ++part) {
+    for (int part = 0; part < activecount(); ++part) {
         const int id = activeid(part);
+        if (!available(id)) continue;
         const auto difference = position - bodies[id].pos;
         if (bubblefor(id) >= 0 && difference.x >= -60 && difference.x < 60 && difference.y >= -60 && difference.y < 60) {
             burst(id);
@@ -143,7 +145,8 @@ bool simulation::interact(point position) {
         if (std::abs(local.x) > 87.5f || std::abs(local.y) > 87.5f) continue;
         pumpages[i] = 0;
         ++pumpevents;
-        for (int part = 0; part < activecount() && !hidden(); ++part) {
+        for (int part = 0; part < activecount(); ++part) {
+            if (!available(activeid(part))) continue;
             auto& body = bodies[activeid(part)];
             const auto target = rotate(body.pos - pump.position, -pump.angle);
             if (target.y < 0 && target.y > -711.5f && std::abs(target.x) < 175)
@@ -162,6 +165,7 @@ void simulation::retirehalf(int id, int reason) {
 void simulation::fail(int reason) {
     if (suppressoutcome || state != outcome::playing) return;
     removelantern();
+    stopmice();
     for (int part = 0; part < activecount(); ++part) releasecandy(activeid(part));
     state = outcome::lost;
     failreason = reason;
@@ -201,7 +205,7 @@ void simulation::hazards() {
         for (int side : {-1, 1}) {
             const auto a = center + rotate({-width / 2, side * 5.0f}, angle);
             const auto b = center + rotate({width / 2, side * 5.0f}, angle);
-            for (int part = 0; part < activecount(); ++part) {
+            for (int part = 0; part < candycount(); ++part) {
                 const auto& body = bodies[activeid(part)];
                 if (linebox(a, b, body.pos) || segment(a, b, body.previous, body.pos)) {
                     if (split) retirehalf(activeid(part),2); else fail(2);

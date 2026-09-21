@@ -48,7 +48,7 @@ def build(menu):
                     info["items"].append([name, x, y, float(node.get("angle", 0)), float(node.get("fadeIn", 1)),
                         float(node.get("duration", 5)), float(node.get("fadeOut", .5)), int(node.get("repeat", 1)),
                         float(node.get("moveDelay", 0)), float(node.get("moveSpeed", 0)) if node.get("path") else 0,
-                        {"bubbled":1,"lanternCatch":2,"steamBurst":3}.get(node.get("showOn"),0), *area, *pathvalues])
+                        {"bubbled":1,"lanternCatch":2,"steamBurst":3,"mouseGrab":4}.get(node.get("showOn"),0), *area, *pathvalues])
                 assert len(info["items"]) - first <= 32, (path, code, "Tutorial runtime capacity")
                 rows.append([first, len(info["items"]) - first])
             info["spans"].append(rows)
@@ -80,7 +80,7 @@ def refresh():
             if not nodes: nodes = [n for n in document.iter() if n.get("locale")=="en"]
             nodes = [n for n in nodes if n.tag.startswith("tutorial") and (n.tag!="tutorialText" or n.get("text"))]
             assert len(nodes)==count
-            for i,node in enumerate(nodes): info["items"][first+i][10] = {"bubbled":1,"lanternCatch":2,"steamBurst":3}.get(node.get("showOn"),0)
+            for i,node in enumerate(nodes): info["items"][first+i][10] = {"bubbled":1,"lanternCatch":2,"steamBurst":3,"mouseGrab":4}.get(node.get("showOn"),0)
     target = output / "menuassets.hpp"
     source = target.read_text(encoding="utf-8")
     assert old in source
