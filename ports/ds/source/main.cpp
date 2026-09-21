@@ -8,13 +8,14 @@
 #include "menuassets.hpp"
 #include "trace.hpp"
 #include "profiling.hpp"
+#include "upper.hpp"
 #include <fat.h>
 #include <sys/stat.h>
 #include <cstdio>
 #include <algorithm>
 
 struct diagnostics {
-    std::uint32_t magic = 0x44585250, version = 16;
+    std::uint32_t magic = 0x44585250, version = 17;
     std::uint32_t frames = 0, ticks = 0, state = 0, stars = 0;
     std::uint32_t micros = 0, peak = 0, late = 0, vblanks = 0;
     float x = 0, y = 0;
@@ -35,6 +36,7 @@ struct diagnostics {
     std::uint32_t bulb = 0, bulbx = 0, bulby = 0, awake = 0, lit = 0;
     std::uint32_t belt = 0, beltwraps = 0, belthandoffs = 0, beltoffset = 0, beltitems = 0;
     std::uint32_t mouth = 0, mouthtick = 0, nightstart = 0;
+    std::uint32_t upperfault = 0, upperframes = 0, upperreads = 0;
 };
 extern "C" {
 volatile diagnostics telemetry;
@@ -44,7 +46,7 @@ volatile unsigned profilestress = 0;
 #endif
 }
 static volatile unsigned vblanks = 0;
-static void vertical() { vblanks = vblanks + 1; frontend::capture(); }
+static void vertical() { vblanks = vblanks + 1; frontend::capture(); upper::vblank(); }
 static dx::simulation game;
 static ui::controller menu;
 
@@ -75,7 +77,7 @@ int main() {
     int shownbelts = 0;
     bool shownmouth = false, shownresult = false;
     bool greeting = false;
-    unsigned total = 0, peak = 0, late = 0;
+    unsigned total = 0, peak = 0;
     auto resetgame = [&]() {
         game.reset(dx::loadlevel(menu.levelid()));
         frame = shownstars = 0;
@@ -95,7 +97,6 @@ int main() {
     nocashMessage("CTRD DS: ready");
     while (true) {
         swiWaitForVBlank();
-        const unsigned beginblank = vblanks;
         cpuStartTiming(0);
         DS_PROFILE_DO(profiling::begin());
         scanKeys();
@@ -242,19 +243,21 @@ int main() {
         if (menu.mode == ui::view::results && oldview != ui::view::results) audio::effect(windata, winbytes);
         if (menu.clicked || menu.mode != oldview) menu.persist();
         display::draw(game, frame, menu, menu.gameTouch, pointer);
+        telemetry.upperfault=upper::fault(); telemetry.upperframes=upper::updates(); telemetry.upperreads=upper::reads();
         const unsigned micros = timerTicks2usec(cpuEndTiming());
         if (micros > peak) peak = micros;
-        const unsigned elapsed = vblanks - beginblank;
-        late += elapsed;
         ++total;
+        const int clocklock=enterCriticalSection();
+        const unsigned completedblank=vblanks;
         telemetry.frames = total;
+        telemetry.late = completedblank-total;
+        telemetry.vblanks = completedblank;
+        leaveCriticalSection(clocklock);
         telemetry.ticks = game.ticks;
         telemetry.state = static_cast<unsigned>(game.state);
         telemetry.stars = game.count;
         telemetry.micros = micros;
         telemetry.peak = peak;
-        telemetry.late = late;
-        telemetry.vblanks = vblanks;
         telemetry.x = game.candy().pos.x;
         telemetry.y = game.candy().pos.y;
         telemetry.paused = menu.mode != ui::view::playing;

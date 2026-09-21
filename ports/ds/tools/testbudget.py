@@ -16,6 +16,8 @@ names = re.findall(
 palettes.write_text(
     "\n".join('extern "C" const unsigned char ' + name + "[64] = {};" for name in names)
 )
+import hostassets
+hostassets.build(root)
 subprocess.run(
     [
         shutil.which("g++"),
@@ -39,9 +41,11 @@ subprocess.run(
                 "source/nocturnal.cpp", "source/conveyors.cpp",
                 "source/interface.cpp",
                 "source/progress.cpp",
+                "source/upper.cpp",
             )
         ],
         str(palettes),
+        str(root/"build/hostassets.o"),
         "-o",
         str(binary),
     ],

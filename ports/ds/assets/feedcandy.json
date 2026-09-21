@@ -1,0 +1,84 @@
+{
+  "dumpSha256": "bd89c6c91afda4824fce5b7aee948aac0a1a05c561b118696c0d8c218930951f",
+  "package": "TEXTURE.Backgrounds.pkg",
+  "sprite": "MenuBackgroundSplash",
+  "crop": [
+    33,
+    24,
+    194,
+    161
+  ],
+  "paperHull": [
+    [
+      33,
+      38
+    ],
+    [
+      161,
+      25
+    ],
+    [
+      172,
+      24
+    ],
+    [
+      181,
+      24
+    ],
+    [
+      185,
+      26
+    ],
+    [
+      188,
+      29
+    ],
+    [
+      193,
+      139
+    ],
+    [
+      193,
+      141
+    ],
+    [
+      189,
+      142
+    ],
+    [
+      91,
+      158
+    ],
+    [
+      78,
+      160
+    ],
+    [
+      60,
+      160
+    ],
+    [
+      59,
+      159
+    ],
+    [
+      58,
+      156
+    ],
+    [
+      51,
+      125
+    ],
+    [
+      43,
+      89
+    ],
+    [
+      33,
+      39
+    ]
+  ],
+  "rotation": 90,
+  "note": "Native RGB5 pixels from the paper inside the flattened DS splash. No redraw or resampling; exterior tape and background excluded.",
+  "sha256": "aefef61d00f54c5aaef534c4b2e457e5d73b8fceb55945faa289657b2f070d40"
+}

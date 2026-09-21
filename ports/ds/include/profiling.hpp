@@ -7,7 +7,8 @@ extern "C" { extern volatile unsigned profiledata[32]; extern volatile unsigned 
 namespace profiling {
 enum metric { physics = 1, samples, ropes, scene, upload, read, decode, wait, transfer, render,
     weights, segments, bodies, uploads, uploadbytes, previousevictions, polygons, vertices,
-    gpuerrors, uploadstart, uploadend, visibleupload, commands, holds, count };
+    gpuerrors, uploadstart, uploadend, visibleupload, commands, holds, upperdraw, upperreads,
+    upperplace, upperblit, upperworld, upperhud, count };
 inline unsigned data[32]{};
 inline void begin() {
     for (unsigned& item : data) item = 0;

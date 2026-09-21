@@ -7,9 +7,9 @@ from PIL import ImageChops, ImageStat
 fields = (
     "frame physics samples ropes scene upload read decode wait transfer render "
     "weights segments bodies uploads uploadbytes previousevictions polygons vertices "
-    "gpuerrors uploadstart uploadend visibleupload commands holds"
+    "gpuerrors uploadstart uploadend visibleupload commands holds upperdraw upperreads upperplace upperblit upperworld upperhud"
 ).split()
-timings = fields[1:11]
+timings = fields[1:11]+["upperdraw","upperplace","upperblit","upperworld","upperhud"]
 
 
 class recorder:
@@ -33,8 +33,9 @@ class recorder:
             for key in timings:
                 values[key] = round(values[key] * 1000000 / 33513982, 2)
             self.records.append(values)
-        self.stale = self.stale + 1 if state["frames"] == self.frame else 0
-        self.frame = state["frames"]
+        submitted=self.read("renderstamp",1)[0]
+        self.stale = self.stale + 1 if submitted == self.frame else 0
+        self.frame = submitted
         image = self.framebuffer().crop((0, 192, 256, 384))
         if self.previous and self.stale >= 3 and state["frames"] > 20:
             difference = ImageChops.difference(image, self.previous)
@@ -77,4 +78,4 @@ class recorder:
         (self.directory / "profile.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
         print("PROFILE:", json.dumps({key: value for key, value in result.items()
                                      if key not in ("samples", "staleFrameChanges")}), flush=True)
-        print("Changes after >=3 frames without a completed main update:", len(self.anomalies), flush=True)
+        print("Changes after >=3 frames without a submitted lower frame:", len(self.anomalies), flush=True)

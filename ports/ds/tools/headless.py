@@ -46,6 +46,7 @@ def main():
     parser.add_argument("--profile", action="store_true", help="Read optional profiling build and capture framebuffer changes during stalled main updates")
     parser.add_argument("--pagingstress", action="store_true", help="Profile-only synthetic heavy completion and captured-frame recovery test")
     parser.add_argument("--layers", action="store_true", help="Profile-only candy/Om Nom framebuffer overlap regression")
+    parser.add_argument("--upper", action="store_true", help="Check dual-screen menus, HUD, flashes, flaps and tall camera")
     parser.add_argument("--first-box", type=int, default=1, choices=range(1,18))
     parser.add_argument("--last-box", type=int, default=17, choices=range(1,18))
     parser.add_argument("--level-only", type=int, choices=range(1,26), help="Limit box checks to one level number")
@@ -59,7 +60,7 @@ def main():
     core = c.CDLL(args.core)
     directory = root / "build/headless" / "profile" if args.profile else root / "build/headless"
     if args.profile:
-        label = "layers" if args.layers else f"pagingstress-{args.first_box}-{args.level_only or 23}" if args.pagingstress else f"boxes-{args.first_box}-{args.last_box}-{args.level_only or 'all'}" if args.boxes else "regressions" if args.regressions else "flow" if args.flow else "inspect"
+        label = "upper" if args.upper else "layers" if args.layers else f"pagingstress-{args.first_box}-{args.level_only or 23}" if args.pagingstress else f"boxes-{args.first_box}-{args.last_box}-{args.level_only or 'all'}" if args.boxes else "regressions" if args.regressions else "flow" if args.flow else "inspect"
         directory /= label + f"-costume-{args.costume}"
     directory.mkdir(parents=True, exist_ok=True)
     folder = str(directory).encode()
@@ -76,7 +77,6 @@ def main():
     messages = []
     callbacks = []
     animation = []
-    logo = Image.open(root / "generated/logo.png").convert("RGB")
 
     def callback(name, restype, types, function):
         instance = c.CFUNCTYPE(restype, *types)(function)
@@ -195,9 +195,14 @@ def main():
         def capture(label):
             image = framebuffer()
             assert image.size == (256, 384), image.size
-            difference = ImageChops.difference(image.crop((0, 0, 256, 192)), logo)
-            assert max(high for low, high in difference.getextrema()) <= 8, "Upper display does not match the logo within RGB15 precision"
+            if telemetry()["version"]<17:
+                logo=Image.open(root/"generated/logo.png").convert("RGB")
+                difference=ImageChops.difference(image.crop((0,0,256,192)),logo)
+                assert max(high for low,high in difference.getextrema())<=8
+            else:
+                assert telemetry()["upperframes"]>0 and not telemetry()["upperfault"], telemetry()
             image.save(directory / (label + ".png"))
+            image.crop((0,0,256,192)).save(directory/(label+"-upper.png"))
             image.crop((0, 192, 256, 384)).save(directory / (label + "-game.png"))
         symbols = (root / ("build/profile/symbols.txt" if args.profile else "build/symbols.txt")).read_text().splitlines()
         address = int(next(line.split()[0] for line in symbols if line.endswith(" telemetry")), 16)
@@ -215,9 +220,9 @@ def main():
         assert size == 4 * 1024 * 1024, f"Expected original DS main RAM, received {size} bytes"
         if args.profile:
             import profilecapture
-            def readprofile(name):
+            def readprofile(name,count=32):
                 location = int(next(line.split()[0] for line in symbols if line.endswith(" " + name)), 16)
-                return struct.unpack("<32I", c.string_at(memory + location - 0x02000000, 128))
+                return struct.unpack(f"<{count}I", c.string_at(memory + location - 0x02000000, count*4))
             profiler = profilecapture.recorder(directory, report, readprofile, framebuffer)
         report["mainRamBytes"] = size
         references = json.loads((root.parent / "roblox/tests/desktop-trajectories.json").read_text())
@@ -234,11 +239,12 @@ def main():
         keys += ["mouse", "mousecaptures", "mousereleases", "mousehandoffs", "mousecarry", "bulb", "bulbx", "bulby", "awake", "lit"]
         keys += ["belt", "beltwraps", "belthandoffs", "beltoffset", "beltitems"]
         keys += ["mouth", "mouthtick", "nightstart"]
+        keys += ["upperfault", "upperframes", "upperreads"]
         faultsymbol = next((line for line in symbols if line.endswith(" renderfault")), None)
         faultaddress = memory + int(faultsymbol.split()[0], 16) - 0x02000000 if faultsymbol else None
         def telemetry():
             version = struct.unpack("<I", c.string_at(memory + offset + 4, 4))[0]
-            fields = 94 if version >= 16 else 91 if version >= 15 else 86 if version >= 14 else 76 if version >= 13 else 68 if version >= 12 else 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
+            fields = 97 if version >= 17 else 94 if version >= 16 else 91 if version >= 15 else 86 if version >= 14 else 76 if version >= 13 else 68 if version >= 12 else 61 if version >= 11 else 54 if version >= 10 else 48 if version >= 9 else 46 if version >= 8 else 42
             result = dict(zip(keys, struct.unpack(f"<10I2f{fields}I", c.string_at(memory + offset, 48 + fields * 4))))
             for key in keys: result.setdefault(key, 0)
             return result
@@ -254,6 +260,7 @@ def main():
             for _ in range(count):
                 core.retro_run()
                 current = telemetry()
+                assert not current["upperfault"], current
                 stalled = stalled + 1 if current["frames"] == lastframe else 0
                 lastframe = current["frames"]
                 fault = struct.unpack("<I", c.string_at(faultaddress, 4))[0] if faultaddress else 0
@@ -337,6 +344,10 @@ def main():
             assert telemetry()["costume"] == args.costume
             key(0)
         assert title["view"] == 5 and title["ticks"] == 0 and title["frames"] > 40, title
+        if args.upper:
+            import uppercheck
+            uppercheck.check(run,tap,key,touch,telemetry,framebuffer,settle,snapshot,report,directory)
+            return
         if args.night:
             import nightcheck
             nightcheck.check(run,tap,key,touch,telemetry,framebuffer,settle,snapshot,report,directory,args.costume)
@@ -815,6 +826,9 @@ def main():
             print("PASS: physics/candy advance during incoming fade; 600 startup frames without background flashes")
             return
         run(180)
+        for _ in range(600):
+            if telemetry()["ticks"] >= max(reference) and not telemetry()["door"]: break
+            run(1)
         idle = snapshot("idle")
         assert idle["magic"] == 0x44585250 and idle["state"] == 0 and idle["frames"] > 150, idle
         assert len(samples) == len(reference), samples
@@ -882,6 +896,7 @@ def main():
                 run(1)
                 closing.append(framebuffer().crop((0, 192, 256, 384)))
             closing[0].save(directory / "box-quit.gif", save_all=True, append_images=closing[1:], duration=16, loop=0)
+            settle()
             assert snapshot("quit-levels")["view"] == 4
             settle()  # The grid may still be fading in after its texture pages load.
             touch(66, 26)
@@ -941,9 +956,7 @@ def main():
             run(70)
             retry = snapshot("retry")
             assert retry["state"] == 0 and retry["stars"] == 0 and retry["resets"] == 2, retry
-            buttons.add(3)  # Start
-            run(3)
-            buttons.clear()
+            key(3)  # Hold Start through completed game updates, including first-use streaming.
             beforepause = telemetry()
             run(60)
             paused = snapshot("paused")
@@ -958,9 +971,7 @@ def main():
             silence = audiononzero
             run(60)
             assert audiononzero == silence, "Audio persisted with both toggles off"
-            buttons.add(3)
-            run(3)
-            buttons.clear()
+            key(3)
             run(30)
             resumed = snapshot("resumed")
             assert resumed["paused"] == 0 and resumed["ticks"] > paused["ticks"], resumed

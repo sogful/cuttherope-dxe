@@ -156,10 +156,6 @@ def main():
     import backgrounds
     backgroundheader = backgrounds.build(content, output, sources)
 
-    logopath = root / "assets/logods.png"
-    import logo
-    logo.build(output)
-
     sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "win", "tap",
            "bubble", "bubble_break", "pump_1", "rope_get", "spider_activate", "spider_fall", "spider_win", "candy_break",
            "bouncer", "teleport", "candy_link", "electric", "wheel", "gravity_on", "gravity_off", "spike_rotate_in", "spike_rotate_out",
@@ -191,7 +187,7 @@ def main():
     # Only the immediate star/hook/default-candy renderer uses resident atlases.
     # All other gameplay/menu art now has pageable replacements.
     resident = {record['page'] for record in records if record['name'] in ('star0','hookback','candy0')}
-    blobs = [name for i,page in enumerate(pages) if i in resident for name in (page["name"], page["name"] + "palette")] + ["logo"] + [name for name, _ in audio if not name.endswith("music")]
+    blobs = [name for i,page in enumerate(pages) if i in resident for name in (page["name"], page["name"] + "palette")] + [name for name, _ in audio if not name.endswith("music")]
     header = ["#pragma once", "#include <cstdint>", 'extern "C" {']
     header += [f"extern const unsigned char {name}data[];" for name in blobs]
     header += ["}", "namespace art {", "struct sprite { int x, y, w, h, ox, oy, advance, page; };",
@@ -215,7 +211,7 @@ def main():
     (output / "assets.s").write_text("\n".join(assembly) + "\n", encoding="utf-8")
     manifest = {"level": "1_1", "levelCount": levels.boxes * 25, "viewport": [256, 192], "scale": scale, "atlases": pages,
                 "texturebytes": sum(page["bytes"] for page in pages) + 131072,
-                "upperbytes": 49152, "upperpalettebytes": 512, "logo": {"source": "assets/logods.png", "sha256": hashlib.sha256(logopath.read_bytes()).hexdigest()},
+                "upperbytes": 49152, "upperpalettebytes": 512, "upper": "uppermanifest.json",
                 "audiobytes": sum(size for _, size in audio),
                 "residentaudiobytes": sum(size for name, size in audio if not name.endswith("music")) + max(size for name, size in audio if name.endswith("music")),
                 "sources": {str(path.relative_to(content)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)},

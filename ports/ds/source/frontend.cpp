@@ -1,4 +1,5 @@
 #include "frontend.hpp"
+#include "upper.hpp"
 #include "menuassets.hpp"
 #include "packed.hpp"
 #include "trace.hpp"
@@ -25,8 +26,14 @@ static unsigned touched[menuart::pagecount]{}, frame = 0, occupied = 0;
 static unsigned reserved = 0;
 static unsigned repacks = 0;
 extern "C" { volatile unsigned renderfault = 0; }
+#ifdef DS_PROFILE
+extern "C" { volatile unsigned renderstamp = 0; }
+#endif
 alignas(32) static unsigned char staged[393216 + 512*64];
 static unsigned stagedbytes = 0;
+static unsigned workversion = 0, blendversion = 0;
+unsigned char* workspace() { return staged; }
+unsigned workgeneration(unsigned boundary) { return boundary==65536?blendversion:workversion; }
 struct transfer { void* destination; const void* source; unsigned bytes; };
 static transfer transfers[784];
 static unsigned transfercount = 0;
@@ -156,11 +163,13 @@ static unsigned char* staging(unsigned size) {
     }
     unsigned char* result = staged + stagedbytes;
     stagedbytes += size;
+    if (stagedbytes > 65536) ++blendversion;
+    if (stagedbytes > 262144) ++workversion;
     return result;
 }
 
 void present() {
-    if (!transfercount) { glFlush(GL_TRANS_MANUALSORT); return; }
+    if (!transfercount) { glFlush(GL_TRANS_MANUALSORT); DS_PROFILE_DO(++renderstamp); return; }
 #ifdef __NDS__
     unsigned bytes = 0;
     for (unsigned i = 0; i < transfercount; ++i) {
@@ -219,6 +228,7 @@ void present() {
     glFlush(GL_TRANS_MANUALSORT);
 #endif
     transfercount = stagedbytes = 0;
+    DS_PROFILE_DO(++renderstamp);
 }
 
 int background(int box, int sections, int top, int texture) {
@@ -520,10 +530,6 @@ static void results(const ui::controller& menu, bool hiding = false) {
 void prepareoverlay(const ui::controller& menu, const dx::simulation& game) {
     overlaystart = count;
     if (menu.mode == ui::view::playing || menu.mode == ui::view::paused || (menu.mode == ui::view::results && menu.age < 32)) {
-        for (int i = 0; i < 3; ++i) {
-            const int frame = menu.starage[i] < 0 ? 0 : std::min(10, 1 + menu.starage[i] / 3);
-            add(menuart::hud1 + frame, std::lround((86 * i + 43) * menuart::fit * pixels * menuart::hudzoom), std::lround(43.5f * menuart::fit * pixels * menuart::hudzoom));
-        }
         const auto& p = menuart::hudpositions[menu.locale];
         add(menuart::hud0, p[2], p[3], {}, GL_FLIP_NONE, 1, 0, menu.pressed == 0 ? 31 : 19);
         add(menuart::hud0 + menuart::hudquads[menu.locale], p[0], p[1], {}, GL_FLIP_NONE, 1, 0, menu.pressed == 1 ? 31 : 19);
@@ -647,11 +653,11 @@ static void pollen(const dx::simulation& game, int elapsed) {
     }
 }
 
-void preparegame(const ui::controller& menu, const dx::simulation& game, int elapsed) {
+void preparegame(const ui::controller& menu, const dx::simulation& game, int elapsed, bool upper) {
     count = 0;
     groundend = starback = starfront = 0;
     overlaystart = -1;
-    cameray = game.cameray;
+    cameray = game.cameray - (upper ? 1440 : 0);
     auto wx = [](float value) { return std::lround(128 + (value - 1280) * pixels); };
     auto wy = [](float value) { return std::lround((value - cameray) * pixels); };
     auto world = [&](int sprite, dx::point position, int alpha = 31, float angle = 0, float scale = 1, int flip = GL_FLIP_NONE, float vertical = -1, int shade = 31) {
@@ -1052,6 +1058,55 @@ void draw(const ui::controller& menu) {
     render();
     glEnd2D();
     present();
+}
+
+void uppermenu(const ui::controller& menu) {
+    upper::cutout(true);
+    if (menu.mode!=ui::view::skins)
+        upper::sprite(menuart::shadow,128,96,(1781*2*pixels)/256,(1781*2*pixels)/256,
+                      4096+(frame%4500)*32768/4500);
+    upper::cutout(false);
+}
+
+void paintupper(bool ground,int stars) {
+    const int first=ground?0:stars==1?groundend:stars==2?starback:starfront;
+    const int last=ground?groundend:stars==1?starback:stars==2?starfront:count;
+    for (int i=first;i<last;++i) {
+        const auto& item=commands[i];
+        const upper::clip bounds{item.bounds.left,item.bounds.top,item.bounds.right,item.bounds.bottom};
+        if (item.id<0) upper::rect(bounds,item.color,item.alpha);
+        else upper::sprite(item.id,item.x,item.y,item.scale,item.vertical,item.angle,item.flip,item.alpha,item.color,bounds);
+    }
+}
+
+void upperoverlay(const ui::controller& menu,const dx::simulation& game) {
+    upper::shade(31);
+    upper::transient(menu.door || menu.mode==ui::view::results);
+    if (menu.mode==ui::view::playing || menu.mode==ui::view::paused || (menu.mode==ui::view::results && menu.age<32)) {
+        for (int i=0;i<3;++i) {
+            const int frame=menu.starage[i]<0?0:std::min(10,1+menu.starage[i]/3);
+            upper::sprite(menuart::hud1+frame,80+i*48,82,2.5f,2.5f);
+        }
+        char value[24]; std::snprintf(value,sizeof(value),"%d",ui::controller::points(game.count,game.ticks));
+        constexpr float zoom=1.65f;
+        float width=0;
+        for (const char* p=value;*p;++p) width+=menuart::scoredigits[*p-'0'].advance*zoom;
+        for (int pass=0;pass<5;++pass) {
+            float left=128-width/2;
+            const int dx=pass==0?-1:pass==1?1:0, dy=pass==2?-1:pass==3?1:0;
+            for (const char* p=value;*p;++p) {
+                const auto& glyph=menuart::scoredigits[*p-'0'];
+                upper::sprite(glyph.sprite,std::lround(left+glyph.advance*zoom/2)+dx,120+dy,zoom,zoom,0,0,31,pass==4?0xffff:0x8000);
+                left+=glyph.advance*zoom;
+            }
+        }
+    }
+    count=groundend=starback=starfront=0;
+    overlaystart=-1;
+    if (menu.mode==ui::view::results) doors(menu.age*.016f/.5f,false,false,menu.pack);
+    if (menu.door) doors(menu.doorframe*.016f/.5f,menu.door==1,false,menu.pack);
+    paintupper();
+    if (menu.white()>0) upper::rect({},RGB15(31,31,31),std::max(1,static_cast<int>(std::lround(menu.white()*31))));
 }
 
 void render(bool overlay, bool ground, int stars) {

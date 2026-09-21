@@ -1,4 +1,5 @@
 import json
+import hashlib
 import math
 from pathlib import Path
 import struct
@@ -70,8 +71,14 @@ for record in manifest["sprites"]:
 
 assert len({record["page"] for record in manifest["sprites"]}) == len(manifest["atlases"])
 assert manifest["texturebytes"] <= 384 * 1024
-assert (generated / "logo.bin").stat().st_size == manifest["upperbytes"] == 48 * 1024
-assert (generated / "logopalette.bin").stat().st_size == manifest["upperpalettebytes"] == 512
+assert manifest["upperbytes"] == 48 * 1024 and manifest["upperpalettebytes"] == 512
+upper=json.loads((generated/manifest["upper"]).read_text())
+assert (generated/"nitro/upperbg.bin").stat().st_size==upper["backgroundBytes"]
+assert (generated/"nitro/upperpal.bin").stat().st_size==upper["paletteBytes"]==upper["palettes"]*(512+32768)
+for offset,height,palette in upper["backgrounds"]:
+    assert height>=192 and offset+height*256<=upper["backgroundBytes"] and palette<upper["palettes"]
+assert hashlib.sha256((root/"assets/feedcandy.png").read_bytes()).hexdigest()==upper["photoSha256"]
+assert "logodata" not in (generated/"assets.s").read_text()
 report = {"framesChecked": checked, "paletteErrors": errors, "textureBytes": manifest["texturebytes"], "passed": True}
 (root / "build/visualtest.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
 print(f"PASS: {checked} source-canvas animation anchors, {len(errors)} independent palettes, landscape viewport")
