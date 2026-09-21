@@ -67,6 +67,13 @@ def main():
     subprocess.run([str(compiler.with_name("arm-none-eabi-gcc.exe")), *flags, *objects, "-L" + str(sdk / "libs/libnds/lib"),
                     "-Wl,-Map=" + str(build / (name + ".map")), "-Wl,--start-group", "-lnds9", "-lstdc++", "-lc", "-lm", "-Wl,--end-group",
                     "-o", str(elf)], check=True, env=environment)
+    symbols = subprocess.check_output([str(compiler.with_name("arm-none-eabi-nm.exe")), "-n", str(elf)], env=environment, text=True)
+    boundaries = {line.split()[-1]:int(line.split()[0],16) for line in symbols.splitlines()
+                  if line.split()[-1] in ("__end__","__eheap_end")}
+    if not args.bootcheck:
+        free = boundaries["__eheap_end"]-boundaries["__end__"]
+        assert free >= 128*1024, f"Only {free:,} heap bytes remain in original DS mode"
+        print(f"Original DS heap headroom: {free:,} bytes",flush=True)
     rom = dist / (name + ".nds")
     subprocess.run([str(sdk / "tools/ndstool/ndstool.exe"), "-c", str(rom), "-uc", "0",
                     "-9", str(elf), "-7", str(sdk / "sys/arm7/main_core/arm7_maxmod.elf"),
@@ -74,7 +81,6 @@ def main():
                     "-b", str(sdk / "sys/icon.bmp"), "Cut the Rope DX;DS feasibility slice;DX Extended"], check=True, env=environment)
     size = compiler.with_name("arm-none-eabi-size.exe")
     subprocess.run([str(size), str(elf)], check=True, env=environment)
-    symbols = subprocess.check_output([str(compiler.with_name("arm-none-eabi-nm.exe")), "-n", str(elf)], env=environment, text=True)
     (build / ("bootsymbols.txt" if args.bootcheck else "symbols.txt")).write_text(symbols, encoding="utf-8")
     print(f"ROM: {rom} ({rom.stat().st_size:,} bytes)")
 

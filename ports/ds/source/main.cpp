@@ -147,6 +147,16 @@ int main() {
             game.bodies[0].pin = game.candy().pos; game.bodies[0].pinned = true;
             game.stars.fill(true); game.count = 3;
         });
+        DS_PROFILE_DO(if (profilestress & 16) {
+            // A deterministic overlap probe, profile ROMs only. Bit 32 hides
+            // Om Nom so the harness can compare the candy's opaque pixels.
+            game.state = dx::outcome::playing; game.failreason = 0;
+            game.definition.hookcount = 0;
+            game.bodies[0].pos = {1280,1120};
+            game.definition.target = {profilestress & 32 ? 4280.0f : 1280.0f,1180};
+            game.mouth = true; game.mouthtick = 0; game.ticks = game.visuals = 20;
+            game.stars.fill(true); game.count = 0;
+        });
         frame = game.visuals;
         audio::world(menu, game);
         if (game.gravityevents != showngravity) {

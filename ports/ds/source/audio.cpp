@@ -42,7 +42,9 @@ static bool playstream(const art::voice& sample) {
 }
 bool speak(int costume, voice kind) {
     if (!playstream(art::voices[costume][static_cast<int>(kind)])) return false;
-    ++spoken; spokenid = costume * 6 + static_cast<int>(kind) + 1;
+    ++spoken;
+    const int index = static_cast<int>(kind);
+    spokenid = index < 6 ? costume*6+index+1 : 96+costume*3+index-5;
     return true;
 }
 bool stream(int index) { return playstream(art::streameffects[index]); }

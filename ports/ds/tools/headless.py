@@ -44,20 +44,21 @@ def main():
     parser.add_argument("--regressions", action="store_true", help="Exercise outcome input races, flashes, costume voices, carousel and tall backgrounds")
     parser.add_argument("--profile", action="store_true", help="Read optional profiling build and capture framebuffer changes during stalled main updates")
     parser.add_argument("--pagingstress", action="store_true", help="Profile-only synthetic heavy completion and captured-frame recovery test")
+    parser.add_argument("--layers", action="store_true", help="Profile-only candy/Om Nom framebuffer overlap regression")
     parser.add_argument("--first-box", type=int, default=1, choices=range(1,17))
     parser.add_argument("--last-box", type=int, default=16, choices=range(1,17))
     parser.add_argument("--level-only", type=int, choices=range(1,26), help="Limit box checks to one level number")
     parser.add_argument("--costume", type=int, default=0, choices=range(16), help="Equip a costume through the real picker before a test")
     parser.add_argument("--soak", type=int, default=3600, help="Additional idle frames before interaction tests")
     args = parser.parse_args()
-    if args.pagingstress and not args.profile:
-        parser.error("--pagingstress requires --profile; normal ROMs have no diagnostic controls")
+    if (args.pagingstress or args.layers) and not args.profile:
+        parser.error("--pagingstress/--layers require --profile; normal ROMs have no diagnostic controls")
     if args.profile and args.rom == str(root / "dist/cuttherope.nds"):
         args.rom = str(root / "dist/cuttherope-profile.nds")
     core = c.CDLL(args.core)
     directory = root / "build/headless" / "profile" if args.profile else root / "build/headless"
     if args.profile:
-        label = f"pagingstress-{args.first_box}-{args.level_only or 23}" if args.pagingstress else f"boxes-{args.first_box}-{args.last_box}-{args.level_only or 'all'}" if args.boxes else "regressions" if args.regressions else "flow" if args.flow else "inspect"
+        label = "layers" if args.layers else f"pagingstress-{args.first_box}-{args.level_only or 23}" if args.pagingstress else f"boxes-{args.first_box}-{args.last_box}-{args.level_only or 'all'}" if args.boxes else "regressions" if args.regressions else "flow" if args.flow else "inspect"
         directory /= label + f"-costume-{args.costume}"
     directory.mkdir(parents=True, exist_ok=True)
     folder = str(directory).encode()
@@ -324,6 +325,25 @@ def main():
             assert telemetry()["costume"] == args.costume
             key(0)
         assert title["view"] == 5 and title["ticks"] == 0 and title["frames"] > 40, title
+        if args.layers:
+            control = memory + int(next(line.split()[0] for line in symbols if line.endswith(" profilestress")),16)-0x02000000
+            key(8); key(8); tap(66,26); settle()
+            c.cast(control,c.POINTER(c.c_uint))[0]=16
+            run(30); snapshot("overlap-target")
+            overlap=framebuffer().crop((0,192,256,384))
+            c.cast(control,c.POINTER(c.c_uint))[0]=48
+            run(30); snapshot("overlap-candy-only")
+            alone=framebuffer().crop((0,192,256,384))
+            errors=[]
+            for y in range(145,154):
+                for x in range(124,133):
+                    if (x-128)**2+(y-149)**2<=16:
+                        errors.append(max(abs(a-b) for a,b in zip(overlap.getpixel((x,y)),alone.getpixel((x,y)))))
+            assert max(errors)<=8,(max(errors),errors)
+            report.update(passed=True,synthetic=True,opaqueCandyPixels=len(errors),maximumPixelError=max(errors))
+            (directory/"layerreport.json").write_text(json.dumps(report,indent=2))
+            print(f"PASS: candy overlays costume {args.costume}; {len(errors)} opaque pixels, maximum channel difference {max(errors)}")
+            return
         if args.pagingstress:
             import pagingstress
             control = memory + int(next(line.split()[0] for line in symbols if line.endswith(" profilestress")), 16) - 0x02000000
@@ -365,6 +385,28 @@ def main():
                     assert stage["level"] == box * 25 + level and stage["visuals"] > 0
                     assert math.isfinite(stage["x"]) and math.isfinite(stage["y"])
                     assert not stage["intro"], "Tall level introduction never handed control back"
+                    if box == 14 and level == 1:
+                        touch(65,55); touch(90,55); touch(90,55,False)
+                        for _ in range(700):
+                            if telemetry()["mousecarry"]: break
+                            run(1)
+                        carried = snapshot("cheese-mouse-captured")
+                        assert carried["mousecaptures"] and carried["mousecarry"],carried
+                        handoffs=carried["mousehandoffs"]
+                        for _ in range(250):
+                            if telemetry()["mousehandoffs"]>handoffs and telemetry()["mousecarry"]: break
+                            run(1)
+                        passed = snapshot("cheese-mouse-handoff")
+                        assert passed["mousehandoffs"]>handoffs and passed["mousecarry"],passed
+                        run(12)
+                        document=xml.parse(root.parents[1]/"content/maps/15_2.xml")
+                        hole=list(document.iter("gap"))[telemetry()["mouse"]-1]
+                        tap(64+float(hole.get("x"))*.4,float(hole.get("y"))*.4)
+                        released=snapshot("cheese-mouse-released")
+                        assert released["mousereleases"]>carried["mousereleases"],released
+                    if box == 15 and level == 0:
+                        assert stage["bulb"] and not stage["awake"],stage
+                        snapshot("pillow-sleeping")
                     if box == 12 and level == 0:
                         before = telemetry()
                         for state in (1,2,0):
@@ -834,6 +876,11 @@ def main():
                 touch(x, 40)
             touch(155, 40, False)
             run(180)
+            # The win delay is 125 completed game updates. First-use art/audio
+            # streaming can consume extra VBlanks without advancing that clock.
+            for _ in range(240):
+                if telemetry()["view"] == 2: break
+                run(1)
             won = snapshot("win")
             assert won["state"] == 1 and won["stars"] == 3 and won["cuts"] == 1 and won["view"] == 2, won
             assert won["beststars"] == 3 and won["bestscore"] == won["score"] >= 3000, won
