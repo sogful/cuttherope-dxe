@@ -16,6 +16,11 @@ def build(menu):
     points = [(f["spriteSourceSize"]["x"], f["spriteSourceSize"]["y"]) for f in markers[:13]]
     center = [(min(p[a] for p in points[:12]) + max(p[a] for p in points[:12])) / 2 for a in (0, 1)]
     resultfit = fit*uiscale.results
+    pausefit = fit*uiscale.pause
+    for i,name in enumerate(("pauseup","pausedown")):
+        quad(name,"menu_buttons",i,factor=pausefit,group="menu_buttonspause")
+    for i in range(5):
+        quad("pauseoption"+str(i),"menu_options_packed",i,factor=pausefit,group="menu_options_packedpause")
     info["anchors"] = [[round(128 + (p[0] - center[0]) * resultfit * scale), round(96 + (p[1] - center[1]) * resultfit * scale)] for p in points]
     for i in (13, 14, 15):
         quad("result" + str(i), "menu_results", i, factor=resultfit, group="resultart"+str(i))
@@ -52,7 +57,7 @@ def build(menu):
             name = "game" + code + key
             small = key in ("STAR_BONUS", "TIME", "FINAL_SCORE")
             result = key in info["keys"][:10]
-            label(name, strings[key], code, small, factor=resultfit if result else fit, group="textresult"+code+key if result else "textpause"+code)
+            label(name, strings[key], code, small, factor=resultfit if result else pausefit, group="textresult"+code+key if result else "textpause"+code)
             row.append(name)
         info["labels"].append(row)
         digits = []
@@ -91,8 +96,8 @@ def build(menu):
         add(name, image, "textscoredigits", ((10 + width / 2) * resultfit * scale, 62.5 * resultfit * scale))
         info["score"].append((name, width * resultfit * scale))
     info["hud"] = []
-    info["pause"] = [menu["position"](1280, (1440 - 897) / 2 + 88 + i * 181) for i in range(4)]
-    info["pause"] += [menu["position"](1280 + sign * 351 / 2, (1440 - 897) / 2 + 724 + 173 / 2) for sign in (-1, 1)]
+    info["pause"] = [(128,38+i*32) for i in range(4)]
+    info["pause"] += [(96,169),(160,169)]
     frames = json.loads((content / "images/hud_ui.json").read_text())["frames"]
     for q in info["hudquads"]:
         pw, ph = (frames[q]["spriteSourceSize"][key] for key in ("w", "h"))

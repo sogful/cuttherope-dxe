@@ -45,6 +45,9 @@ def indexed(image, lookup):
 
 
 def main():
+    import upperhud
+    import uppermotion
+    hudimages,hudrecords=upperhud.build()
     manifest = json.loads((output / "menumanifest.json").read_text(encoding="utf-8"))
     sprites = {item["name"]:item for item in manifest["sprites"]}
     def sprite(name):
@@ -68,6 +71,7 @@ def main():
     samples = [[image,dim(image,24),dim(image,17),photo,photo] for image in menus]
     samples += [[dim(image,17) for image in group]+[cover,dim(cover,24),photo,colorimage]
                 for group,cover in zip(worlds,covers)]
+    for sample in samples: sample.extend(hudimages)
     palettes, lookups = [], []
     for index, images in enumerate(samples):
         colors, lookup = palette(images)
@@ -75,6 +79,13 @@ def main():
         print("Upper palette", index+1, "/", len(samples), flush=True)
     palettebytes = b"".join(colors.astype("<u2").tobytes()+lookup.tobytes() for colors,lookup in zip(palettes,lookups))
     (output/"nitro/upperpal.bin").write_bytes(palettebytes)
+    hudbytes=b"".join(upperhud.encode(hudimages,lookup) for lookup in lookups)
+    (output/"nitro/upperhud.bin").write_bytes(hudbytes)
+    preview=Image.new("RGBA",(256,96))
+    for index in range(3): preview.alpha_composite(hudimages[(0,5,10)[index]],(index*80+15,0))
+    left=4
+    for image in hudimages[11:]: preview.alpha_composite(image,(left,58)); left+=image.width+3
+    preview.save(output/"upperhud.png")
     backgrounds, records = bytearray(), []
     def background(image, profile, photograph=False):
         item = (len(backgrounds),image.height,profile)
@@ -112,18 +123,25 @@ def main():
         row=y-(96-photo.height//2)
         columns=np.flatnonzero(mask[row]) if 0<=row<photo.height else []
         spans.append((128-photo.width//2+int(columns[0]),128-photo.width//2+int(columns[-1])+1) if len(columns) else (0,0))
+    motion=uppermotion.bake(output,manifest,backgrounds,records,palettes,lookups,spans)
     header = ["#pragma once", "namespace upperart {", "struct background { unsigned offset; int height, palette; };",
         "inline constexpr background backgrounds[] = {"+",".join("{"+",".join(map(str,item))+"}" for item in records)+"};",
         "inline constexpr int menus[] = {"+",".join(map(str,mainmenus))+"};",
         "inline constexpr int levels[] = {"+",".join(map(str,levelmenus))+"};",
         "inline constexpr int worlds[17][3] = {"+",".join("{"+",".join(map(str,row))+"}" for row in gamebacks)+"};",
         f"inline constexpr int photowidth = {photo.width}, photoheight = {photo.height};",
-        "inline constexpr unsigned char photospans[192][2] = {"+",".join("{"+",".join(map(str,row))+"}" for row in spans)+"};", "}"]
+        "inline constexpr unsigned char photospans[192][2] = {"+",".join("{"+",".join(map(str,row))+"}" for row in spans)+"};",
+        f"inline constexpr unsigned hudbytes = {len(hudbytes)//len(lookups)};",
+        "struct glyph { unsigned offset; int width,height,ox,oy,advance; };",
+        "inline constexpr glyph hud[] = {"+",".join("{"+",".join(map(str,row))+"}" for row in hudrecords)+"};",
+        "inline constexpr int motion[] = {"+",".join(map(str,motion))+"};",
+        f"inline constexpr int motionsteps={uppermotion.steps}, motioninterval={uppermotion.interval}, motionkey={uppermotion.keyinterval};", "}"]
     (output/"upperassets.hpp").write_text("\n".join(header)+"\n")
     (output/"uppermanifest.json").write_text(json.dumps(dict(palettes=len(palettes), backgrounds=records,
         photoSize=list(photo.size), menuManifestSha256=hashlib.sha256((output/"menumanifest.json").read_bytes()).hexdigest(),
         photoSha256=hashlib.sha256((root/"assets/feedcandy.png").read_bytes()).hexdigest(),
-        dim=17/31, paletteBytes=len(palettebytes), backgroundBytes=len(backgrounds)),indent=2))
+        dim=17/31, paletteBytes=len(palettebytes), backgroundBytes=len(backgrounds),hudRecords=hudrecords,
+        hudBytes=len(hudbytes),motionOffsets=motion,motionBytes=(output/"nitro/uppermotion.bin").stat().st_size),indent=2))
 
 
 if __name__ == "__main__":

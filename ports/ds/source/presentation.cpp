@@ -212,6 +212,10 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
     paintingupper=false;
     lower(game,frame,menu);
     DS_SCOPE(upperdraw);
+    static bool heldpause=false;
+    const bool paused=menu.mode==ui::view::paused && !menu.door && menu.white()<=0;
+    if (paused && heldpause) return;
+    heldpause=paused;
     static int closed=-1;
     const bool covered=menu.mode==ui::view::results && menu.age>=32;
     if (covered && closed==menu.pack) return;
@@ -219,8 +223,7 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
     if (menu.frontend()) {
         const int id=menu.mode==ui::view::levels?upperart::levels[menu.pack]:
             upperart::menus[menu.mode==ui::view::home?0:menu.mode==ui::view::skins?2:1];
-        upper::begin(id);
-        frontend::uppermenu(menu);
+        if (!frontend::uppermenu(id)) return;
     } else {
         const int sections=std::clamp(static_cast<int>(std::ceil(game.definition.height/1440)),1,3);
         upper::begin(upperart::worlds[menu.pack][sections-1],std::lround(game.cameray*scale));
@@ -229,7 +232,7 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
             paintingupper=true;
             cameray=game.cameray-1440;
             upper::shade(17);
-            frontend::preparegame(menu,game,frame,true);
+            frontend::upperworld();
             objects(game,frame,menu);
             paintingupper=false;
             cameray=game.cameray;

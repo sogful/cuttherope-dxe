@@ -45,8 +45,8 @@ int main() {
     assert(menu.mode == ui::view::paused);
     pen(128, 72, true); pen(40, 72, true); pen(40, 72, false);
     assert(menu.mode == ui::view::paused && !menu.reset);
-    tap(104, 145);
-    tap(152, 145);
+    choose(ui::action::effects);
+    choose(ui::action::music);
     assert(!menu.effects && !menu.music);
     key(ui::following);
     assert(menu.focus == 0);

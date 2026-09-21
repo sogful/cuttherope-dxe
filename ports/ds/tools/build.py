@@ -25,7 +25,7 @@ def main():
         subprocess.run([sys.executable, "tools/assets.py"], check=True)
     upper = root / "generated/uppermanifest.json"
     if args.assets or not upper.exists() or any(path.stat().st_mtime > upper.stat().st_mtime for path in
-            (root/"tools/upperart.py",root/"assets/feedcandy.png",root/"generated/menumanifest.json")):
+            (root/"tools/upperart.py",root/"tools/upperhud.py",root/"tools/uppermotion.py",root/"assets/feedcandy.png",root/"generated/menumanifest.json")):
         subprocess.run([sys.executable, "tools/upperart.py"], check=True)
     build = root / "build" / "profile" if args.profile else root / "build"
     dist = root / "dist"

@@ -7,4 +7,6 @@ titlebuttons = 1.35
 languages = 1.3
 reset = 1.35
 results = 1.4
+pause = 1.35
+picker = 1.35
 creditbounds = (32, 8, 244, 170)

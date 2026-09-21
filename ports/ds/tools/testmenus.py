@@ -23,6 +23,7 @@ for first, count in tutorials["spans"][400]:
 belts = [item for item in manifest["sprites"] if re.fullmatch(r"belt[0-6]", item["name"])]
 assert len(belts) == 7 and [item["source"]["quad"] for item in belts] == list(range(7))
 assert all(item["source"]["resource"] == "obj_conveyor" for item in belts)
+assert all(manifest["pages"][item["page"]]["dither"]=="pixel" for item in belts)
 for item in manifest["sprites"]:
     source = item.get("source") or {}
     page = manifest["pages"][item["page"]]
@@ -105,7 +106,7 @@ for page, path, result in zip(manifest["pages"], files, native):
         bits = page["alphabits"]
         for pixel, packed in zip(atlas.getdata(), data):
             expected = pixel[3] * ((1 << bits) - 1) / 255
-            if page["dither"] and page["dither"] != "low":
+            if page["dither"] is True:
                 assert abs((packed >> (8 - bits)) - expected) <= 1
             else:
                 assert packed >> (8 - bits) == round(expected)
@@ -174,7 +175,6 @@ baselines = repo / "src/CutTheRopeDX.Tests/Baselines"
 cases = [("MainMenu", "home", 8, ["packs", "options"], manifest["mainfit"]),
          ("Options", "options", 6, ["languages", "resetmenu", "credits"], manifest["fit"]),
          ("LanguageSelect", "languages", 8, ["language"] * 12, manifest["fit"]),
-         ("CandySelect", "skins", 4, ["skintab"] * 4, 1),
          ("Reset", "resetmenu", 4, ["erase", "options"], manifest["fit"])]
 positions = 0
 for scene, view, indent, actions, scale in cases:
@@ -189,6 +189,9 @@ for scene, view, indent, actions, scale in cases:
         actual = item.get("sourcePosition", [item["x"], item["y"]])
         assert abs(actual[0] - expected[0]) <= 1 and abs(actual[1] - expected[1]) <= 1, (scene, item, expected)
         positions += 1
+tabs=[item for item in controls if item["view"]=="skins" and item["action"]=="skintab"]
+assert len(tabs)==4 and [(item["x"],item["y"]) for item in tabs]==[(35+i*62,18) for i in range(4)]
+assert all(item["w"]==60 and item["h"]==29 for item in tabs)
 header = (generated / "menuassets.hpp").read_text()
 sleeptrim = [float(value.rstrip("f")) for value in re.search(r"sleeptrim\[\] = \{(.*?)\};",header).group(1).split(",")]
 configs = json.loads((repo/"content/images/animations/om_nom_skins.json").read_text())
@@ -220,8 +223,9 @@ assert len(boxes) == 52
 for index, rect in enumerate(boxes):
     x, y, w, h = map(float, rect)
     actual = [metrics["skinleft"] + (index % 4) * metrics["skinpitch"] + metrics["skinwidth"] / 2,
-              metrics["skintop"] + (index // 4) * metrics["skinrow"] + (metrics["skinrow"] - 10 * manifest["fit"] * 192 / 1440) / 2]
+              metrics["skintop"] + (index // 4) * metrics["skinrow"] + (metrics["skinrow"] - 10 * manifest["fit"] * manifest["uiscale"]["picker"] * 192 / 1440) / 2]
     expected = [(x + w / 2) * 192 / 1440, (y + h / 2) * 192 / 1440]
+    expected=[128+(expected[0]-128)*manifest["uiscale"]["picker"],37+(expected[1]-220*manifest["fit"]*192/1440)*manifest["uiscale"]["picker"]]
     assert all(abs(a - b) < 1 for a, b in zip(actual, expected)), (index, actual, expected)
     positions += 1
 report = dict(passed=True, sourceSprites=checked, sourceLayoutPositions=positions, packedPages=len(files),

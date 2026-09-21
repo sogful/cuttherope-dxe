@@ -43,13 +43,22 @@ int main(int argc, char** argv) {
         }
         menu.mode=ui::view::credits;
         for (int offset=0;offset<menuart::creditheights[locale];offset+=32) { menu.creditoffset=offset; checkmenu(); }
+        menu.mode=ui::view::skins;
+        for (int tab=0;tab<4;++tab) {
+            menu.skintab=tab;
+            for (int selected=0;selected<menuart::skincounts[tab];++selected) {
+                menu.skins[tab]=selected;
+                menu.skinoffsets[tab]=std::min((selected/4)*menuart::skinrow,menuart::skinmax[tab]);
+                for (int age : {0,9,30,60,90}) { menu.skinage=age; checkmenu(); }
+            }
+        }
     }
     std::printf("Frontend working sets: %u cases, peak %u / 393216 bytes; %u failures\n",menucases,menupeak,menufailed);
     assert(!menufailed && !frontend::renderfault);
     menu={};
     frontend::reserve(reserved);
     for (int locale=0;locale<12;++locale) {
-        for (auto view : {ui::view::home,ui::view::languages,ui::view::resetmenu,ui::view::results}) {
+        for (auto view : {ui::view::home,ui::view::languages,ui::view::resetmenu,ui::view::results,ui::view::skins}) {
             menu={}; menu.locale=locale; menu.mode=view;
             ui::button items[32]; const int count=menu.buttons(items);
             for (int i=0;i<count;++i) {

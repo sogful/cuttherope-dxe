@@ -20,9 +20,10 @@
 
 namespace upper {
 alignas(32) static unsigned char backdrop[256*208];
-alignas(32) static unsigned char lookup[32768];
+static unsigned char* lookup;
+static unsigned lookupversion=~0u;
 alignas(32) static std::uint16_t palette[256];
-static FILE *backgroundfile, *palettefile, *menufile, *photofile;
+static FILE *backgroundfile, *palettefile, *menufile, *photofile, *hudfile, *motionfile;
 static int backgroundid = -1, backgroundtop = -1, paletteid = -1, brightness = 31;
 static unsigned version = 0, cursor = 0, age = 0, completed = 0, readbytes = 0, error = 0;
 #ifdef __NDS__
@@ -31,6 +32,7 @@ static volatile bool pending = false;
 static bool palettechanged = false;
 static bool photograph = false;
 static bool moving = false;
+static bool mirrored = false;
 static constexpr unsigned cachestart = 262144, capacity = 163840;
 struct entry {
     int id = -1;
@@ -48,6 +50,7 @@ const std::uint16_t* colors() { return palette; }
 void shade(int value) { brightness = std::clamp(value,0,31); }
 void transient(bool enabled) { moving=enabled; }
 void cutout(bool enabled) { photograph=enabled; }
+void mirror(bool enabled) { mirrored=enabled; }
 static void fail(unsigned value) { error = value; nocashMessage("CTRD DS: upper-screen asset error"); }
 static bool read(FILE* file, unsigned offset, void* destination, unsigned bytes) {
     readbytes += bytes;
@@ -57,13 +60,18 @@ static bool read(FILE* file, unsigned offset, void* destination, unsigned bytes)
 }
 
 void initialize(const char* prefix) {
+    // The final-size score no longer needs a third 64 KiB font blend table.
+    // Reuse that upload workspace for the palette LUT, saving 32 KiB of RAM.
+    lookup=frontend::workspace()+196608;
+    lookupversion=~0u;
     auto open = [prefix](const char* name) {
         char path[512]; std::snprintf(path,sizeof(path),"%s%s",prefix,name);
         return std::fopen(path,"rb");
     };
     backgroundfile = open("upperbg.bin"); palettefile = open("upperpal.bin");
     menufile = open("menu.bin"); photofile = open("upperphoto.bin");
-    if (!backgroundfile || !palettefile || !menufile || !photofile) fail(2);
+    hudfile = open("upperhud.bin"); motionfile = open("uppermotion.bin");
+    if (!backgroundfile || !palettefile || !menufile || !photofile || !hudfile || !motionfile) fail(2);
     for (auto& item : cache) item.id = -1;
     backgroundid = backgroundtop = paletteid = -1;
 }
@@ -72,9 +80,14 @@ void begin(int id, int top) {
     const auto& background = upperart::backgrounds[id];
     if (paletteid != background.palette) {
         const unsigned offset = background.palette*(512+32768);
-        if (!read(palettefile,offset,palette,512) || !read(palettefile,offset+512,lookup,sizeof(lookup))) return;
+        if (!read(palettefile,offset,palette,512)) return;
         paletteid = background.palette;
         palettechanged = true;
+        lookupversion=~0u;
+    }
+    if (lookupversion!=frontend::workgeneration(196608)) {
+        if (!read(palettefile,paletteid*(512+32768)+512,lookup,32768)) return;
+        lookupversion=frontend::workgeneration(196608);
     }
     top = std::clamp(top,0,background.height-192);
     if (id != backgroundid || top < backgroundtop || top+192 > backgroundtop+208) {
@@ -92,7 +105,59 @@ void begin(int id, int top) {
     brightness = 31;
     photograph = false;
     moving = false;
+    mirrored = false;
     ++age;
+}
+
+bool menu(int id,unsigned frame) {
+    static int previous=-1;
+    const bool animated=upperart::motion[id]>=0;
+    const int step=animated?(frame/upperart::motioninterval)%upperart::motionsteps:0;
+    const bool changed=id!=backgroundid;
+    if (!changed && previous==step) return false;
+    begin(id);
+    if (animated) {
+        // The scrolling background's spare sixteen rows hold the on-disk index.
+        static_assert(upperart::motionsteps*4<=256*16);
+        auto* index=reinterpret_cast<unsigned*>(backdrop+256*192);
+        if (changed && !read(motionfile,upperart::motion[id],index,upperart::motionsteps*4)) return false;
+        int first=previous+1;
+        if (changed || step<previous || step-previous>=upperart::motionkey) {
+            first=step/upperart::motionkey*upperart::motionkey;
+        }
+        for (int current=first;current<=step;++current) {
+            if (current%upperart::motionkey==0) {
+                if (!read(motionfile,index[current],backdrop,256*192)) return false;
+                continue;
+            }
+            if (std::fseek(motionfile,index[current],SEEK_SET)) { fail(6); return false; }
+            unsigned offset=0,available=0;
+            auto next=[&]() -> unsigned {
+                if (offset==available) {
+                    available=std::fread(input,1,sizeof(input),motionfile); offset=0;
+                    readbytes+=available;
+                    DS_PROFILE_DO(profiling::data[profiling::upperreads]+=available);
+                    if (!available) { fail(7); return 255; }
+                }
+                return input[offset++];
+            };
+            for (;;) {
+                unsigned position=next(); position|=next()<<8;
+                if (position==65535) break;
+                unsigned length=next(); length|=next()<<8;
+                if (position+length>256*192) { fail(8); return false; }
+                while (length) {
+                    if (offset==available) { backdrop[position++]=next(); --length; }
+                    const unsigned amount=std::min(length,available-offset);
+                    std::memcpy(backdrop+position,input+offset,amount);
+                    position+=amount; offset+=amount; length-=amount;
+                }
+            }
+        }
+        std::memcpy(frontend::workspace(),backdrop,256*192);
+    }
+    previous=step;
+    return true;
 }
 
 static entry* load(int id, unsigned size) {
@@ -112,6 +177,10 @@ static entry* load(int id, unsigned size) {
     auto* destination = frontend::workspace()+cachestart+target->start;
     if (id==menuart::pagecount) {
         if (!read(photofile,0,destination,upperart::photowidth*upperart::photoheight*2)) return nullptr;
+        return target;
+    }
+    if (id>menuart::pagecount) {
+        if (!read(hudfile,(id-menuart::pagecount-1)*upperart::hudbytes,destination,upperart::hudbytes)) return nullptr;
         return target;
     }
     const auto& page = menuart::pages[id];
@@ -167,7 +236,7 @@ static DS_HOT void aligned(const texture& source,const transform& t,int flip,con
         if (row<0 || row>=source.height) continue;
         if (flip&2) row=source.height-1-row;
         const auto* pixels=source.data+(source.top+row)*source.stride;
-        auto* target=frame+y*256;
+        auto* target=frame+(mirrored?191-y:y)*256;
         if (table) {
             for (int x=t.left;x<t.right;++x) if (columns[x]>=0)
                 target[x]=table[(pixels[columns[x]]<<8)|target[x]];
@@ -185,7 +254,7 @@ static DS_HOT void aligned(const texture& source,const transform& t,int flip,con
 
 static const unsigned char* blendtable(const std::uint16_t* colors,int bits,int alpha,unsigned color,int id,int slot=0) {
     struct key { unsigned stamp=~0u, ink=0; int profile=-1,page=-1,light=-1,opacity=-1; };
-    static key keys[3];
+    static key keys[2];
     auto& key=keys[slot];
     auto* table=frontend::workspace()+65536*(slot+1);
     if (key.profile!=paletteid || key.stamp!=frontend::workgeneration(65536) || key.page!=id || key.light!=brightness || key.ink!=color || key.opacity!=alpha) {
@@ -271,7 +340,7 @@ static DS_HOT void blit(const texture& source,const transform& t,int flip,int al
     auto* frame=frontend::workspace();
     for (int y=t.top;y<t.bottom;++y) {
         int u=t.originx+t.left*t.xx+y*t.xy, v=t.originy+t.left*t.yx+y*t.yy;
-        auto* destination=frame+y*256+t.left;
+        auto* destination=frame+(mirrored?191-y:y)*256+t.left;
         for (int x=t.left;x<t.right;++x,++destination,u+=t.xx,v+=t.yx) {
             if (photograph && x>=upperart::photospans[y][0] && x<upperart::photospans[y][1]) continue;
             int px=u>>16, py=v>>16;
@@ -334,8 +403,6 @@ void sprite(int id,int x,int y,float scale,float vertical,int angle,int flip,int
         shadow(frontend::workspace()+cachestart+cached->start,cached->colors,t,source.page)) return;
     const bool hud=id>=menuart::hud1 && id<=menuart::hud1+10;
     const auto* table=(id==menuart::doorshade || hud)?blendtable(cached->colors,page.alphabits,alpha,color,source.page,id==menuart::doorshade?1:0):nullptr;
-    if (!moving && !page.direct && (color==0x8000 || color==0xffff))
-        table=blendtable(cached->colors,page.alphabits,alpha,color,page.alphabits,color==0xffff?2:1);
     blit({frontend::workspace()+cachestart+cached->start,cached->colors,page.width,source.x,source.y,
           source.w,source.h,source.ox,source.oy,page.alphabits,static_cast<bool>(page.direct)},t,flip,alpha,color,table);
 }
@@ -347,6 +414,22 @@ void immediate(int id,int x,int y,int alpha,float scale) {
     const auto& page=art::textures[source.page];
     blit({page.pixels,reinterpret_cast<const std::uint16_t*>(page.palette),page.width,source.x,source.y,
           source.w,source.h,source.ox,source.oy,3,false},t,0,alpha,0x7fff);
+}
+void DS_HOT hud(int id,int x,int y) {
+    auto* cached=load(menuart::pagecount+1+paletteid,upperart::hudbytes);
+    if (!cached) return;
+    const auto& glyph=upperart::hud[id];
+    const auto* source=reinterpret_cast<const std::uint16_t*>(frontend::workspace()+cachestart+cached->start)+glyph.offset;
+    x+=glyph.ox; y+=glyph.oy;
+    for (int row=std::max(0,-y);row<std::min(glyph.height,192-y);++row) {
+        auto* target=frontend::workspace()+(y+row)*256;
+        const auto* line=source+row*glyph.width;
+        for (int column=std::max(0,-x);column<std::min(glyph.width,256-x);++column) {
+            const unsigned pixel=line[column],alpha=pixel>>8;
+            if (alpha==31) target[x+column]=pixel;
+            else if (alpha) target[x+column]=lookup[blend(palette[pixel&255],palette[target[x+column]],alpha)];
+        }
+    }
 }
 void photo() {
     auto* cached=load(menuart::pagecount,upperart::photowidth*upperart::photoheight*2);

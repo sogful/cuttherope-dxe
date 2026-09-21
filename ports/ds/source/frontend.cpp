@@ -1,5 +1,6 @@
 #include "frontend.hpp"
 #include "upper.hpp"
+#include "upperassets.hpp"
 #include "menuassets.hpp"
 #include "packed.hpp"
 #include "trace.hpp"
@@ -31,9 +32,9 @@ extern "C" { volatile unsigned renderstamp = 0; }
 #endif
 alignas(32) static unsigned char staged[393216 + 512*64];
 static unsigned stagedbytes = 0;
-static unsigned workversion = 0, blendversion = 0;
+static unsigned workversion = 0, blendversion = 0, lookupversion = 0;
 unsigned char* workspace() { return staged; }
-unsigned workgeneration(unsigned boundary) { return boundary==65536?blendversion:workversion; }
+unsigned workgeneration(unsigned boundary) { return boundary==65536?blendversion:boundary==196608?lookupversion:workversion; }
 struct transfer { void* destination; const void* source; unsigned bytes; };
 static transfer transfers[784];
 static unsigned transfercount = 0;
@@ -68,6 +69,8 @@ struct command {
 };
 static std::array<command, 512> commands;
 static std::array<bool, 512> visibility;
+static std::array<bool, 512> uppervisibility;
+static bool reusevisibility=false;
 static int count = 0;
 static int overlaystart = -1;
 static int groundend = 0, starback = 0, starfront = 0;
@@ -92,13 +95,12 @@ static unsigned bytes(int page) {
     return item.width * item.height * (item.direct ? 2 : 1);
 }
 
-static bool visible(const command& item) {
+static bool visible(const command& item,bool* above=nullptr) {
+    if (above) *above=false;
     if (item.bounds.right <= item.bounds.left || item.bounds.bottom <= item.bounds.top) return false;
-    if (item.id < 0) return true;
+    if (item.id < 0) { if (above) *above=true; return true; }
     const auto& source = menuart::sprites[item.id];
-    float left = item.x + std::lround(source.ox * item.scale);
-    float top = item.y + std::lround(source.oy * item.vertical);
-    float width = source.w * item.scale, height = source.h * item.vertical;
+    float left,top,width,height;
     if (item.angle) {
         // Conservative all-angle bound avoids extra software trig for every
         // confetti particle in both the cache and drawing passes.
@@ -106,9 +108,15 @@ static bool visible(const command& item) {
             std::max(std::abs(source.oy),std::abs(source.oy + source.h)) * item.vertical;
         left = item.x - radius; top = item.y - radius;
         width = height = radius * 2;
+    } else {
+        left=item.x+std::lround(source.ox*item.scale);
+        top=item.y+std::lround(source.oy*item.vertical);
+        width=source.w*item.scale; height=source.h*item.vertical;
     }
     // One-pixel margin covers the fixed-point sprite transform's rounding.
-    return left + width + 1 > std::max(0,item.bounds.left) && left - 1 < std::min(256,item.bounds.right) &&
+    const bool horizontal=left + width + 1 > std::max(0,item.bounds.left) && left - 1 < std::min(256,item.bounds.right);
+    if (above) *above=horizontal && top+height+193>std::max(0,item.bounds.top) && top+191<std::min(192,item.bounds.bottom);
+    return horizontal &&
         top + height + 1 > std::max(0,item.bounds.top) && top - 1 < std::min(192,item.bounds.bottom);
 }
 
@@ -164,6 +172,7 @@ static unsigned char* staging(unsigned size) {
     unsigned char* result = staged + stagedbytes;
     stagedbytes += size;
     if (stagedbytes > 65536) ++blendversion;
+    if (stagedbytes > 196608) ++lookupversion;
     if (stagedbytes > 262144) ++workversion;
     return result;
 }
@@ -257,7 +266,7 @@ static void upload(bool repacked = false) {
     bool missing = false;
     unsigned required = 0;
     for (int i = 0; i < count; ++i) {
-        visibility[i] = visible(commands[i]);
+        visibility[i] = visible(commands[i],&uppervisibility[i]);
         if (commands[i].id < 0 || !visibility[i]) continue;
         const int page = menuart::sprites[commands[i].id].page;
         if (!needed[page]) required += bytes(page);
@@ -558,12 +567,12 @@ void prepareoverlay(const ui::controller& menu, const dx::simulation& game) {
         for (int i = 0; i < size; ++i) {
             const auto& b = buttons[i];
             if (i < 4) {
-                add(menu.pressed == i ? menuart::longdown : menuart::longup, b.x, b.y, {}, GL_FLIP_NONE, 1, 0, b.enabled ? 31 : 11);
-                gamelabel(menu, menuart::gameCONTINUE + i, b.x, b.y, b.enabled ? 1 : .35f);
+                add(menu.pressed == i ? menuart::pausedown : menuart::pauseup, b.x, b.y, {}, GL_FLIP_NONE, 1, 0, b.enabled ? 31 : 11);
+                gamelabel(menu, menuart::gameCONTINUE + i, b.x, b.y, b.enabled ? 1 : .35f, b.width-6);
             } else {
-                add(menu.pressed == i ? menuart::option1 : menuart::option0, b.x, b.y);
-                add(i == 4 ? menuart::option2 : menuart::option3, b.x, b.y);
-                if (!(i == 4 ? menu.effects : menu.music)) add(menuart::option4, b.x, b.y);
+                add(menu.pressed == i ? menuart::pauseoption1 : menuart::pauseoption0, b.x, b.y);
+                add(i == 4 ? menuart::pauseoption2 : menuart::pauseoption3, b.x, b.y);
+                if (!(i == 4 ? menu.effects : menu.music)) add(menuart::pauseoption4, b.x, b.y);
             }
         }
     }
@@ -588,8 +597,8 @@ static void skins(const ui::controller& menu) {
         static_cast<int>(256 - menuart::skinleft), static_cast<int>(menuart::skinbottom)};
     for (int i = 0; i < menuart::skincounts[menu.skintab]; ++i) {
         const int px = std::lround(menuart::skinleft + (i % 4) * menuart::skinpitch + menuart::skinwidth / 2);
-        const int py = std::lround(menuart::skintop + (i / 4) * menuart::skinrow + (menuart::skinrow - 10 * pixels * menuart::fit) / 2 - menu.skinoffsets[menu.skintab]);
-        if (py + 30 < window.top || py - 30 >= window.bottom) continue;
+        const int py = std::lround(menuart::skintop + (i / 4) * menuart::skinrow + (menuart::skinrow - 10 * pixels * menuart::fit * menuart::pickerzoom) / 2 - menu.skinoffsets[menu.skintab]);
+        if (py + menuart::skinrow/2 < window.top || py - menuart::skinrow/2 >= window.bottom) continue;
         const bool selected = menu.skins[menu.skintab] == i;
         add(menuart::skin0 + (selected ? 2 : 0) + (menu.pressedskin() == i ? 1 : 0), px, py, window);
         int preview = menuart::previews[menu.skintab][i];
@@ -654,6 +663,7 @@ static void pollen(const dx::simulation& game, int elapsed) {
 }
 
 void preparegame(const ui::controller& menu, const dx::simulation& game, int elapsed, bool upper) {
+    reusevisibility=false;
     count = 0;
     groundend = starback = starfront = 0;
     overlaystart = -1;
@@ -1043,7 +1053,7 @@ void draw(const ui::controller& menu) {
         add(pressed ? item.down : item.up, item.x, item.y, {}, item.action == ui::action::nextpack ? GL_FLIP_H : GL_FLIP_NONE, factor);
         if (item.label >= 0) {
             const int id=menuart::labels[menu.locale][item.label];
-            const float scale=menu.mode==ui::view::languages?std::min(1.0f,(menuart::sprites[item.up].w-4.0f)/menuart::sprites[id].w):1;
+            const float scale=(menu.mode==ui::view::languages || menu.mode==ui::view::skins)?std::min(1.0f,(menuart::sprites[item.up].w-4.0f)/menuart::sprites[id].w):1;
             add(id,item.x,item.y,{},GL_FLIP_NONE,scale);
         }
         if (item.action == ui::action::music || item.action == ui::action::effects) {
@@ -1060,18 +1070,26 @@ void draw(const ui::controller& menu) {
     present();
 }
 
-void uppermenu(const ui::controller& menu) {
-    upper::cutout(true);
-    if (menu.mode!=ui::view::skins)
-        upper::sprite(menuart::shadow,128,96,(1781*2*pixels)/256,(1781*2*pixels)/256,
-                      4096+(frame%4500)*32768/4500);
-    upper::cutout(false);
+bool uppermenu(int background) {
+    return upper::menu(background,frame?frame-1:0);
+}
+
+void upperworld() {
+    // The lower GPU has consumed this complete, unclipped world command list.
+    // Reuse its transforms/animation/order instead of rebuilding conveyors,
+    // particles, tutorials and costume timelines for the second camera.
+    if (overlaystart>=0) count=overlaystart;
+    overlaystart=-1;
+    reusevisibility=true;
+    for (int i=0;i<count;++i) if (commands[i].id>=0) commands[i].y+=192;
+    cameray-=1440;
 }
 
 void paintupper(bool ground,int stars) {
     const int first=ground?0:stars==1?groundend:stars==2?starback:starfront;
     const int last=ground?groundend:stars==1?starback:stars==2?starfront:count;
     for (int i=first;i<last;++i) {
+        if (reusevisibility && !uppervisibility[i]) continue;
         const auto& item=commands[i];
         const upper::clip bounds{item.bounds.left,item.bounds.top,item.bounds.right,item.bounds.bottom};
         if (item.id<0) upper::rect(bounds,item.color,item.alpha);
@@ -1085,27 +1103,26 @@ void upperoverlay(const ui::controller& menu,const dx::simulation& game) {
     if (menu.mode==ui::view::playing || menu.mode==ui::view::paused || (menu.mode==ui::view::results && menu.age<32)) {
         for (int i=0;i<3;++i) {
             const int frame=menu.starage[i]<0?0:std::min(10,1+menu.starage[i]/3);
-            upper::sprite(menuart::hud1+frame,80+i*48,82,2.5f,2.5f);
+            upper::hud(frame,80+i*48,82);
         }
         char value[24]; std::snprintf(value,sizeof(value),"%d",ui::controller::points(game.count,game.ticks));
-        constexpr float zoom=1.65f;
-        float width=0;
-        for (const char* p=value;*p;++p) width+=menuart::scoredigits[*p-'0'].advance*zoom;
-        for (int pass=0;pass<5;++pass) {
-            float left=128-width/2;
-            const int dx=pass==0?-1:pass==1?1:0, dy=pass==2?-1:pass==3?1:0;
-            for (const char* p=value;*p;++p) {
-                const auto& glyph=menuart::scoredigits[*p-'0'];
-                upper::sprite(glyph.sprite,std::lround(left+glyph.advance*zoom/2)+dx,120+dy,zoom,zoom,0,0,31,pass==4?0xffff:0x8000);
-                left+=glyph.advance*zoom;
-            }
+        int width=0;
+        for (const char* p=value;*p;++p) width+=upperart::hud[11+*p-'0'].advance;
+        int left=128-width/2;
+        for (const char* p=value;*p;++p) {
+            const int id=11+*p-'0',advance=upperart::hud[id].advance;
+            upper::hud(id,left+advance/2,120);
+            left+=advance;
         }
     }
     count=groundend=starback=starfront=0;
+    reusevisibility=false;
     overlaystart=-1;
     if (menu.mode==ui::view::results) doors(menu.age*.016f/.5f,false,false,menu.pack);
     if (menu.door) doors(menu.doorframe*.016f/.5f,menu.door==1,false,menu.pack);
+    upper::mirror(true);
     paintupper();
+    upper::mirror(false);
     if (menu.white()>0) upper::rect({},RGB15(31,31,31),std::max(1,static_cast<int>(std::lround(menu.white()*31))));
 }
 

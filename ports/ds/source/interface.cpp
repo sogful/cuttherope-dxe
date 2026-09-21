@@ -50,7 +50,7 @@ int controller::skinhit(int px, int py) const {
     if (x < 0 || y < 0) return -1;
     const int column = x / menuart::skinpitch, row = y / menuart::skinrow;
     const float offset = y - row * menuart::skinrow;
-    const float center = (menuart::skinrow - 10 * menuart::fit * 192 / 1440) / 2;
+    const float center = (menuart::skinrow - 10 * menuart::fit * menuart::pickerzoom * 192 / 1440) / 2;
     if (column > 3 || x - column * menuart::skinpitch >= menuart::skinwidth ||
         offset < center - menuart::skinheight / 2 || offset >= center + menuart::skinheight / 2) return -1;
     const int index = row * 4 + column;
@@ -92,7 +92,8 @@ int controller::buttons(button* out) const {
     case view::paused:
         for (int i = 0; i < 6; ++i) {
             static constexpr action actions[] = {action::resume, action::skip, action::levels, action::home, action::effects, action::music};
-            add(actions[i], menuart::pausepositions[i][0], menuart::pausepositions[i][1], i < 4 ? 104 : 49, 26, "");
+            const auto& sprite=menuart::sprites[i<4?menuart::pauseup:menuart::pauseoption0];
+            add(actions[i], menuart::pausepositions[i][0], menuart::pausepositions[i][1], sprite.w, sprite.h, "");
         }
         break;
     case view::results:

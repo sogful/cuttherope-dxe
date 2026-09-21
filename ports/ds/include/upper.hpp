@@ -5,6 +5,9 @@ namespace upper {
 struct clip { int left = 0, top = 0, right = 256, bottom = 192; };
 void initialize(const char* prefix = "nitro:/");
 void begin(int background, int top = 0);
+bool menu(int background, unsigned frame);
+void hud(int id, int x, int y);
+void mirror(bool enabled);
 void shade(int brightness);
 void transient(bool enabled);
 void cutout(bool enabled);

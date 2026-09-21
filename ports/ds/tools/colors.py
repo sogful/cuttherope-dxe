@@ -27,11 +27,16 @@ def indexed(image, lookup, dither=True, bits=3, origin=(0, 0)):
     if dither == "low":
         rgb.putdata([tuple(max(0, min(255, channel + round((matrix[(i // image.width + origin[1]) % 4][(i % image.width + origin[0]) % 4] - 7.5) / 8)))
                            for channel in pixel) for i, pixel in enumerate(rgb.getdata())])
-    indices = rgb.quantize(palette=lookup, dither=Image.Dither.FLOYDSTEINBERG if dither and dither != "low" else Image.Dither.NONE)
+    # Small repeated textures need stable pixel clusters. Error diffusion plus
+    # alpha dithering makes single-pixel holes flicker as a conveyor scrolls.
+    if dither == "pixel":
+        rgb.putdata([tuple(max(0,min(255,channel + round((matrix[(i//image.width+origin[1])%4][(i%image.width+origin[0])%4]-7.5)/2)))
+                          for channel in pixel) for i,pixel in enumerate(rgb.getdata())])
+    indices = rgb.quantize(palette=lookup, dither=Image.Dither.FLOYDSTEINBERG if dither is True else Image.Dither.NONE)
     maximum, shift = (1 << bits) - 1, 8 - bits
     result = bytearray()
     for index, (alpha, color) in enumerate(zip(image.getchannel("A").getdata(), indices.getdata())):
-        if dither and dither != "low":
+        if dither is True:
             threshold = (matrix[(index // image.width + origin[1]) % 4][(index % image.width + origin[0]) % 4] + .5) / 16
             opacity = min(maximum, int(alpha * maximum / 255 + threshold))
         else:

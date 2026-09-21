@@ -77,6 +77,32 @@ int main(int argc,char** argv) {
             assert(hash()==expected);
         }
     }
+    // Sparse playback must preserve the photo and agree with the original
+    // software compositor, including seeks, wraparound and scene changes.
+    for (int id=0;id<20;++id) for (unsigned frame : {0u,5u,10u,295u,300u,307u,2050u,4495u,0u}) {
+        upper::begin(upperart::worlds[0][0]); // force a seek with a stale index
+        assert(upper::menu(id,frame));
+        std::vector<unsigned char> actual(upper::pixels(),upper::pixels()+256*192);
+        assert(!upper::menu(id,frame));
+        upper::begin(upperart::worlds[0][0]);
+        upper::begin(id); upper::cutout(true);
+        if (id!=2) upper::sprite(menuart::shadow,128,96,(1781*2*(192.0f/1440))/256,(1781*2*(192.0f/1440))/256,
+            4096+(frame/5*5%4500)*32768/4500);
+        unsigned difference=0;
+        for (int i=0;i<256*192;++i) difference+=actual[i]!=upper::pixels()[i];
+        // Python double vs ARM/host float can round one 16.16 edge differently.
+        assert(difference<32);
+    }
+    upper::begin(upperart::worlds[0][0]);
+    for (unsigned frame=0;frame<9000;frame+=5) {
+        assert(upper::menu(0,frame));
+        if (frame%300==0) {
+            const unsigned expected=hash();
+            upper::begin(upperart::worlds[0][0]);
+            assert(upper::menu(0,frame));
+            assert(hash()==expected);
+        }
+    }
     for (int level=0;level<425;++level) {
         game.reset(dx::levels[level]); menu.pack=level/25; menu.level=level%25;
         frontend::preparegame(menu,game,0);
@@ -88,6 +114,16 @@ int main(int argc,char** argv) {
             const auto& a=lower[i]; const auto& b=frontend::commands[i];
             assert(a.id==b.id && a.x==b.x && a.scale==b.scale && a.vertical==b.vertical && a.angle==b.angle && a.alpha==b.alpha);
             if (a.id>=0) assert(std::abs(b.y-a.y-192)<=1);
+        }
+        frontend::commands=lower;
+        frontend::count=frontend::overlaystart=count;
+        frontend::add(menuart::hud0,240,10);
+        frontend::upperworld();
+        assert(frontend::count==count && frontend::overlaystart==-1);
+        for (int i=0;i<count;++i) {
+            const auto& a=lower[i]; const auto& b=frontend::commands[i];
+            assert(a.id==b.id && a.x==b.x && a.scale==b.scale && a.vertical==b.vertical && a.angle==b.angle && a.alpha==b.alpha);
+            assert(b.y==a.y+(a.id>=0?192:0));
         }
     }
     for (int box=0;box<17;++box) {
@@ -109,6 +145,7 @@ int main(int argc,char** argv) {
             upper::sprite(digit,128,120,1.65f,1.65f,0,0,31,ink);
             assert(hash()==expected);
             ++frontend::blendversion;
+            ++frontend::lookupversion;
             std::memset(frontend::workspace()+65536,0,196608);
             upper::begin(background);
             upper::sprite(digit,128,120,1.65f,1.65f,0,0,31,ink);
@@ -135,6 +172,18 @@ int main(int argc,char** argv) {
     upper::begin(upperart::worlds[0][0]);
     frontend::upperoverlay(menu,game);
     assert(hash()!=playing);
+    for (int box=0;box<17;++box) for (int step=0;step<=32;++step) {
+        upper::begin(upperart::worlds[box][0]);
+        std::memset(frontend::workspace(),42,256*192);
+        frontend::count=frontend::groundend=frontend::starback=frontend::starfront=0;
+        frontend::doors(step/32.0f,false,false,box);
+        frontend::paintupper(false,0);
+        std::vector<unsigned char> original(upper::pixels(),upper::pixels()+256*192);
+        std::memset(frontend::workspace(),42,256*192);
+        upper::mirror(true); frontend::paintupper(false,0); upper::mirror(false);
+        for (int y=0;y<192;++y) for (int x=0;x<256;++x)
+            assert(upper::pixels()[y*256+x]==original[(191-y)*256+x]);
+    }
     assert(!upper::fault());
     std::puts("PASS: 425 upper-camera command maps, all background windows, clipped sprites, photo occlusion, HUD, shared-cache invalidation and decoded page reuse");
 }

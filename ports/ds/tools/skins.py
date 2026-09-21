@@ -6,12 +6,14 @@ import subprocess
 from pathlib import Path
 
 from PIL import Image
+import uiscale
 
 
 def build(menu):
     quad, add = menu["quad"], menu["add"]
     root, content = menu["root"], menu["content"]
     scale, fit = menu["scale"], menu["fit"]
+    previewfit = fit*uiscale.picker
     info = {"previews": [], "candies": [], "halves": [], "costumes": [], "animations": [], "sleeptrim": [], "sources": {}}
     for i in range(67):
         quad("particle" + str(i), "traces_ctr2", i, 1, restore=False, group="particles" + str(i // 5))
@@ -28,7 +30,8 @@ def build(menu):
     info["presets"] = [{key: binding.get(value, value) for key, value in presets[name].items()} for name, binding in bindings]
     info["sources"][str(path.relative_to(root.parents[1]))] = hashlib.sha256(path.read_bytes()).hexdigest()
     for index in range(6):
-        quad("skin" + str(index), "skin_selection", index)
+        quad("skin" + str(index), "skin_selection", index, factor=previewfit,
+             pixels=(60,29) if index>=4 else None)
     for tab, count in enumerate((52, 9, 16, 11)):
         row = []
         for index in range(count):
@@ -37,7 +40,7 @@ def build(menu):
             name = "preview" + str(tab) + "x" + str(index)
             resource = "fingertrace_skin" if tab == 3 else "skin_selection"
             frame = index if tab == 3 else index + (6 if tab == 0 else 60)
-            quad(name, resource, frame, restore=tab == 3, group="previews" + str(tab) + "x" + str(index // 8))
+            quad(name, resource, frame, factor=previewfit, restore=tab == 3, group="previews" + str(tab) + "x" + str(index // 8))
             row.append(name)
         info["previews"].append(row)
     for index in range(52):
@@ -57,8 +60,8 @@ def build(menu):
     classic = []
     for index in range(19):
         name = "classicpreview" + str(index)
-        size = round(640 * scale * .75 * fit / 2) * 2
-        quad(name, "char_animations", index, .75 * fit, restore=True, group="classicpreview", pixels=(size, size))
+        size = round(640 * scale * .75 * previewfit / 2) * 2
+        quad(name, "char_animations", index, .75 * previewfit, restore=True, group="classicpreview"+str(index//6), pixels=(size, size))
         classic.append(name)
     info["classic"] = classic
     info["previews"][2].append(classic[0])
@@ -113,9 +116,9 @@ def build(menu):
                     source={"baked": relative, "sha256": digest, "scale": scale})
                 frames.append(name)
                 previewname = "slot" + name
-                previewsize = tuple(round(value * scale * 1.25 / 1.73 * fit / 2) * 2 for value in source.size)
+                previewsize = tuple(round(value * scale * 1.25 / 1.73 * previewfit / 2) * 2 for value in source.size)
                 previewimage = source.resize(previewsize, Image.Resampling.LANCZOS)
-                add(previewname, previewimage, "slot" + str(slot) + "x" + str(timeline) + "x" + str(frame // 12),
+                add(previewname, previewimage, "slot" + str(slot) + "x" + str(timeline) + "x" + str(frame // 6),
                     source={"baked": relative, "sha256": digest, "pixels": previewsize, "preview": True})
                 previewframes.append(previewname)
             references[timeline] = len(info["animations"])
@@ -144,8 +147,9 @@ def header(info, ids, fit, scale):
     lines = []
     counts = (52, 9, 16, 11)
     lines += ["inline constexpr int skincounts[] = {52,9,16,11};"]
-    top = 220 * fit * scale
-    bottom = 192 - 120 * fit * scale
+    fit *= uiscale.picker
+    top = 37
+    bottom = 168
     row = (int(336 * 1.2 * fit) + 10 * fit) * scale
     values = dict(skintop=top, skinbottom=bottom, skinleft=128 - 1144 * fit * scale / 2,
                   skinpitch=(round(271 * fit) + 20 * fit) * scale, skinrow=row,

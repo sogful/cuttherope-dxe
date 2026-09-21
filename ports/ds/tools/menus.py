@@ -211,6 +211,7 @@ def pack():
         pages.append(dict(name="menupage" + str(page), image=canvas, group=group, direct=False, bytes=width * height,
                           alphabits=5 if group in ("menu_bgr_shadow", "doorshade", "steampuffs", "lightglow") or group.startswith(("catch", "vinylring", "vinylcontour")) else 3,
                           dither=False if group in ("doorshade", "steampuffs", "lightglow") or group.startswith(("text", "packtext", "credits", "catch", "vinylring", "vinylcontour")) else
+                          "pixel" if group=="conveyor" else
                           "low" if group.startswith(("menu_buttons", "menu_extra_buttons", "menu_options_packed", "skin_selection", "menu_level_ui", "hud_ui")) else True))
     members = defaultdict(list)
     for record in records:
@@ -346,6 +347,8 @@ def main():
             if key.startswith("language"):
                 factor*=uiscale.languages
                 group="textlanguages"+code
+            if key in ("CANDIES_BTN","ROPE_SKINS_BTN","OM_NOM_BTN","TRACES_BTN"):
+                factor*=uiscale.picker
             if key.startswith(("total", "count")):
                 group += key[:5] + str(int(key[5:]) // 16)
             if key.startswith(("boxname", "hint", "required")) or key == "HARDEST_LABEL": factor *= uiscale.boxes
@@ -402,8 +405,7 @@ def main():
     control("packs", "nextpack", 231, 96, 20, 22, "pack6", "pack7", absolute=True)
     control("packs", "openpack", 128, 96, 88, 88, "", "", absolute=True)
     for i, key in enumerate(("CANDIES_BTN", "ROPE_SKINS_BTN", "OM_NOM_BTN", "TRACES_BTN")):
-        control("skins", "skintab", round(128 + (i - 1.5) * 364 * fit * scale), round(120 * fit * scale),
-                round(340 * fit * scale), round(140 * fit * scale), "skin4", "skin5", key, i, absolute=True)
+        control("skins", "skintab", 35+i*62, 18, 60, 29, "skin4", "skin5", key, i, absolute=True)
     for view in ("packs", "options", "languages", "credits", "resetmenu", "levels", "skins"):
         control(view, "back", 14, 178, 29, 29, "backup", "backdown", absolute=True)
     for item in controls:
@@ -476,7 +478,7 @@ def main():
     header += ['};', f'inline constexpr int playableboxes = {boxes};', f'inline constexpr float fit = {fit:.8f}f;', f'inline constexpr float mainfit = {mainfit:.8f}f;']
     header += [f'inline constexpr float boxzoom = {uiscale.boxes}f, settingszoom = {uiscale.settings}f, hudzoom = {uiscale.hud}f;',
                'inline constexpr int creditbounds[] = {'+','.join(map(str,uiscale.creditbounds))+'};']
-    header += [f'inline constexpr float titlezoom = {uiscale.title}f, resultzoom = {uiscale.results}f;',
+    header += [f'inline constexpr float titlezoom = {uiscale.title}f, resultzoom = {uiscale.results}f, pickerzoom = {uiscale.picker}f;',
                'inline constexpr int titlepositions[3][2] = {'+','.join('{'+','.join(map(str,p))+'}' for p in titlepositions)+'};']
     lockwidths = [[int(math.ceil(sum(font(code)[0].getlength(c) for c in str(config["unlockStars"]))) * .7) for config in configs] for code in codes]
     header += ['inline constexpr int lockwidths[12][17] = {'] + ['{' + ','.join(map(str,row)) + '},' for row in lockwidths] + ['};']
@@ -491,7 +493,7 @@ def main():
     manifest = dict(viewport=[256, 192], logical=[1920, 1440], design=[2560, 1440], fit=fit, mainfit=mainfit,
                     controls=controls, locales=codes, creditheights=creditheights, lockwidths=lockwidths,
                     uiscale=dict(boxes=uiscale.boxes, settings=uiscale.settings, credits=uiscale.credits, hud=uiscale.hud, creditbounds=uiscale.creditbounds,
-                                 title=uiscale.title,titlebuttons=uiscale.titlebuttons,languages=uiscale.languages,reset=uiscale.reset,results=uiscale.results),
+                                 title=uiscale.title,titlebuttons=uiscale.titlebuttons,languages=uiscale.languages,reset=uiscale.reset,results=uiscale.results,pause=uiscale.pause,picker=uiscale.picker),
                     titlepositions=titlepositions,
                     pages=[{key: value for key, value in page.items() if key != "image"} for page in pages],
                     sprites=[{key: value for key, value in record.items() if key != "image"} for record in records],

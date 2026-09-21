@@ -47,6 +47,8 @@ def main():
     parser.add_argument("--pagingstress", action="store_true", help="Profile-only synthetic heavy completion and captured-frame recovery test")
     parser.add_argument("--layers", action="store_true", help="Profile-only candy/Om Nom framebuffer overlap regression")
     parser.add_argument("--upper", action="store_true", help="Check dual-screen menus, HUD, flashes, flaps and tall camera")
+    parser.add_argument("--benchmark", action="store_true", help="Measure DS update timing and host throughput without profiling overhead")
+    parser.add_argument("--label", default="current", help="Benchmark output label")
     parser.add_argument("--first-box", type=int, default=1, choices=range(1,18))
     parser.add_argument("--last-box", type=int, default=17, choices=range(1,18))
     parser.add_argument("--level-only", type=int, choices=range(1,26), help="Limit box checks to one level number")
@@ -59,6 +61,7 @@ def main():
         args.rom = str(root / "dist/cuttherope-profile.nds")
     core = c.CDLL(args.core)
     directory = root / "build/headless" / "profile" if args.profile else root / "build/headless"
+    if args.benchmark: directory=directory/"benchmarks"/args.label
     if args.profile:
         label = "upper" if args.upper else "layers" if args.layers else f"pagingstress-{args.first_box}-{args.level_only or 23}" if args.pagingstress else f"boxes-{args.first_box}-{args.last_box}-{args.level_only or 'all'}" if args.boxes else "regressions" if args.regressions else "flow" if args.flow else "inspect"
         directory /= label + f"-costume-{args.costume}"
@@ -206,6 +209,13 @@ def main():
             image.crop((0, 192, 256, 384)).save(directory / (label + "-game.png"))
         symbols = (root / ("build/profile/symbols.txt" if args.profile else "build/symbols.txt")).read_text().splitlines()
         address = int(next(line.split()[0] for line in symbols if line.endswith(" telemetry")), 16)
+        if args.benchmark:
+            for _ in range(60): core.retro_run()
+            ram=core.retro_get_memory_data(2)
+            data=c.string_at(ram,core.retro_get_memory_size(2))
+            matches=[i for i in range(0,len(data)-512,4) if data[i:i+4]==b"PRXD" and 10<=struct.unpack_from("<I",data,i+4)[0]<=20]
+            assert len(matches)==1,matches
+            address=0x02000000+matches[0]
         report = {"core": str(Path(args.core).resolve()), "coreSha256": hashlib.sha256(Path(args.core).read_bytes()).hexdigest(),
                   "romSha256": hashlib.sha256(path.read_bytes()).hexdigest(), "console": "DS", "muted": True, "headless": True, "stages": {}}
         keys = ["magic", "version", "frames", "ticks", "state", "stars", "micros", "peak", "late", "vblanks", "x", "y", "cuts", "touches", "resets", "paused",
@@ -240,7 +250,7 @@ def main():
         keys += ["belt", "beltwraps", "belthandoffs", "beltoffset", "beltitems"]
         keys += ["mouth", "mouthtick", "nightstart"]
         keys += ["upperfault", "upperframes", "upperreads"]
-        faultsymbol = next((line for line in symbols if line.endswith(" renderfault")), None)
+        faultsymbol = None if args.benchmark else next((line for line in symbols if line.endswith(" renderfault")), None)
         faultaddress = memory + int(faultsymbol.split()[0], 16) - 0x02000000 if faultsymbol else None
         def telemetry():
             version = struct.unpack("<I", c.string_at(memory + offset + 4, 4))[0]
@@ -339,11 +349,15 @@ def main():
             run(1)
         title = snapshot("title")
         if args.costume:
-            tap(147,91); tap(153,16)
+            tap(147,91); tap(*control("skins","skintab",2))
             for _ in range(args.costume): key(7)
             assert telemetry()["costume"] == args.costume
             key(0)
         assert title["view"] == 5 and title["ticks"] == 0 and title["frames"] > 40, title
+        if args.benchmark:
+            import benchmark
+            benchmark.check(run,tap,key,telemetry,settle,snapshot,report,directory)
+            return
         if args.upper:
             import uppercheck
             uppercheck.check(run,tap,key,touch,telemetry,framebuffer,settle,snapshot,report,directory)
@@ -648,13 +662,13 @@ def main():
                     touch(128, 40, False)
                 run(45)
             scrollbottom()
-            tap(187, 149)
+            tap(208, 150)
             assert snapshot("picker-candy-last")["candy"] == 51
-            tap(103, 16)
+            tap(*control("skins","skintab",1))
             scrollbottom()
-            tap(69, 149)
+            tap(48, 150)
             assert snapshot("picker-rope-last")["rope"] == 8
-            tap(153, 16)
+            tap(*control("skins","skintab",2))
             assert snapshot("picker-costumes")["skintab"] == 2
             classic = []
             for _ in range(60):
@@ -665,13 +679,13 @@ def main():
             for i, item in enumerate(classic[::3]): strip.paste(item, (42 * i, 0))
             strip.save(directory / "classic-preview-strip.png")
             scrollbottom()
-            tap(187, 149)
+            tap(208, 150)
             assert snapshot("picker-costume-last")["costume"] == 15
             run(120)
             snapshot("picker-costume-animated")
-            tap(202, 16)
+            tap(*control("skins","skintab",3))
             scrollbottom()
-            tap(148, 149)
+            tap(155, 150)
             assert snapshot("picker-trace-last")["trace"] == 10
             key(0)
             assert snapshot("equipped-title")["view"] == 5
@@ -963,8 +977,8 @@ def main():
             assert paused["paused"] == 1 and paused["ticks"] == beforepause["ticks"], paused
             touch(128,72); touch(40,72); touch(40,72,False)
             assert telemetry()["view"] == 1 and telemetry()["ticks"] == paused["ticks"], "Cancelled skip resumed gameplay"
-            tap(104, 145)
-            tap(152, 145)
+            tap(*layout["gameui"]["pause"][4])
+            tap(*layout["gameui"]["pause"][5])
             quiet = snapshot("quiet")
             assert quiet["effects"] == 0 and quiet["music"] == 0, quiet
             run(60)

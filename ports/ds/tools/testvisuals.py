@@ -75,6 +75,10 @@ assert manifest["upperbytes"] == 48 * 1024 and manifest["upperpalettebytes"] == 
 upper=json.loads((generated/manifest["upper"]).read_text())
 assert (generated/"nitro/upperbg.bin").stat().st_size==upper["backgroundBytes"]
 assert (generated/"nitro/upperpal.bin").stat().st_size==upper["paletteBytes"]==upper["palettes"]*(512+32768)
+assert (generated/"nitro/upperhud.bin").stat().st_size==upper["hudBytes"]
+assert (generated/"nitro/uppermotion.bin").stat().st_size==upper["motionBytes"]
+assert len(upper["hudRecords"])==21 and len(upper["motionOffsets"])==20
+assert max(row[1] for row in upper["hudRecords"][:11])>=40, "Upper stars must be baked at display size"
 for offset,height,palette in upper["backgrounds"]:
     assert height>=192 and offset+height*256<=upper["backgroundBytes"] and palette<upper["palettes"]
 assert hashlib.sha256((root/"assets/feedcandy.png").read_bytes()).hexdigest()==upper["photoSha256"]
