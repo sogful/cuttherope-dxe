@@ -365,4 +365,25 @@ int main(int argc,char** argv) {
     }
     assert(!upper::fault());
     std::puts("PASS: 425 reused camera-command maps, all backgrounds, native blits/HUD, sparse shadow playback/seeks, photo occlusion, all 17 mirrored flap pairs and cache invalidation");
+    auto rejected=[](unsigned bytes,unsigned code) {
+        bool failed=false;
+        try { failed=!upper::advancepatch(bytes); }
+        catch (const std::runtime_error& message) { failed=std::strcmp(message.what(),"CTRD DS: upper-screen asset error")==0; }
+        return failed && upper::fault()==code;
+    };
+    // Malformed in-memory patches must stop before changing the frame.
+    for (const std::vector<unsigned char>& patch : {std::vector<unsigned char>{0,0xc0,1,0,1}, {0,0,10,0,1}, {0,0xc0,0,0}}) {
+        const unsigned before=hash();
+        upper::error=0; upper::movie={};
+        upper::movie.frame=1;
+        upper::movie.bytes=upper::movie.fetched=upper::movie.available=patch.size();
+        std::copy(patch.begin(),patch.end(),upper::input);
+        assert(rejected(patch.size(),8) && hash()==before);
+    }
+    const unsigned before=hash();
+    upper::error=0; upper::movie={};
+    upper::movie.bytes=upper::movie.fetched=upper::movie.available=1;
+    upper::input[0]=0;
+    assert(rejected(1,7) && hash()==before);
+    std::puts("PASS: malformed shadow ranges and truncated headers stop without framebuffer writes");
 }

@@ -19,6 +19,10 @@ int main(int argc, char** argv) {
         auto next = [&]() -> int { return cursor < source.size() ? source[cursor++] : -1; };
         if (!packed::stream(next, streamed.data(), streamed.size()) || streamed != output) return 4;
         cursor = 0;
+        packed::diagnosis diagnosis;
+        if (!packed::stream<true>(next, streamed.data(), streamed.size(), &diagnosis) || streamed != output ||
+            diagnosis.reason || diagnosis.produced != output.size() || diagnosis.consumed != cursor) return 6;
+        cursor = 0;
         auto truncated = [&]() -> int { return cursor < 3 ? source[cursor++] : -1; };
         if (packed::stream(truncated, streamed.data(), streamed.size())) return 5;
         std::uint32_t hash = 2166136261;

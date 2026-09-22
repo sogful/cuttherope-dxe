@@ -2,28 +2,56 @@
 #include <cstddef>
 
 namespace packed {
-template<class reader> bool stream(reader& next, unsigned char* output, std::size_t capacity) {
-    const int kind = next(), a = next(), b = next(), c = next();
-    if (kind != 0x10 || a < 0 || b < 0 || c < 0) return false;
+struct diagnosis {
+    const char* reason = nullptr;
+    unsigned header = 0, consumed = 0, produced = 0, declared = 0, length = 0, distance = 0;
+    unsigned hash = 2166136261u;
+};
+template<bool inspect = false, class reader>
+bool stream(reader& next, unsigned char* output, std::size_t capacity, diagnosis* detail = nullptr) {
+    diagnosis report;
+    auto take = [&]() {
+        const int value = next();
+        if constexpr (inspect) if (value >= 0) {
+            if (report.consumed < 4) report.header |= static_cast<unsigned>(value) << (report.consumed*8);
+            ++report.consumed;
+            report.hash = (report.hash ^ value)*16777619u;
+        }
+        return value;
+    };
+    auto finish = [&](const char* reason, unsigned produced = 0, unsigned length = 0, unsigned distance = 0) {
+        if constexpr (inspect) {
+            report.reason = reason; report.produced = produced; report.length = length; report.distance = distance;
+            if (detail) *detail = report;
+        } else {
+            (void)produced; (void)length; (void)distance;
+        }
+        return reason == nullptr;
+    };
+    const int kind = take(), a = take(), b = take(), c = take();
+    if (kind < 0 || a < 0 || b < 0 || c < 0) return finish("header.eof");
+    if (kind != 0x10) return finish("header.kind");
     const unsigned size = a | (b << 8) | (c << 16);
-    if (size > capacity) return false;
+    if constexpr (inspect) report.declared = size;
+    if (size > capacity) return finish("output.capacity");
     unsigned done = 0;
     while (done < size) {
-        const int flags = next();
-        if (flags < 0) return false;
+        const int flags = take();
+        if (flags < 0) return finish("flags.eof",done);
         for (int mask = 128; mask && done < size; mask >>= 1) {
-            const int first = next();
-            if (first < 0) return false;
+            const int first = take();
+            if (first < 0) return finish("token.eof",done);
             if (!(flags & mask)) { output[done++] = first; continue; }
-            const int second = next();
-            if (second < 0) return false;
+            const int second = take();
+            if (second < 0) return finish("match.eof",done);
             unsigned length = (first >> 4) + 3;
             const unsigned distance = ((first & 15) << 8) + second + 1;
-            if (distance > done || length > size - done) return false;
+            if (distance > done) return finish("match.distance",done,length,distance);
+            if (length > size - done) return finish("match.length",done,length,distance);
             while (length--) { output[done] = output[done - distance]; ++done; }
         }
     }
-    return true;
+    return finish(nullptr,done);
 }
 
 inline bool unpack(const unsigned char* source, unsigned char* output, std::size_t capacity) {

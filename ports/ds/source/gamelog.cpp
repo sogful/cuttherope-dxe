@@ -65,7 +65,7 @@ void event(const char* format,...) {
         path[0]=0;
     }
 #ifdef __NDS__
-    if (!path[0]) nocashMessage(line);
+    if (!path[0] && prefix>0 && static_cast<unsigned>(prefix)<sizeof(line)-2) nocashMessage(line+prefix);
 #endif
     writing=false;
     errno=savederror;

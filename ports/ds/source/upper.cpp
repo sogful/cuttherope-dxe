@@ -4,6 +4,7 @@
 #include "menuassets.hpp"
 #include "assets.hpp"
 #include "packed.hpp"
+#include "assetio.hpp"
 #include "paged.hpp"
 #include "upperbgstore.hpp"
 #include "profiling.hpp"
@@ -57,7 +58,7 @@ struct entry {
     std::uint16_t colors[32]{};
 };
 static std::array<entry,24> cache;
-static unsigned char input[1024];
+alignas(32) static unsigned char input[1024];
 
 unsigned fault() { return error; }
 unsigned updates() { return completed; }
@@ -72,7 +73,7 @@ static void fail(unsigned value) { error = value; nocashMessage("CTRD DS: upper-
 static bool read(FILE* file, unsigned offset, void* destination, unsigned bytes) {
     readbytes += bytes;
     DS_PROFILE_DO(profiling::data[profiling::upperreads] += bytes);
-    if (!file || std::fseek(file,offset,SEEK_SET) || std::fread(destination,1,bytes,file)!=bytes) { fail(1); return false; }
+    if (!assetio::seek(file,offset,"upper") || assetio::read(file,destination,bytes,"upper")!=bytes) { fail(1); return false; }
     return true;
 }
 static bool backgroundread(unsigned offset,void* destination,unsigned bytes) {
@@ -80,18 +81,18 @@ static bool backgroundread(unsigned offset,void* destination,unsigned bytes) {
         [](unsigned physical,void* target,unsigned size) { return read(backgroundfile,physical,target,size); });
 }
 static bool keyframe(unsigned position, unsigned char* destination) {
-    if (std::fseek(motionfile,position,SEEK_SET)) { fail(9); return false; }
+    if (!assetio::seek(motionfile,position,"shadow.key")) { fail(9); return false; }
     unsigned offset=0,available=0;
     auto next=[&]() -> int {
         if (offset==available) {
-            available=std::fread(input,1,sizeof(input),motionfile); offset=0;
+            available=assetio::read(motionfile,input,sizeof(input),"shadow.key"); offset=0;
             readbytes+=available;
             DS_PROFILE_DO(profiling::data[profiling::upperreads]+=available);
             if (!available) return -1;
         }
         return input[offset++];
     };
-    if (!packed::stream(next,destination,256*192)) { fail(10); return false; }
+    if (!assetio::decode(next,destination,256*192,motionfile,"shadow.key",position)) { fail(10); return false; }
     return true;
 }
 
@@ -159,41 +160,55 @@ static DS_HOT void remap(unsigned char* destination,const unsigned char* source,
 
 struct playback {
     int frame=-1;
-    unsigned bytes=0,consumed=0,fetched=0,offset=0,available=0,position=0,remaining=0;
+    unsigned bytes=0,consumed=0,fetched=0,offset=0,available=0,position=0,remaining=0,source=0;
     const unsigned char *base=nullptr,*table=nullptr;
     bool done=false;
 };
 static playback movie;
 
+static bool patchfailure(const char* reason,unsigned code=8) {
+    if (error!=code) gamelog::event("shadow.patch.failed reason=%s frame=%d source=%u bytes=%u consumed=%u fetched=%u cursor=%u available=%u position=%u remaining=%u",
+        reason,movie.frame,movie.source,movie.bytes,movie.consumed,movie.fetched,movie.offset,movie.available,movie.position,movie.remaining);
+    fail(code);
+    return false;
+}
 static bool startpatch(int frame) {
     const auto* index=reinterpret_cast<const unsigned*>(backdrop+256*192);
     movie.frame=frame; movie.done=false;
     movie.consumed=movie.fetched=movie.offset=movie.available=movie.remaining=0;
-    return read(motionfile,index[frame],&movie.bytes,4);
+    movie.source=index[frame];
+    if (!read(motionfile,movie.source,&movie.bytes,4)) return false;
+    if (movie.bytes<2 || movie.bytes>256*192*5+2) return patchfailure("size");
+    return true;
 }
 
 static DS_HOT bool advancepatch(unsigned budget) {
     const unsigned limit=std::min(movie.bytes,movie.consumed+budget);
-    auto next=[]() -> unsigned {
+    auto next=[]() -> int {
         if (movie.offset==movie.available) {
-            movie.available=std::fread(input,1,std::min(static_cast<unsigned>(sizeof(input)),movie.bytes-movie.fetched),motionfile);
+            movie.available=assetio::read(motionfile,input,std::min(static_cast<unsigned>(sizeof(input)),movie.bytes-movie.fetched),"shadow.patch");
             movie.offset=0; movie.fetched+=movie.available; readbytes+=movie.available;
             DS_PROFILE_DO(profiling::data[profiling::upperreads]+=movie.available);
-            if (!movie.available) { fail(7); return 255; }
+            if (!movie.available) { patchfailure("eof",7); return -1; }
         }
         ++movie.consumed;
         return input[movie.offset++];
     };
     while (!movie.done && movie.consumed<limit) {
         if (!movie.remaining) {
-            movie.position=next(); movie.position|=next()<<8;
+            const int low=next(), high=next();
+            if (low<0 || high<0) return false;
+            movie.position=low|(high<<8);
             if (movie.position==65535) { movie.done=true; break; }
-            movie.remaining=next(); movie.remaining|=next()<<8;
-            if (movie.position+movie.remaining>256*192 || movie.remaining>movie.bytes-movie.consumed) { fail(8); return false; }
+            const int first=next(), second=next();
+            if (first<0 || second<0) return false;
+            movie.remaining=first|(second<<8);
+            if (!movie.remaining || movie.position+movie.remaining>256*192 || movie.remaining>movie.bytes-movie.consumed) return patchfailure("range");
         }
         if (movie.consumed>=limit) break;
         if (movie.offset==movie.available) {
-            const unsigned code=next();
+            const int code=next();
+            if (code<0) return false;
             backdrop[movie.position]=movie.table[(movie.base[movie.position]<<5)|code];
             ++movie.position; --movie.remaining;
         }
@@ -285,18 +300,18 @@ static entry* load(int id, unsigned size) {
     const auto& page = menuart::pages[id];
     const unsigned palettebytes = page.direct ? 0 : 2u<<(8-page.alphabits);
     if (palettebytes && !read(menufile,page.offset,target->colors,palettebytes)) return nullptr;
-    if (std::fseek(menufile,page.offset+palettebytes,SEEK_SET)) { fail(4); return nullptr; }
+    if (!assetio::seek(menufile,page.offset+palettebytes,"upper.menu")) { fail(4); return nullptr; }
     unsigned remaining=page.packed-palettebytes, offset=0, available=0;
     auto next = [&]() -> int {
         if (offset==available) {
-            available=std::fread(input,1,std::min(remaining,static_cast<unsigned>(sizeof(input))),menufile);
+            available=assetio::read(menufile,input,std::min(remaining,static_cast<unsigned>(sizeof(input))),"upper.menu");
             offset=0; remaining-=available; readbytes+=available;
             DS_PROFILE_DO(profiling::data[profiling::upperreads] += available);
             if (!available) return -1;
         }
         return input[offset++];
     };
-    if (!packed::stream(next,destination,size)) { fail(5); return nullptr; }
+    if (!assetio::decode(next,destination,size,menufile,"upper.menu",id)) { fail(5); return nullptr; }
     return target;
 }
 

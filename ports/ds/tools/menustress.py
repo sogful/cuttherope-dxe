@@ -34,11 +34,11 @@ def check(run,tap,key,telemetry,settle,snapshot,control,pointer,buttons,report,d
             assert telemetry()["view"]==9
             for _ in range(4): cancel(delay)
             home()
-            tap(*control("home","play"))
+            tap(*control("home","packs"))
             assert telemetry()["view"]==6
             for _ in range(4):
                 cancel(delay)
-                rawtap(*control("home","play"),delay)
+                rawtap(*control("home","packs"),delay)
             home()
             state=snapshot(f"delay-{delay}-repeat-{repeat}")
             assert state["view"]==5 and not state["renderfault"] and not state["upperfault"]

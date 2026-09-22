@@ -1,6 +1,7 @@
 #include "audio.hpp"
 #include "assets.hpp"
 #include "gamelog.hpp"
+#include "assetio.hpp"
 #include <nds.h>
 #include <cstdio>
 
@@ -13,8 +14,8 @@ static ui::view lastview = ui::view::playing;
 // Only long sleep clips need the large slot. Normal voices and mouse/star
 // sounds retain a second simultaneous channel without doubling that maximum.
 static constexpr unsigned shortvoice = 72964;
-alignas(4) static unsigned char longbuffer[art::voicemax], shortbuffer[shortvoice];
-alignas(32) static unsigned char musicbuffer[gamemusicbytes > menumusicbytes ? gamemusicbytes : menumusicbytes];
+alignas(32) static unsigned char longbuffer[assetio::padded(art::voicemax)], shortbuffer[assetio::padded(shortvoice)];
+alignas(32) static unsigned char musicbuffer[assetio::padded(gamemusicbytes > menumusicbytes ? gamemusicbytes : menumusicbytes)];
 static int voiceslot = 0;
 static unsigned spoken = 0, spokenid = 0;
 
@@ -33,8 +34,8 @@ static bool playstream(const art::voice& sample) {
     unsigned char* buffer = slot ? shortbuffer : longbuffer;
     soundKill(13 + slot);
     FILE* file = std::fopen("nitro:/voices.bin", "rb");
-    const bool valid = file && !std::fseek(file, sample.offset, SEEK_SET) &&
-        std::fread(buffer, 1, sample.size, file) == sample.size;
+    const bool valid = assetio::seek(file,sample.offset,"voice") &&
+        assetio::read(file,buffer,sample.size,"voice") == sample.size;
     if (file) std::fclose(file);
     if (!valid) { nocashMessage("CTRD DS: voice read failed"); return false; }
     DC_FlushRange(buffer, sample.size);
@@ -66,7 +67,7 @@ void update(const ui::controller& menu) {
         soundKill(0);
         const unsigned size = target ? menumusicbytes : gamemusicbytes;
         FILE* file = std::fopen(target ? "nitro:/menumusic.bin" : "nitro:/gamemusic.bin", "rb");
-        const bool valid = file && std::fread(musicbuffer,1,size,file) == size;
+        const bool valid = assetio::read(file,musicbuffer,size,"music") == size;
         if (file) std::fclose(file);
         if (!valid) { nocashMessage("CTRD DS: music read failed"); gamelog::event("music.load.failed track=%d",target); return; }
         DC_FlushRange(musicbuffer,size);

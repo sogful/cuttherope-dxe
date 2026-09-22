@@ -3,6 +3,7 @@
 #include "upperassets.hpp"
 #include "menuassets.hpp"
 #include "packed.hpp"
+#include "assetio.hpp"
 #include "paged.hpp"
 #include "worldstore.hpp"
 #include "trace.hpp"
@@ -43,7 +44,8 @@ unsigned workgeneration(unsigned boundary) { return boundary==65536?blendversion
 struct transfer { void* destination; const void* source; unsigned bytes; };
 static transfer transfers[784];
 static unsigned transfercount = 0;
-static unsigned char compressed[4096];
+// SD reads must not share cache lines with the VBlank capture flags.
+alignas(32) static unsigned char compressed[4096];
 #ifdef __NDS__
 static volatile bool captured = false, armed = false, frozen = false;
 #endif
@@ -332,7 +334,7 @@ static void upload(bool repacked = false) {
     std::sort(order.begin(), order.end(), [](int a, int b) { return bytes(a) > bytes(b); });
     for (int index : order) {
         if (!needed[index] || textures[index]) continue;
-        gamelog::event("texture.load.begin page=%d bytes=%u occupied=%u reserved=%u",index,bytes(index),occupied,reserved);
+        gamelog::event("texture.load.begin page=%d bytes=%u occupied=%u reserved=%u offset=%u packed=%u buffer=%p",index,bytes(index),occupied,reserved,menuart::pages[index].offset,menuart::pages[index].packed,static_cast<void*>(compressed));
         gamelog::mark("texture.allocate",index);
         while (occupied + reserved + bytes(index) > 384 * 1024) {
             if (!evict()) break;
@@ -366,7 +368,7 @@ static void upload(bool repacked = false) {
             if (cursor == available) {
                 DS_SCOPE(read);
                 const unsigned size = std::min(remaining, static_cast<unsigned>(sizeof(compressed)));
-                available = std::fread(compressed, 1, size, catalog);
+                available = assetio::read(catalog,compressed,size,"menu");
                 cursor = 0; remaining -= available;
                 if (!available) return -1;
             }
@@ -375,9 +377,10 @@ static void upload(bool repacked = false) {
         {
             DS_SCOPE(decode);
             gamelog::mark("texture.read",index);
-            bool valid = !std::fseek(catalog, page.offset, SEEK_SET);
+            bool valid = assetio::seek(catalog,page.offset,"menu");
             for (int i=0;i<colors*2 && valid;++i) { const int value=next(); valid=value>=0; palette[i]=value; }
-            if (!valid || !packed::stream(next, pixels, bytes(index))) {
+            if (!valid || !assetio::decode(next,pixels,bytes(index),catalog,"menu",index)) {
+                gamelog::event("texture.read.failed page=%d offset=%u packed=%u remaining=%u cursor=%u available=%u palettevalid=%d",index,page.offset,page.packed,remaining,cursor,available,valid);
                 nocashMessage("CTRD DS: invalid packed menu texture");
                 gamelog::fatal("Invalid packed menu texture",index);
                 while (true) swiWaitForVBlank();

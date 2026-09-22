@@ -86,6 +86,10 @@ def main():
         free = boundaries["__eheap_end"]-boundaries["__end__"]
         assert free >= 128*1024, f"Only {free:,} heap bytes remain in original DS mode"
         print(f"Original DS heap headroom: {free:,} bytes",flush=True)
+        import cachelines
+        layout = subprocess.check_output([str(compiler.with_name("arm-none-eabi-nm.exe")), "-S", "-C", "--defined-only", str(elf)], env=environment, text=True)
+        cachelines.validate(layout)
+        print("SD buffers occupy isolated whole cache lines",flush=True)
     rom = dist / (name + ".nds")
     subprocess.run([str(sdk / "tools/ndstool/ndstool.exe"), "-c", str(rom), "-uc", "2", "-u", "00030000",
                     "-9", str(elf), "-7", str(sdk / "sys/arm7/main_core/arm7_maxmod.elf"),
