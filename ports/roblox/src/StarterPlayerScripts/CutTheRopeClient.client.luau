@@ -52,6 +52,7 @@ local ResultPresentation = require(ReplicatedStorage.CutTheRope.Shared.ResultPre
 local textures = TextureCache.new(Players.LocalPlayer:WaitForChild("PlayerGui"))
 local resultConfetti, resultPresentation
 local paused, pauseLayer = false, nil
+local focusSuspended, focusJustResumed = false, false
 local elapsedTime, activeResult = 0, nil
 local levelIndex, bestStars = 1, 0
 local selectedPack = 1
@@ -198,6 +199,13 @@ UserInputService.WindowFocusReleased:Connect(function()
 	held, lastPoint, objectHeld = false, nil, false
 	if activeLevel then activeLevel:release() end
 	fingerTrace:finish()
+	focusSuspended = true
+	audio:setFocused(false)
+end)
+UserInputService.WindowFocused:Connect(function()
+	if not focusSuspended then return end
+	focusSuspended, focusJustResumed = false, true
+	audio:setFocused(true)
 end)
 local menuGui = Instance.new("ScreenGui")
 menuGui.Name, menuGui.IgnoreGuiInset, menuGui.ResetOnSpawn = "CutTheRopeMenus", true, false
@@ -916,6 +924,7 @@ GuiService.MenuOpened:Connect(function()
 end)
 
 RunService.RenderStepped:Connect(function(dt)
+	if focusSuspended then return end
 	if GuiService.MenuIsOpen then
 		if gui.Enabled and not paused and not transitioning then showPause() end
 		return
@@ -934,7 +943,8 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 RunService.Heartbeat:Connect(function(dt)
-	if GuiService.MenuIsOpen or (RunService:IsStudio() and layer:GetAttribute("DebugFreeze")) then return end
+	if focusSuspended or GuiService.MenuIsOpen or (RunService:IsStudio() and layer:GetAttribute("DebugFreeze")) then return end
+	if focusJustResumed then dt, focusJustResumed = 0, false end
 	if not activeLevel or not gui.Enabled or paused or surfacePending then return end
 	layer:SetAttribute("SimulationDuringTransition", transitioning)
 	local wasPlaying = activeLevel.state == "playing"

@@ -12,7 +12,7 @@ function audio.new(options)
 	root.Name,root.Parent=options.name or "DxAudio",SoundService
 	local self=setmetatable({root=root,preferences=options.preferences or Session,assets=options.assets or Assets,
 		create=options.create,random=options.random or Random.new(),voices={},loops={},pool={},serial=0,
-		paused=false,context="splash",missing={},events={},failed={},loaded={},resident={},alive=true},audio)
+		paused=false,focused=true,context="splash",missing={},events={},failed={},loaded={},resident={},alive=true},audio)
 	for _,name in ipairs({"Music","Effects"}) do
 		local group=Instance.new("SoundGroup") group.Name,group.Volume,group.Parent=name,1,root self[name]=group
 	end
@@ -29,6 +29,7 @@ function audio:status()
 	self.root:SetAttribute("Failed",failed) self.root:SetAttribute("Loaded",loaded)
 	self.root:SetAttribute("SoundEnabled",self.preferences.sound) self.root:SetAttribute("MusicEnabled",self.preferences.music)
 	self.root:SetAttribute("Paused",self.paused) self.root:SetAttribute("Context",self.context)
+	self.root:SetAttribute("Focused",self.focused)
 	self.root:SetAttribute("MusicResource",self.track or "")
 end
 
@@ -80,7 +81,7 @@ function audio:preload()
 end
 
 function audio:play(name,scope)
-	if not name or not self.preferences.sound then return nil end
+	if not name or not self.preferences.sound or not self.focused then return nil end
 	self:record(name,"effect")
 	local pool=self.pool[name]
 	if not pool then pool={} self.pool[name]=pool end
@@ -125,7 +126,7 @@ function audio:loop(key,name,enabled)
 		local sound=self:make(name,"effect") if not sound then return end
 		sound.Looped=true voice={sound=sound,started=false} self.loops[key]=voice
 	end
-	if self.preferences.sound and not self.paused and voice.sound.IsLoaded then
+	if self.preferences.sound and not self.paused and self.focused and voice.sound.IsLoaded then
 		if voice.paused then voice.sound:Resume() voice.paused=false
 		elseif not voice.started then voice.sound:Play() voice.started=true end
 	elseif voice.sound.IsPlaying then voice.sound:Pause() voice.paused=true end
@@ -136,7 +137,7 @@ function audio:setSound(enabled)
 	-- SoundMgr.SuspendSoundEffects pauses loops; existing one-shots ring out.
 	for _,voice in pairs(self.loops) do
 		if not enabled and voice.sound.IsPlaying then voice.sound:Pause() voice.paused=true
-		elseif enabled and not self.paused and voice.paused then voice.sound:Resume() voice.paused=false end
+		elseif enabled and not self.paused and self.focused and voice.paused then voice.sound:Resume() voice.paused=false end
 	end
 	self:status()
 end
@@ -158,7 +159,7 @@ function audio:refreshMusic()
 	local sound=self.music
 	if sound and sound.IsLoaded and not self.musicStarted then
 		sound.Looped=true sound:Play() self.musicStarted=true
-		if self.paused and not self.musicWhilePaused then sound:Pause() self.musicPaused=true end
+		if not self.focused or (self.paused and not self.musicWhilePaused) then sound:Pause() self.musicPaused=true end
 	end
 end
 
@@ -192,13 +193,30 @@ function audio:setPaused(paused)
 	-- Source Pause() owns only activeLoopedSounds and the current music ticket.
 	for _,voice in pairs(self.loops) do
 		if paused and voice.sound.IsPlaying then voice.sound:Pause() voice.paused=true
-		elseif not paused and voice.paused and self.preferences.sound then voice.sound:Resume() voice.paused=false end
+		elseif not paused and self.focused and voice.paused and self.preferences.sound then voice.sound:Resume() voice.paused=false end
 	end
 	if self.music then
 		if paused and self.music.IsPlaying then self.music:Pause() self.musicPaused=true
-		elseif not paused and self.musicPaused and self.preferences.music then self.music:Resume() self.musicPaused=false end
+		elseif not paused and self.focused and self.musicPaused and self.preferences.music then self.music:Resume() self.musicPaused=false end
 	end
 	if not paused then self.musicWhilePaused=false self:refreshMusic() end
+	self:status()
+end
+
+function audio:setFocused(focused)
+	if self.focused==focused then return end
+	self.focused=focused
+	for _,voice in pairs(self.loops) do
+		if not focused and voice.sound.IsPlaying then voice.sound:Pause() voice.paused=true
+		elseif focused and not self.paused and voice.paused and self.preferences.sound then voice.sound:Resume() voice.paused=false end
+	end
+	if self.music then
+		if not focused and self.music.IsPlaying then self.music:Pause() self.musicPaused=true
+		elseif focused and (not self.paused or self.musicWhilePaused) and self.musicPaused and self.preferences.music then
+			self.music:Resume() self.musicPaused=false
+		end
+	end
+	if focused then self:refreshMusic() end
 	self:status()
 end
 

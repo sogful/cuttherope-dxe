@@ -44,6 +44,16 @@ runtime.__index = runtime
 local function position(object, point)
 	object.Position = UDim2.fromScale(point.X / 2560, point.Y / 1440)
 end
+
+local starBobPositions = {0, -3, 0, 3, 0}
+local function starBob(phase)
+	local scaled = (phase % 2) * 2
+	local segment = math.floor(scaled)
+	local fraction = scaled - segment
+	local eased = segment % 2 == 0 and (1 - (1 - fraction) ^ 2) or fraction ^ 2
+	local from, to = starBobPositions[segment + 1], starBobPositions[segment + 2]
+	return from + (to - from) * eased
+end
 local function image(parent, name, asset, size, z)
 	local object = Instance.new("ImageLabel")
 	object.Name, object.Image, object.BackgroundTransparency = name, asset, 1
@@ -121,6 +131,7 @@ function runtime.new(layer, level, visible)
 	end
 	layer:SetAttribute("CandySkin", Session.candy)
 	layer:SetAttribute("RopeSkin", Session.rope)
+	local starRandom = Random.new()
 	for index, point in ipairs(level.stars) do
 		local container = frame(layer, "Star" .. index, Vector2.new(245, 245), Layers.Star)
 		local glow = Atlas.new(childimage(container, "Glow", "", 5), {"stars"})
@@ -133,6 +144,7 @@ function runtime.new(layer, level, visible)
 		local effect = Atlas.new(burst, {"starburst"}, Effects, true)
 		local timeout=level.starTimeouts and level.starTimeouts[index] or -1
 		self.stars[index] = { point = point, container = container, idle = idle, glow = glow, collected = false, burst = burst, effect = effect,
+			bobPhase = starRandom:NextInteger(0, 20) / 10, idlePhase = starRandom:NextInteger(0, 20) / 10,
 			timeout=timeout,ring=timeout>0 and TimedStarRing.new(layer) or nil }
 	end
 	local pack=level.pack or 1
@@ -490,17 +502,18 @@ function runtime:present()
 		self.candy.Visible=not spider.hidden
 	end
 	for index,star in ipairs(self.stars) do
-		position(star.container,star.point)
+		local visualPoint = star.point + Vector2.new(0, starBob(self.clock + star.bobPhase))
+		position(star.container,visualPoint)
 		local item=(self.physics.conveyors.byKind.star or {})[index]
 		local scale=item and item.scale or 1
 		star.container.Size=UDim2.fromScale(245*scale/1120,245*scale/630)
 		local mover=self.physics.starMovers[index]
 		if mover then star.container.Rotation=mover.angle end
-		if not star.collected and not star.expired then star.idle:show("stars",(math.floor(self.clock*20)+index*5)%18+1) end
+		if not star.collected and not star.expired then star.idle:show("stars",math.floor((self.clock+star.idlePhase)*20)%18+1) end
 		if star.timeout>0 and not star.collected then
 			local time=math.max(0,star.timeout-self.physics.mechanics.time)
 			local age=star.expired and self.clock-star.expired or 0
-			star.ring:update(star.point,time/star.timeout,math.min(1,age/.5))
+			star.ring:update(visualPoint,time/star.timeout,math.min(1,age/.5))
 			if star.expired then star.shrink.Scale=math.max(0,1-age/.25) star.container.Visible=age<.25 end
 		end
 	end
