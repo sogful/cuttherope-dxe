@@ -15,18 +15,17 @@ the original logo is designed by Bingies24 and darealmrcatz.
   <img src="./ports/ds/assets/logods.png" width="256"/>
 </p>
 
-*Cut the Rope DX for Nintendo DS* is a C++ port! it fits into **4mb of RAM** and also runs in DSi mode. <br>
+*Cut the Rope: DXfDS (Decompiled Extra for Dual Screen)* is a nds C++ port! it fits into **4mb of RAM** and runs in DSi mode. <br>
 
 #### features
 
-- stylus controls
 - upper screen with a view of the level above, along with stars & score
 - an "unlock all" option in settings. turning this on switches the game to a separate save profile to not ruin your real progress for the main game.
 - progress and settings in `/ctrdx/` (on writable homebrew storage)
 
 #### building
 
-the build scripts are for **windows** (also requires python 3.12, powershell and 7-zip installed), and .NET 10 SDK is also needed for the costume animation exporter..
+the build scripts are for windows *(also requires python 3.12 and 7-zip to be installed)*, .NET 10 SDK is also needed for the costume animation exporter..
 
 1. clone the repository and install the asset convert dependencies:
 
@@ -45,7 +44,7 @@ the build scripts are for **windows** (also requires python 3.12, powershell and
 
 ## roblox
 
-a faithful luau port! it is not compiled from the usual C# projects.
+a faithful luau port! it is not compiled from the usual C family projects.
 
 - `ports/roblox/src` - runtime modules grouped by roblox service
 - `ports/roblox/tests` - roblox checks and generated golden data
