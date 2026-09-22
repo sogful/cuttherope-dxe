@@ -4,7 +4,6 @@ raster.__index = raster
 local tile = 16
 local function byte(value: number): number return math.clamp(math.floor(value + .5), 0, 255) end
 local function pack(r: number, g: number, b: number, a: number): number return byte(r) + byte(g)*256 + byte(b)*65536 + byte(a)*16777216 end
-local function channel(value: number, shift: number): number return bit32.band(bit32.rshift(value, shift), 255) end
 
 function raster.new(width, height)
 	return setmetatable({width=width,height=height,stride=width*2,
@@ -24,57 +23,65 @@ function raster:clear()
 	table.clear(self.dirty)
 end
 
-local function edge(a: Vector2,b: Vector2,x: number,y: number): number return (b.X-a.X)*(y-a.Y)-(b.Y-a.Y)*(x-a.X) end
-local function top(a: Vector2,b: Vector2): boolean return b.Y<a.Y or (b.Y==a.Y and b.X>a.X) end
-local function inside(value: number, inclusive: boolean): boolean return value>1e-7 or (value>=-1e-7 and inclusive) end
-
 function raster:triangle(a: Vector2,b: Vector2,c: Vector2,ca: Color3,cb: Color3,cc: Color3,aa: number,ab: number,ac: number)
-	a,b,c=a*2,b*2,c*2
-	local area=edge(a,b,c.X,c.Y)
+	local ax,ay,bx,by,cx,cy=a.X*2,a.Y*2,b.X*2,b.Y*2,c.X*2,c.Y*2
+	local area=(bx-ax)*(cy-ay)-(by-ay)*(cx-ax)
 	if math.abs(area)<1e-8 then return end
-	if area<0 then b,c,cb,cc,ab,ac=c,b,cc,cb,ac,ab area=-area end
-	local miny=math.max(0,math.floor(math.min(a.Y,b.Y,c.Y)))
-	local maxy=math.min(self.height*2-1,math.ceil(math.max(a.Y,b.Y,c.Y))-1)
+	if area<0 then bx,by,cx,cy,cb,cc,ab,ac=cx,cy,bx,by,cc,cb,ac,ab area=-area end
+	local miny=math.max(0,math.floor(math.min(ay,by,cy)))
+	local maxy=math.min(self.height*2-1,math.ceil(math.max(ay,by,cy))-1)
 	if miny>maxy then return end
-	local first,last=math.max(0,math.floor(math.min(a.X,b.X,c.X)/2/tile)),math.min(self.columns-1,math.floor(math.max(a.X,b.X,c.X)/2/tile))
+	local first,last=math.max(0,math.floor(math.min(ax,bx,cx)/2/tile)),math.min(self.columns-1,math.floor(math.max(ax,bx,cx)/2/tile))
 	if first>last then return end
 	self.left,self.top=math.min(self.left or self.width,first*tile),math.min(self.top or self.height,math.floor(miny/2/tile)*tile)
 	self.right,self.bottom=math.max(self.right or 0,math.min(self.width,(last+1)*tile)),math.max(self.bottom or 0,math.min(self.height,(math.floor(maxy/2/tile)+1)*tile))
 	for y=math.floor(miny/2/tile),math.floor(maxy/2/tile) do
 		for x=first,last do self.dirty[y*self.columns+x]=true end
 	end
-	local abtop,bctop,catop=top(a,b),top(b,c),top(c,a)
+	local abtop=by<ay or (by==ay and bx>ax)
+	local bctop=cy<by or (cy==by and cx>bx)
+	local catop=ay<cy or (ay==cy and ax>cx)
+	local pixels,stride=self.pixels,self.stride
 	local inverse=1/area
 	local r1,g1,b1=ca.R*aa*255,ca.G*aa*255,ca.B*aa*255
 	local r2,g2,b2=cb.R*ab*255,cb.G*ab*255,cb.B*ab*255
 	local r3,g3,b3=cc.R*ac*255,cc.G*ac*255,cc.B*ac*255
 	aa,ab,ac=aa*255,ab*255,ac*255
-	local abmin,abmax=math.min(a.Y,b.Y),math.max(a.Y,b.Y)
-	local bcmin,bcmax=math.min(b.Y,c.Y),math.max(b.Y,c.Y)
-	local camin,camax=math.min(c.Y,a.Y),math.max(c.Y,a.Y)
-	local abslope,bcslope,caslope=(b.X-a.X)/(b.Y-a.Y),(c.X-b.X)/(c.Y-b.Y),(a.X-c.X)/(a.Y-c.Y)
+	local abmin,abmax=math.min(ay,by),math.max(ay,by)
+	local bcmin,bcmax=math.min(by,cy),math.max(by,cy)
+	local camin,camax=math.min(cy,ay),math.max(cy,ay)
+	local abslope,bcslope,caslope=(bx-ax)/(by-ay),(cx-bx)/(cy-by),(ax-cx)/(ay-cy)
 	for y=miny,maxy do
 		local py=y+.5
 		local low,high=math.huge,-math.huge
 		-- Scan only the thin triangle's span, not its potentially enormous box.
-		if py>=abmin and py<abmax then local x=a.X+(py-a.Y)*abslope low,high=math.min(low,x),math.max(high,x) end
-		if py>=bcmin and py<bcmax then local x=b.X+(py-b.Y)*bcslope low,high=math.min(low,x),math.max(high,x) end
-		if py>=camin and py<camax then local x=c.X+(py-c.Y)*caslope low,high=math.min(low,x),math.max(high,x) end
-		local minx,maxx=math.max(0,math.floor(low)),math.min(self.stride-1,math.ceil(high)-1)
-		local w1,w2,w3=edge(b,c,minx+.5,py),edge(c,a,minx+.5,py),edge(a,b,minx+.5,py)
+		if py>=abmin and py<abmax then local x=ax+(py-ay)*abslope low,high=math.min(low,x),math.max(high,x) end
+		if py>=bcmin and py<bcmax then local x=bx+(py-by)*bcslope low,high=math.min(low,x),math.max(high,x) end
+		if py>=camin and py<camax then local x=cx+(py-cy)*caslope low,high=math.min(low,x),math.max(high,x) end
+		local minx,maxx=math.max(0,math.floor(low)),math.min(stride-1,math.ceil(high)-1)
+		local px=minx+.5
+		local w1=(cx-bx)*(py-by)-(cy-by)*(px-bx)
+		local w2=(ax-cx)*(py-cy)-(ay-cy)*(px-cx)
+		local w3=(bx-ax)*(py-ay)-(by-ay)*(px-ax)
 		for x=minx,maxx do
-			if inside(w1,bctop) and inside(w2,catop) and inside(w3,abtop) then
+			if (w1>1e-7 or w1>=-1e-7 and bctop) and (w2>1e-7 or w2>=-1e-7 and catop) and (w3>1e-7 or w3>=-1e-7 and abtop) then
 				local u,v,w=w1*inverse,w2*inverse,w3*inverse
 				local alpha=u*aa+v*ab+w*ac
 				if alpha>0 then
-					local offset=(y*self.stride+x)*4
-					local old=buffer.readu32(self.pixels,offset)
-					local keep=1-alpha/255
-					buffer.writeu32(self.pixels,offset,pack(u*r1+v*r2+w*r3+channel(old,0)*keep,
-						u*g1+v*g2+w*g3+channel(old,8)*keep,u*b1+v*b2+w*b3+channel(old,16)*keep,alpha+channel(old,24)*keep))
+					local offset=(y*stride+x)*4
+					local old=buffer.readu32(pixels,offset)
+					local red,green,blue=u*r1+v*r2+w*r3,u*g1+v*g2+w*g3,u*b1+v*b2+w*b3
+					if old~=0 then
+						local keep=1-alpha/255
+						red+=bit32.band(old,255)*keep
+						green+=bit32.band(bit32.rshift(old,8),255)*keep
+						blue+=bit32.band(bit32.rshift(old,16),255)*keep
+						alpha+=bit32.rshift(old,24)*keep
+					end
+					buffer.writeu32(pixels,offset,pack(red,green,blue,alpha))
 				end
 			end
-			w1-=c.Y-b.Y w2-=a.Y-c.Y w3-=b.Y-a.Y
+			w1-=cy-by w2-=ay-cy w3-=by-ay
 		end
 	end
 end
@@ -91,6 +98,7 @@ function raster:finish()
 				local offset=(y*2*stride+x*2)*4
 				local a,b=buffer.readu32(pixels,offset),buffer.readu32(pixels,offset+4)
 				local c,d=buffer.readu32(pixels,offset+stride*4),buffer.readu32(pixels,offset+stride*4+4)
+				if bit32.bor(a,b,c,d)==0 then continue end
 				local alpha=(bit32.rshift(a,24)+bit32.rshift(b,24)+bit32.rshift(c,24)+bit32.rshift(d,24))*.25
 				if alpha>0 then
 					local gain=255/(alpha*4)

@@ -21,10 +21,13 @@ function radius.new(parent, index, definition)
 end
 
 function radius:update(alpha,anchor)
+	anchor=anchor or self.definition.anchor
 	local size = self.parent.AbsoluteSize
+	if self.alpha==alpha and (alpha<=0 or self.anchor==anchor and self.size==size) then return end
+	self.alpha,self.anchor,self.size=alpha,anchor,size
 	for _, segment in ipairs(self.segments) do
 		local line = segment.object
-		local point=(anchor or self.definition.anchor)+segment.offset
+		local point=anchor+segment.offset
 		line.Position=UDim2.fromScale(point.X/2560,point.Y/1440)
 		line.Visible, line.BackgroundTransparency = alpha > 0, 1 - alpha
 		if alpha > 0 then

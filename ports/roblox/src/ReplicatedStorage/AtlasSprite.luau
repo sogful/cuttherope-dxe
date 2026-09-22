@@ -116,6 +116,7 @@ function sprite:show(group, index)
 end
 
 function sprite:fade(value)
+	if self.transparency==value then return end
 	self.transparency = value
 	if self.current then self.current.ImageTransparency = value end
 end
