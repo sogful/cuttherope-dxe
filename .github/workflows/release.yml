@@ -190,6 +190,52 @@ jobs:
                   compression-level: 0
                   retention-days: 7
 
+    ds:
+        needs: [version, assets]
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: ./.github/actions/setup-dotnet
+
+            - uses: actions/setup-python@v6
+              with:
+                  python-version: "3.12"
+                  cache: pip
+                  cache-dependency-path: ports/ds/tools/requirements.txt
+
+            - name: Restore fetched assets
+              uses: actions/cache/restore@v6
+              with:
+                  path: ${{ needs.assets.outputs.cache-path }}
+                  key: ${{ needs.assets.outputs.cache-key }}
+                  enableCrossOsArchive: true
+
+            - name: Install DS asset dependencies
+              run: python -m pip install -r ports/ds/tools/requirements.txt
+
+            - name: Install BlocksDS toolchain
+              shell: pwsh
+              run: ./ports/ds/tools/setup.ps1
+
+            - name: Build Nintendo DS ROM
+              run: python ports/ds/tools/build.py --assets
+
+            - name: Package Nintendo DS release
+              shell: pwsh
+              env:
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: |
+                  New-Item -ItemType Directory -Path artifacts | Out-Null
+                  Copy-Item ports/ds/dist/cuttherope.nds "artifacts/CutTheRopeDX-$env:VERSION-Nintendo-DS.nds"
+
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: bundle-ds
+                  path: artifacts/*.nds
+                  compression-level: 0
+                  retention-days: 7
+
     roblox:
         needs: version
         runs-on: ubuntu-latest
@@ -215,7 +261,7 @@ jobs:
                   retention-days: 7
 
     release:
-        needs: [version, windows, macos, linux, browser, android, roblox]
+        needs: [version, windows, macos, linux, browser, android, ds, roblox]
         runs-on: ubuntu-latest
         permissions:
             contents: write
