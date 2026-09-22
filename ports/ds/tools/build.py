@@ -74,6 +74,17 @@ def main():
             target = build / (Path(member).stem + ".itcm.o")
             subprocess.run([str(compiler.with_name("arm-none-eabi-objcopy.exe")), str(build / member), str(target)], env=environment, check=True)
             objects.append(str(target))
+        # Keep the SDK's exact sqrt and line implementation, relocating only
+        # their hot sections. Moving the entire graphics object would waste the
+        # small ITCM budget on cold initialization and unrelated drawing code.
+        for member, function in (("math.c.o", "hw_sqrtf"), ("gl2d.c.o", "glLine")):
+            subprocess.run([str(archive), "x", str(sdk / "libs/libnds/lib/libnds9.a"), member],
+                           cwd=build, env=environment, check=True)
+            target = build / ("hot-" + member)
+            subprocess.run([str(compiler.with_name("arm-none-eabi-objcopy.exe")),
+                            "--rename-section", f".text.{function}=.itcm.text.{function}",
+                            str(build / member), str(target)], env=environment, check=True)
+            objects.append(str(target))
     name = "bootcheck" if args.bootcheck else "cuttherope-logging" if args.logging else "cuttherope-profile" if args.profile else "cuttherope"
     elf = build / (name + ".elf")
     subprocess.run([str(compiler.with_name("arm-none-eabi-gcc.exe")), *flags, *objects, "-L" + str(sdk / "libs/libnds/lib"),
@@ -81,11 +92,13 @@ def main():
                     "-o", str(elf)], check=True, env=environment)
     symbols = subprocess.check_output([str(compiler.with_name("arm-none-eabi-nm.exe")), "-n", str(elf)], env=environment, text=True)
     boundaries = {line.split()[-1]:int(line.split()[0],16) for line in symbols.splitlines()
-                  if line.split()[-1] in ("__end__","__eheap_end")}
+                  if line.split()[-1] in ("__end__","__eheap_end","__itcm_start","__itcm_end","hw_sqrtf","glLine")}
     if not args.bootcheck:
         free = boundaries["__eheap_end"]-boundaries["__end__"]
         assert free >= 128*1024, f"Only {free:,} heap bytes remain in original DS mode"
         print(f"Original DS heap headroom: {free:,} bytes",flush=True)
+        for function in ("hw_sqrtf", "glLine"):
+            assert boundaries["__itcm_start"] <= boundaries[function] < boundaries["__itcm_end"], f"{function} was not placed in ITCM"
         import cachelines
         layout = subprocess.check_output([str(compiler.with_name("arm-none-eabi-nm.exe")), "-S", "-C", "--defined-only", str(elf)], env=environment, text=True)
         cachelines.validate(layout)

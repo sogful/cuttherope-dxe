@@ -298,16 +298,21 @@ static void upload(bool repacked = false) {
     DS_PROFILE_DO(profiling::data[profiling::commands] = count);
     ++frame;
     bool needed[menuart::pagecount]{};
-    bool missing = false;
+    // A draw command can request at most one page. Sort just the missing working
+    // set, not the entire ROM catalog (thousands of unrelated costume pages).
+    std::array<int, commands.size()> order;
+    int missing = 0;
     unsigned required = 0;
     for (int i = 0; i < count; ++i) {
         visibility[i] = visible(commands[i],&uppervisibility[i]);
         if (commands[i].id < 0 || !visibility[i]) continue;
         const int page = menuart::sprites[commands[i].id].page;
-        if (!needed[page]) required += bytes(page);
+        if (!needed[page]) {
+            required += bytes(page);
+            if (!textures[page]) order[missing++] = page;
+        }
         needed[page] = true;
         touched[page] = frame;
-        missing = missing || !textures[page];
     }
     if (required + reserved > 384 * 1024) {
         renderfault = required + reserved;
@@ -329,11 +334,11 @@ static void upload(bool repacked = false) {
         occupied -= bytes(oldest);
         return true;
     };
-    std::array<int, menuart::pagecount> order;
-    for (int index = 0; index < menuart::pagecount; ++index) order[index] = index;
-    std::sort(order.begin(), order.end(), [](int a, int b) { return bytes(a) > bytes(b); });
-    for (int index : order) {
-        if (!needed[index] || textures[index]) continue;
+    std::sort(order.begin(), order.begin() + missing, [](int a, int b) {
+        return bytes(a) != bytes(b) ? bytes(a) > bytes(b) : a < b;
+    });
+    for (int i = 0; i < missing; ++i) {
+        const int index = order[i];
         gamelog::event("texture.load.begin page=%d bytes=%u occupied=%u reserved=%u offset=%u packed=%u buffer=%p",index,bytes(index),occupied,reserved,menuart::pages[index].offset,menuart::pages[index].packed,static_cast<void*>(compressed));
         gamelog::mark("texture.allocate",index);
         while (occupied + reserved + bytes(index) > 384 * 1024) {

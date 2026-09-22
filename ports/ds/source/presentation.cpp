@@ -41,7 +41,9 @@ static void image(int id, dx::point point, bool absolute = false, int alpha = 31
 }
 
 
-static void strand(const dx::simulation& game, int index, int first, int count, int skin) {
+// The DS has no FPU: keep this small, repeatedly visited projection/draw loop
+// beside the solver in fast instruction RAM rather than thrashing the cache.
+static ARM_CODE ITCM_CODE void strand(const dx::simulation& game, int index, int first, int count, int skin) {
     DS_SCOPE(ropes);
     if (paintingupper) {
         float minimum=1e9f, maximum=-1e9f;

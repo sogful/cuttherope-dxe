@@ -155,6 +155,7 @@ struct operation {
 #ifndef DS_REFERENCE_PHYSICS
 static DS_DATA point positions[256];
 static DS_DATA operation operations[64];
+static DS_DATA unsigned char residents[256];
 #endif
 
 DS_HOT void simulation::solve(const rope& item) {
@@ -162,11 +163,24 @@ DS_HOT void simulation::solve(const rope& item) {
     for (int iteration = 0; iteration < 30; ++iteration)
         for (int part = 0; part < item.count; ++part) satisfy(bodies[item.bodies[part]]);
 #else
-    for (int i = 0; i < bodycount; ++i) positions[i] = bodies[i].pos;
+    // Shared candy constraints also touch the ends of other ropes. Gather every
+    // referenced body, but do not copy the entire (large, strided) body pool for
+    // each individual rope. Constraint order and all float operations stay exact.
+    unsigned copied[8]{};
+    int residentcount = 0;
+    auto resident = [&](int id) {
+        const unsigned mask = 1u << (id & 31);
+        if (!(copied[id >> 5] & mask)) {
+            copied[id >> 5] |= mask;
+            residents[residentcount++] = static_cast<unsigned char>(id);
+            positions[id] = bodies[id].pos;
+        }
+    };
     int count = 0;
     for (int part = 0; part < item.count; ++part) {
         const int id = item.bodies[part];
         const body& first = bodies[id];
+        resident(id);
         if (first.pinned) {
             assert(count < static_cast<int>(std::size(operations)));
             operations[count++] = {positions + id, nullptr, 0, first.pin.x, first.pin.y, 0, 1};
@@ -176,6 +190,7 @@ DS_HOT void simulation::solve(const rope& item) {
             const auto& link = first.links[i];
             if (!link.active) continue;
             const body& second = bodies[link.other];
+            resident(link.other);
             assert(count < static_cast<int>(std::size(operations)));
             operations[count++] = {positions + id, positions + link.other, link.length, first.inverse,
                 second.inverse, first.inverse + second.inverse, (second.pinned ? 2u : 0u) | (link.maximum ? 4u : 0u) |
@@ -201,7 +216,7 @@ DS_HOT void simulation::solve(const rope& item) {
         *op.first = *op.first + displacement;
         if (!(op.flags & 2)) *op.second = *op.second - ((op.flags&8)?displacement:difference*((op.flags&64)?numeric::scale<50>(factor):op.otherinverse*factor));
     }
-    for (int i = 0; i < bodycount; ++i) bodies[i].pos = positions[i];
+    for (int i = 0; i < residentcount; ++i) bodies[residents[i]].pos = positions[residents[i]];
 #endif
 }
 
