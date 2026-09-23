@@ -2,6 +2,8 @@
 #include "interface.hpp"
 
 namespace frontend {
+inline constexpr int upperdistance = 1800;
+inline constexpr int upperpixels = 240;
 void reset();
 void initialize();
 void reserve(unsigned bytes);
@@ -10,6 +12,8 @@ void present(bool synchronize = false);
 void submit();
 void capture();
 unsigned char* workspace();
+unsigned char* streambuffer();
+unsigned streamcapacity();
 unsigned workgeneration(unsigned boundary = 262144);
 int background(int box, int sections, int top, int texture = 0);
 void draw(const ui::controller& menu);

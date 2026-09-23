@@ -456,11 +456,12 @@ def main():
             assembly.extend([".balign 4", f".global {symbol}", symbol + ":", f'.incbin "generated/{page["name"]}{extension}"'])
     (nitro / "menu.bin").write_bytes(blob)
     header += ['}', 'namespace menuart {', 'struct page { int width, height; bool direct; unsigned offset, packed; const unsigned char* palette; int alphabits; };',
-               'struct sprite { std::int16_t x, y, w, h, ox, oy, page; };', 'static_assert(sizeof(sprite) == 14);', 'enum id {']
-    assert all(-32768 <= record[key] <= 32767 for record in records for key in ("x", "y", "w", "h", "ox", "oy", "page"))
+               'struct sprite { std::uint16_t y, w, h, page; std::uint8_t x; std::int8_t ox, oy; };', 'static_assert(sizeof(sprite) == 12);', 'enum id {']
+    assert all(0 <= record["x"] <= 255 and 0 <= record[key] <= 65535 for record in records for key in ("y", "w", "h", "page"))
+    assert all(-128 <= record[key] <= 127 for record in records for key in ("ox", "oy"))
     header += [record["name"] + "," for record in records]
     header += ['spritecount };', 'inline constexpr sprite sprites[] = {']
-    header += ['{' + ','.join(str(record[key]) for key in ("x", "y", "w", "h", "ox", "oy", "page")) + '},' for record in records]
+    header += ['{' + ','.join(str(record[key]) for key in ("y", "w", "h", "page", "x", "ox", "oy")) + '},' for record in records]
     header += ['};', 'inline constexpr page pages[] = {']
     for page in pages:
         name = page["name"]

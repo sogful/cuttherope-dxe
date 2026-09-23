@@ -241,7 +241,7 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
         if (!covered && menu.mode!=ui::view::results) {
             DS_SCOPE(upperworld);
             paintingupper=true;
-            cameray=game.cameray-1440;
+            cameray=game.cameray-frontend::upperdistance;
             upper::shade(17);
             frontend::upperworld();
             objects(game,frame,menu);

@@ -58,6 +58,7 @@ void simulation::reset(const level& data) {
     bubble = -1;
     bubbleevents = pumpevents = ropeevents = failreason = visuals = pops = 0;
     popage = 100;
+    breakposition = {};
     starpositions = data.stars;
     bodycount = ticks = count = resulttick = resultvisual = mouthtick = 0;
     suppressoutcome = false;

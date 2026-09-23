@@ -186,6 +186,25 @@ int main(int argc, char** argv) {
         assert(spider>=frontend::starfront && spider<frontend::overlaystart);
     }
     std::puts("PASS: all 16 costumes / 52 candies retain target, hook, star, candy, spider and HUD pass order");
+    for (int candy=0;candy<52;++candy) {
+        menu={}; menu.mode=ui::view::playing; menu.skins[0]=candy;
+        game.reset(dx::levels[0]); game.state=dx::outcome::won; game.resultvisual=10;
+        game.bodies[0].pos=game.definition.target+dx::point{40,-10};
+        frontend::preparegame(menu,game,10);
+        int target=-1, swallow=0;
+        for (int i=0;i<frontend::count;++i) {
+            if (frontend::commands[i].id==menuart::body28) target=i;
+            for (int id : menuart::gamecandies[candy]) if (frontend::commands[i].id==id) { ++swallow; assert(i<target || target<0); }
+        }
+        assert(target>=0 && swallow==3);
+        game.state=dx::outcome::lost; game.failreason=2; game.breakposition=game.bodies[0].pos;
+        frontend::preparegame(menu,game,10);
+        int fragments=0;
+        for (int i=0;i<frontend::count;++i) for (int id : menuart::gamefragments[candy])
+            fragments+=frontend::commands[i].id==id;
+        assert(fragments==5);
+    }
+    std::puts("PASS: all 52 candies pull behind Om Nom and break into five source quads");
     for(int locale=0; argc==2 && locale<12; ++locale) for(int level=0; level<static_cast<int>(dx::levels.size()); ++level) {
         menu.locale=locale;
         game.reset(dx::levels[level]); game.state=dx::outcome::won;

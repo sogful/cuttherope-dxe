@@ -196,7 +196,7 @@ public:
     std::array<int, 8> pumpages{};
     int bubble = -1, bubbleevents = 0, pumpevents = 0, ropeevents = 0, failreason = 0;
     int visuals = 0, pops = 0, popage = 100;
-    point popposition{};
+    point popposition{}, breakposition{};
     float cameray = 0, cameraspeed = 20, cameradistance = 0;
     bool introduction = false;
     int bodycount = 0, ticks = 0, count = 0, resulttick = 0, resultvisual = 0;

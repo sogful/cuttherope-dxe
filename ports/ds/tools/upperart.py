@@ -107,9 +107,9 @@ def main():
     for box,group in enumerate(worlds):
         row = []
         for image in group:
-            extended = Image.new("RGB",(256,image.height+192))
-            extended.paste(worlds[box][0].crop((0,0,256,192)),(0,0))
-            extended.paste(image,(0,192))
+            extended = Image.new("RGB",(256,image.height+240))
+            extended.paste(worlds[box][0].crop((0,0,256,240)),(0,0))
+            extended.paste(image,(0,240))
             row.append(background(dim(extended,17),3+box))
         gamebacks.append(row)
     backgroundstore.pack(output,"upperbg",backgrounds,14)

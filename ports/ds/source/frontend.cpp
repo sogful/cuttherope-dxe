@@ -46,6 +46,8 @@ static transfer transfers[784];
 static unsigned transfercount = 0;
 // SD reads must not share cache lines with the VBlank capture flags.
 alignas(32) static unsigned char compressed[4096];
+unsigned char* streambuffer() { return compressed; }
+unsigned streamcapacity() { return sizeof(compressed); }
 #ifdef __NDS__
 static volatile bool captured = false, armed = false, frozen = false;
 #endif
@@ -719,7 +721,7 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     count = 0;
     groundend = starback = starfront = 0;
     overlaystart = -1;
-    cameray = game.cameray - (upper ? 1440 : 0);
+    cameray = game.cameray - (upper ? upperdistance : 0);
     auto wx = [](float value) { return std::lround(128 + (value - 1280) * pixels); };
     auto wy = [](float value) { return std::lround((value - cameray) * pixels); };
     auto world = [&](int sprite, dx::point position, int alpha = 31, float angle = 0, float scale = 1, int flip = GL_FLIP_NONE, float vertical = -1, int shade = 31) {
@@ -736,6 +738,16 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     for (int i = 0; i < game.definition.switchcount; ++i)
         world(menuart::gravity0 + game.inverted, game.definition.switches[i]);
     gamevisuals::mouseholes(game,world);
+    if (game.state == dx::outcome::won && !game.split) {
+        const int age = elapsed - game.resultvisual;
+        if (age >= 0 && age < 7) {
+            const float phase = age / 7.0f;
+            const float ease = phase * phase * (3 - 2 * phase);
+            const dx::point mouth = game.definition.target + dx::point{0,31};
+            const dx::point position = game.candy().pos + (mouth - game.candy().pos) * ease;
+            for (int id : menuart::gamecandies[menu.skins[0]]) world(id,position,31,0,1-.35f*ease);
+        }
+    }
     world(menuart::seat0 + menu.pack, game.definition.target);
     const bool sleeping = game.definition.night && !game.awake && game.state == dx::outcome::playing;
     const float sleepage = (elapsed-game.nightstart)*.016f;
@@ -919,6 +931,21 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         for (int i = 0; i < 2; ++i) if (game.halfalive[i]) {
             const auto position=game.bodies[i+1].pos;
             world(menuart::gamehalves[menu.skins[0]][i],position,gamevisuals::candyalpha(position));
+        }
+    }
+    if (game.failreason == 2) {
+        const float age = (elapsed - game.resultvisual) * .016f;
+        if (age >= 0 && age < 3) {
+            static constexpr float angles[] = {-132,-111,-89,-67,-46};
+            static constexpr float speeds[] = {112,184,146,211,91};
+            static constexpr float spins[] = {-517,286,-143,594,371};
+            const float gravity = game.inverted ? -500 : 500;
+            for (int i=0;i<5;++i) {
+                const float angle = angles[i] * 3.14159265358979323846f / 180;
+                dx::point position = game.breakposition + dx::point{std::cos(angle)*speeds[i]*age,
+                    std::sin(angle)*speeds[i]*age + gravity*age*age*.5f};
+                world(menuart::gamefragments[menu.skins[0]][i],position,31,spins[i]*age);
+            }
         }
     }
     if (!game.split && !game.hidden() && menu.skins[0] > 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
@@ -1161,8 +1188,8 @@ void upperworld() {
     if (overlaystart>=0) count=overlaystart;
     overlaystart=-1;
     reusevisibility=true;
-    for (int i=0;i<count;++i) if (commands[i].id>=0) commands[i].y+=192;
-    cameray-=1440;
+    for (int i=0;i<count;++i) if (commands[i].id>=0) commands[i].y+=upperpixels;
+    cameray-=upperdistance;
 }
 
 void paintupper(bool ground,int stars) {

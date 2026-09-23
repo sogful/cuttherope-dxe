@@ -233,26 +233,21 @@ int main(int argc,char** argv) {
             assert(upper::menu(id,5) && hash()==finished);
         }
     }
+    std::array<unsigned,upperart::motionsteps> shadowhashes{};
     upper::begin(upperart::worlds[0][0]);
-    assert(upper::menu(0,0));
-    for (unsigned frame=1;frame<5;++frame) {
-        assert(!upper::menu(0,frame));
+    for (unsigned frame=0;frame<upperart::motionsteps*upperart::motioninterval;frame+=upperart::motioninterval) {
+        assert(upper::menu(0,frame));
+        shadowhashes[frame/upperart::motioninterval]=hash();
+        upper::begin(upperart::worlds[0][0]);
+    }
+    assert(upper::menu(0,0) && hash()==shadowhashes[0]);
+    for (unsigned frame=1;frame<upperart::motionsteps*upperart::motioninterval;++frame) {
+        const bool changed=upper::menu(0,frame);
+        assert(changed==(frame%upperart::motioninterval==0));
+        if (changed) assert(hash()==shadowhashes[frame/upperart::motioninterval]);
+        std::memset(frontend::compressed,frame,static_cast<unsigned>(sizeof(frontend::compressed)));
         std::memset(upper::scratch,frame,static_cast<unsigned>(sizeof(upper::scratch)));
         assert(std::fseek(upper::motionfile,0,SEEK_SET)==0);
-    }
-    assert(upper::menu(0,5));
-    const unsigned isolated=hash();
-    upper::begin(upperart::worlds[0][0]);
-    assert(upper::menu(0,5) && hash()==isolated);
-    upper::begin(upperart::worlds[0][0]);
-    for (unsigned frame=0;frame<9000;frame+=5) {
-        assert(upper::menu(0,frame));
-        if (frame%300==0) {
-            const unsigned expected=hash();
-            upper::begin(upperart::worlds[0][0]);
-            assert(upper::menu(0,frame));
-            assert(hash()==expected);
-        }
     }
     for (int level=0;level<425;++level) {
         game.reset(dx::levels[level]); menu.pack=level/25; menu.level=level%25;
@@ -264,7 +259,7 @@ int main(int argc,char** argv) {
         for (int i=0;i<count;++i) {
             const auto& a=lower[i]; const auto& b=frontend::commands[i];
             assert(a.id==b.id && a.x==b.x && a.scale==b.scale && a.vertical==b.vertical && a.angle==b.angle && a.alpha==b.alpha);
-            if (a.id>=0) assert(std::abs(b.y-a.y-192)<=1);
+            if (a.id>=0) assert(std::abs(b.y-a.y-frontend::upperpixels)<=1);
         }
         frontend::commands=lower;
         frontend::count=frontend::overlaystart=count;
@@ -274,7 +269,7 @@ int main(int argc,char** argv) {
         for (int i=0;i<count;++i) {
             const auto& a=lower[i]; const auto& b=frontend::commands[i];
             assert(a.id==b.id && a.x==b.x && a.scale==b.scale && a.vertical==b.vertical && a.angle==b.angle && a.alpha==b.alpha);
-            assert(b.y==a.y+(a.id>=0?192:0));
+            assert(b.y==a.y+(a.id>=0?frontend::upperpixels:0));
         }
     }
     for (int box=0;box<17;++box) {
@@ -382,19 +377,27 @@ int main(int argc,char** argv) {
         catch (const std::runtime_error& message) { failed=std::strcmp(message.what(),"CTRD DS: upper-screen asset error")==0; }
         return failed && upper::fault()==code;
     };
-    // Malformed in-memory patches must stop before changing the frame.
+    FILE* originalmotion=upper::motionfile;
+    // Malformed patches must stop before changing the frame.
     for (const std::vector<unsigned char>& patch : {std::vector<unsigned char>{0,0xc0,1,0,1}, {0,0,10,0,1}, {0,0xc0,0,0}}) {
         const unsigned before=hash();
+        upper::motionfile=std::fopen("ports/ds/build/upper-malformed.tmp","w+b"); assert(upper::motionfile);
+        const unsigned size=patch.size();
+        assert(std::fwrite(&size,4,1,upper::motionfile)==1);
+        assert(std::fwrite(patch.data(),1,patch.size(),upper::motionfile)==patch.size());
+        std::fflush(upper::motionfile);
         upper::error=0; upper::movie={};
-        upper::movie.frame=1;
-        upper::movie.bytes=upper::movie.fetched=upper::movie.available=patch.size();
-        std::copy(patch.begin(),patch.end(),upper::input);
+        upper::movie.frame=1; upper::movie.bytes=patch.size();
         assert(rejected(patch.size(),8) && hash()==before);
+        std::fclose(upper::motionfile);
     }
     const unsigned before=hash();
+    upper::motionfile=std::fopen("ports/ds/build/upper-malformed.tmp","w+b"); assert(upper::motionfile);
+    const unsigned size=1;
+    assert(std::fwrite(&size,4,1,upper::motionfile)==1);
     upper::error=0; upper::movie={};
-    upper::movie.bytes=upper::movie.fetched=upper::movie.available=1;
-    upper::input[0]=0;
+    upper::movie.bytes=1;
     assert(rejected(1,7) && hash()==before);
+    std::fclose(upper::motionfile); std::remove("ports/ds/build/upper-malformed.tmp"); upper::motionfile=originalmotion;
     std::puts("PASS: malformed shadow ranges and truncated headers stop without framebuffer writes");
 }

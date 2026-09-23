@@ -158,12 +158,14 @@ bool simulation::interact(point position) {
 }
 void simulation::retirehalf(int id, int reason) {
     if (suppressoutcome || !id || !halfalive[id-1]) return;
+    if (reason == 2) breakposition = bodies[id].pos;
     releasecandy(id); burst(id,false); halfalive[id-1] = false;
     bodies[id].pin = bodies[id].pos; bodies[id].pinned = true;
     if (state == outcome::playing) { cancelbelts(); state = outcome::lost; failreason = reason; resulttick = ticks; resultvisual = visuals; }
 }
 void simulation::fail(int reason) {
     if (suppressoutcome || state != outcome::playing) return;
+    if (reason == 2) breakposition = candy().pos;
     removelantern();
     stopmice();
     cancelbelts();

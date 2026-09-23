@@ -14,7 +14,7 @@ def build(menu):
     root, content = menu["root"], menu["content"]
     scale, fit = menu["scale"], menu["fit"]
     previewfit = fit*uiscale.picker
-    info = {"previews": [], "candies": [], "halves": [], "costumes": [], "animations": [], "sleeptrim": [], "sources": {}}
+    info = {"previews": [], "candies": [], "fragments": [], "halves": [], "costumes": [], "animations": [], "sleeptrim": [], "sources": {}}
     for i in range(67):
         quad("particle" + str(i), "traces_ctr2", i, 1, restore=False, group="particles" + str(i // 5))
     for i in range(3):
@@ -51,6 +51,12 @@ def build(menu):
             quad(name, resource, layer, .71, restore=True, group="gamecandy" + str(index))
             names.append(name)
         info["candies"].append(names)
+        fragments = []
+        for layer in range(3, 8):
+            name = "gamefragment" + str(index) + "x" + str(layer)
+            quad(name, resource, layer, .71, restore=True, group="gamecandy" + str(index))
+            fragments.append(name)
+        info["fragments"].append(fragments)
         halves = []
         for layer in (8, 9):
             name = "gamehalf" + str(index) + "x" + str(layer)
@@ -166,6 +172,8 @@ def header(info, ids, fit, scale):
     lines += ["{" + ",".join(str(ids[item]) for item in values) + "}," for values in info["candies"]]
     lines += ["};", "inline constexpr int gamehalves[52][2] = {"]
     lines += ["{" + ",".join(str(ids[item]) for item in values) + "}," for values in info["halves"]]
+    lines += ["};", "inline constexpr int gamefragments[52][5] = {"]
+    lines += ["{" + ",".join(str(ids[item]) for item in values) + "}," for values in info["fragments"]]
     lines += ["};", "inline constexpr int titlecandies[] = {" + ",".join(str(ids["titlecandy" + str(i)]) for i in range(52)) + "};"]
     for index, animation in enumerate(info["animations"]):
         lines.append(array("animation" + str(index), animation["frames"]))

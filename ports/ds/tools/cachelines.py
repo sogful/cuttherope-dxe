@@ -2,7 +2,7 @@
 import re
 
 
-buffers = ("frontend::compressed", "frontend::staged", "upper::input", "upper::backdrop",
+buffers = ("frontend::compressed", "frontend::staged", "upper::backdrop",
            "upper::palette", "audio::longbuffer", "audio::shortbuffer", "audio::musicbuffer")
 flags = ("frontend::frozen", "frontend::armed", "frontend::captured", "upper::pending")
 

@@ -58,7 +58,6 @@ struct entry {
     std::uint16_t colors[32]{};
 };
 static std::array<entry,24> cache;
-alignas(32) static unsigned char input[1024];
 alignas(32) static unsigned char scratch[1024];
 
 unsigned fault() { return error; }
@@ -189,19 +188,23 @@ static bool startpatch(int frame) {
 
 static DS_HOT bool advancepatch(unsigned budget) {
     const unsigned limit=std::min(movie.bytes,movie.consumed+budget);
+    auto* input=frontend::streambuffer();
+    movie.fetched=movie.consumed;
+    movie.offset=movie.available=movie.remaining=0;
     auto next=[]() -> int {
         if (movie.offset==movie.available) {
             if (!assetio::seek(motionfile,movie.source+4+movie.fetched,"shadow.patch")) {
                 patchfailure("seek",11);
                 return -1;
             }
-            movie.available=assetio::read(motionfile,input,std::min(static_cast<unsigned>(sizeof(input)),movie.bytes-movie.fetched),"shadow.patch");
+            movie.available=assetio::read(motionfile,frontend::streambuffer(),
+                std::min(frontend::streamcapacity(),movie.bytes-movie.fetched),"shadow.patch");
             movie.offset=0; movie.fetched+=movie.available; readbytes+=movie.available;
             DS_PROFILE_DO(profiling::data[profiling::upperreads]+=movie.available);
             if (!movie.available) { patchfailure("eof",7); return -1; }
         }
         ++movie.consumed;
-        return input[movie.offset++];
+        return frontend::streambuffer()[movie.offset++];
     };
     while (!movie.done && movie.consumed<limit) {
         if (!movie.remaining) {
@@ -214,16 +217,17 @@ static DS_HOT bool advancepatch(unsigned budget) {
             movie.remaining=first|(second<<8);
             if (!movie.remaining || movie.position+movie.remaining>256*192 || movie.remaining>movie.bytes-movie.consumed) return patchfailure("range");
         }
-        if (movie.consumed>=limit) break;
-        if (movie.offset==movie.available) {
-            const int code=next();
-            if (code<0) return false;
-            backdrop[movie.position]=movie.table[(movie.base[movie.position]<<5)|code];
-            ++movie.position; --movie.remaining;
+        while (movie.remaining) {
+            if (movie.offset==movie.available) {
+                const int code=next();
+                if (code<0) return false;
+                backdrop[movie.position]=movie.table[(movie.base[movie.position]<<5)|code];
+                ++movie.position; --movie.remaining;
+            }
+            const unsigned amount=std::min(movie.remaining,movie.available-movie.offset);
+            remap(backdrop+movie.position,movie.base+movie.position,input+movie.offset,movie.table,amount);
+            movie.position+=amount; movie.remaining-=amount; movie.offset+=amount; movie.consumed+=amount;
         }
-        const unsigned amount=std::min({movie.remaining,movie.available-movie.offset,limit-movie.consumed});
-        remap(backdrop+movie.position,movie.base+movie.position,input+movie.offset,movie.table,amount);
-        movie.position+=amount; movie.remaining-=amount; movie.offset+=amount; movie.consumed+=amount;
         if (error) return false;
     }
     return true;
