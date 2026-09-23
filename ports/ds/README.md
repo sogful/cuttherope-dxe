@@ -2,7 +2,7 @@
   <img src="./ports/ds/assets/logods.png" width="256"/>
 </p>
 
-*Cut the Rope: DXfDS (Decompiled Extra for Dual Screen)* is a nds C++ port! it fits into **4mb of RAM** and runs in DSi mode. <br>
+*Cut the Rope: DXfDS (Decompiled Extra for Dual Screen)* is an NDS C++ port that fits in *<4mb of main RAM*, it also runs in DSi mode.
 
 #### features
 

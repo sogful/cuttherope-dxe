@@ -169,6 +169,7 @@ int main() {
     game.reset(dx::levels[14]);
     assert(game.introduction);
     game.tick();
+    assert(game.introage==1 && game.visuals==0 && game.ticks==0);
     const float normalspeed = game.cameraspeed;
     game.camerafast = true;
     game.tick();

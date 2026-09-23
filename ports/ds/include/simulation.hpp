@@ -199,7 +199,7 @@ public:
     point popposition{}, breakposition{};
     float cameray = 0, cameraspeed = 20, cameradistance = 0;
     bool introduction = false, camerafast = false;
-    int bodycount = 0, ticks = 0, count = 0, resulttick = 0, resultvisual = 0;
+    int bodycount = 0, ticks = 0, count = 0, resulttick = 0, resultvisual = 0, introage = 0;
     bool mouth = false;
     int mouthtick = 0;
     outcome state = outcome::playing;

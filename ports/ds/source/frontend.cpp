@@ -752,8 +752,9 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     world(menuart::seat0 + menu.pack, game.definition.target);
     const bool sleeping = game.definition.night && !game.awake && game.state == dx::outcome::playing;
     const float sleepage = (elapsed-game.nightstart)*.016f;
+    const int nomidle = elapsed + game.introage;
     if (menu.skins[2] == 0) {
-        int target = menuart::body0 + elapsed / 3 % 19;
+        int target = menuart::body0 + nomidle / 3 % 19;
         if (game.mouth) target = menuart::body19 + std::min(8, (game.ticks - game.mouthtick) / 3);
         if (game.state == dx::outcome::won) {
             const int since = elapsed - game.resultvisual;
@@ -765,7 +766,7 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         world(target, game.definition.target+dx::point{0,86*(1-pulse)},31,0,1,GL_FLIP_NONE,pulse);
     }
     if (menu.skins[2] > 0) {
-        int state = 0, since = elapsed;
+        int state = 0, since = nomidle;
         const auto& states = menuart::costumes[menu.skins[2] - 1];
         if ((elapsed - game.excitement) * .016f < menuart::animations[states[1]].duration) { state = 1; since = elapsed - game.excitement; }
         if ((elapsed - game.greeting) * .016f < menuart::animations[states[6]].duration) { state = 6; since = elapsed - game.greeting; }

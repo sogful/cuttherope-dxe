@@ -72,22 +72,27 @@ static ARM_CODE ITCM_CODE void strand(const dx::simulation& game, int index, int
         const float* rgb = colors[skin][i];
         palette[i] = rope.pending >= 0 ? RGB15(31, 31, 31) : RGB15(std::lround(rgb[0] * 31), std::lround(rgb[1] * 31), std::lround(rgb[2] * 31));
     }
-    int previousx = 0, previousy = 0, previouswide = 0;
+    int previousx = 0, previousy = 0;
     for (int i = 0; i < size; ++i) {
         const auto pixel = screen(points[i]);
-        const int x = static_cast<int>(pixel.x), y = static_cast<int>(pixel.y);
-        const int wide = static_cast<int>(screen(points[i] + dx::point{4, 0}).x);
+        const int x = std::lround(pixel.x), y = std::lround(pixel.y);
         if (i) {
             const u16 color = palette[(i / 3) % 2 == 0];
             if (paintingupper) {
                 upper::line(previousx,previousy,x,y,color,alpha);
-                upper::line(previouswide,previousy,wide,y,color,alpha);
+                const int nx=std::abs(x-previousx)<std::abs(y-previousy)?1:0;
+                const int ny=nx?0:1;
+                const int fringe=std::max(1,alpha*9/31);
+                upper::line(previousx+nx,previousy+ny,x+nx,y+ny,color,fringe);
+                upper::line(previousx-nx,previousy-ny,x-nx,y-ny,color,fringe);
             } else {
-                glLine(previousx, previousy, x, y, color);
-                glLine(previouswide, previousy, wide, y, color);
+                const int nx=std::abs(x-previousx)<std::abs(y-previousy)?1:0;
+                const int ny=nx?0:1;
+                glLine(previousx,previousy,x,y,color);
+                glLine(previousx+nx,previousy+ny,x+nx,y+ny,color);
             }
         }
-        previousx = x; previousy = y; previouswide = wide;
+        previousx = x; previousy = y;
     }
 }
 

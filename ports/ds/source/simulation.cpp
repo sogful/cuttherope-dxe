@@ -60,7 +60,7 @@ void simulation::reset(const level& data) {
     popage = 100;
     breakposition = {};
     starpositions = data.stars;
-    bodycount = ticks = count = resulttick = resultvisual = mouthtick = 0;
+    bodycount = ticks = count = resulttick = resultvisual = mouthtick = introage = 0;
     suppressoutcome = false;
     mouth = false;
     mouthdelay = 0;
@@ -184,8 +184,7 @@ DS_HOT void simulation::solve(const rope& item) {
         const body& first = bodies[id];
         resident(id);
         if (first.pinned) {
-            assert(count < static_cast<int>(std::size(operations)));
-            operations[count++] = {positions + id, nullptr, 0, first.pin.x, first.pin.y, 0, 1};
+            positions[id]=first.pin;
             continue;
         }
         for (int i = 0; i < first.linkcount; ++i) {
@@ -203,7 +202,6 @@ DS_HOT void simulation::solve(const rope& item) {
     }
     for (int iteration = 0; iteration < 30; ++iteration) for (int i = 0; i < count; ++i) {
         const auto& op = operations[i];
-        if (op.flags & 1) { *op.first = {op.inverse, op.otherinverse}; continue; }
         point difference{numeric::subtract(op.second->x, op.first->x), numeric::subtract(op.second->y, op.first->y)};
         if (zero(difference)) {
             if (op.length == 0) continue;
@@ -212,6 +210,30 @@ DS_HOT void simulation::solve(const rope& item) {
         const float length = difference.length();
         if ((op.flags & 4) && length <= op.length) continue;
         const float floor=distancefloor(length);
+        if (op.flags==232) {
+            const float factor=numeric::subtract(length,op.length)/numeric::scale<100>(floor);
+            const point displacement=difference*numeric::scale<50>(factor);
+            *op.first=*op.first+displacement;
+            *op.second=*op.second-displacement;
+            continue;
+        }
+        if (op.flags==234) {
+            const float factor=numeric::subtract(length,op.length)/numeric::scale<100>(floor);
+            *op.first=*op.first+difference*numeric::scale<50>(factor);
+            continue;
+        }
+        if (op.flags==336) {
+            const float factor=numeric::subtract(length,op.length)/numeric::scale<51>(floor);
+            *op.first=*op.first+difference*factor;
+            *op.second=*op.second-difference*numeric::scale<50>(factor);
+            continue;
+        }
+        if (op.flags==288) {
+            const float factor=numeric::subtract(length,op.length)/numeric::scale<51>(floor);
+            *op.first=*op.first+difference*numeric::scale<50>(factor);
+            *op.second=*op.second-difference*factor;
+            continue;
+        }
         const float denominator=(op.flags&128)?numeric::scale<100>(floor):(op.flags&256)?numeric::scale<51>(floor):floor*op.sum;
         const float factor = numeric::subtract(length, op.length) / denominator;
         const point displacement=difference*((op.flags&16)?factor:(op.flags&32)?numeric::scale<50>(factor):op.inverse*factor);
@@ -281,7 +303,7 @@ void simulation::tick(bool suppress) {
     suppressoutcome = suppress;
     const bool panning = introduction;
     camera();
-    if (panning) return;
+    if (panning) { ++introage; return; }
     animate();
     advancelighttransport();
     advanceghosts(4);

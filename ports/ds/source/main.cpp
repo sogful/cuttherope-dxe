@@ -104,6 +104,8 @@ int main(int argc,char** argv) {
     bool shownmouth = false, shownresult = false;
     bool greeting = false;
     unsigned total = 0, peak = 0;
+    bool deferdraw = false, adaptivedraw = false;
+    unsigned rendercooldown = 0, overdraws = 0;
     auto resetgame = [&]() {
         game.reset(dx::loadlevel(menu.levelid()));
         frame = shownstars = 0;
@@ -287,11 +289,23 @@ int main(int argc,char** argv) {
         }
         gamelog::context(total,static_cast<int>(menu.mode),display::fadephase(),menu.pack,menu.level);
         gamelog::mark("draw");
-        display::draw(game, frame, menu, menu.gameTouch, pointer);
+        const bool steadydraw=menu.mode==ui::view::playing && oldview==ui::view::playing &&
+            !display::busy() && !menu.door && menu.white()<=0 && !game.introduction && game.state==dx::outcome::playing && !down;
+        const bool skippeddraw=steadydraw && deferdraw;
+        deferdraw=false;
+        if (!skippeddraw) display::draw(game, frame, menu, menu.gameTouch, pointer);
         gamelog::mark("frame.complete");
         telemetry.upperfault=upper::fault(); telemetry.upperframes=upper::updates(); telemetry.upperreads=upper::reads();
         telemetry.popup=menu.popup; telemetry.popupage=menu.popupage;
         const unsigned micros = timerTicks2usec(cpuEndTiming());
+        if (!steadydraw) { rendercooldown=overdraws=0; adaptivedraw=false; }
+        else if (skippeddraw) {
+            if (micros>=16000) { rendercooldown=120; overdraws=0; adaptivedraw=false; }
+            else adaptivedraw=true;
+        } else if (rendercooldown) { --rendercooldown; overdraws=0; }
+        else if (adaptivedraw) deferdraw=true;
+        else if (micros>19000) { if (++overdraws>=3) deferdraw=true; }
+        else overdraws=0;
         if (micros > peak) peak = micros;
         ++total;
         const int clocklock=enterCriticalSection();
