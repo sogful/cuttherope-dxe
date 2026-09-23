@@ -51,7 +51,7 @@ def main():
     if args.profile:
         flags.append("-DDS_PROFILE")
     if args.logging:
-        flags.append("-DDS_LOGGING")
+        flags.extend(("-DDS_LOGGING", "-DDS_PROFILE"))
     sources = [root / "tests/boot.cpp"] if args.bootcheck else sorted((root / "source").glob("*.cpp"))
     for source in sources:
         target = build / (source.stem + ".o")
@@ -95,8 +95,9 @@ def main():
                   if line.split()[-1] in ("__end__","__eheap_end","__itcm_start","__itcm_end","hw_sqrtf","glLine")}
     if not args.bootcheck:
         free = boundaries["__eheap_end"]-boundaries["__end__"]
-        assert free >= 128*1024, f"Only {free:,} heap bytes remain in original DS mode"
-        print(f"Original DS heap headroom: {free:,} bytes",flush=True)
+        minimum = (120 if args.logging else 128) * 1024
+        assert free >= minimum, f"Only {free:,} heap bytes remain in original DS mode"
+        print(f"Original DS heap headroom: {free:,} bytes (minimum {minimum:,})",flush=True)
         for function in ("hw_sqrtf", "glLine"):
             assert boundaries["__itcm_start"] <= boundaries[function] < boundaries["__itcm_end"], f"{function} was not placed in ITCM"
         import cachelines

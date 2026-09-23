@@ -10,6 +10,7 @@
 #include "profiling.hpp"
 #include "upper.hpp"
 #include "gamelog.hpp"
+#include "hardwareprofile.hpp"
 #include <fat.h>
 #include <sys/stat.h>
 #include <cstdio>
@@ -143,7 +144,7 @@ int main(int argc,char** argv) {
         if (down & (KEY_DOWN | KEY_RIGHT)) commands |= ui::following;
         const ui::view oldview = menu.mode;
         gamelog::context(total,static_cast<int>(menu.mode),display::fadephase(),menu.pack,menu.level);
-        if (down) gamelog::event("input down=%x held=%x touch=%d x=%d y=%d busy=%d",down,keys,touching,touchx,touchy,display::busy());
+        if (down) gamelog::trace("input down=%x held=%x touch=%d x=%d y=%d busy=%d",down,keys,touching,touchx,touchy,display::busy());
         gamelog::mark("menu.update");
         if (display::busy()) menu.suspend({touchx, touchy, 0, touching});
         else menu.update(game, {touchx, touchy, commands, touching});
@@ -276,15 +277,14 @@ int main(int argc,char** argv) {
         if (menu.mode == ui::view::results && oldview != ui::view::results) audio::effect(windata, winbytes);
         if (menu.clicked || menu.mode != oldview) {
             gamelog::mark("save");
-            gamelog::event("save.begin clicked=%d",menu.clicked);
+            gamelog::trace("save.begin clicked=%d",menu.clicked);
             menu.persist();
-            gamelog::event("save.end writable=%d failed=%d",menu.saves.writable,menu.saves.failed);
+            gamelog::trace("save.end writable=%d failed=%d",menu.saves.writable,menu.saves.failed);
         }
         gamelog::context(total,static_cast<int>(menu.mode),display::fadephase(),menu.pack,menu.level);
         gamelog::mark("draw");
         display::draw(game, frame, menu, menu.gameTouch, pointer);
         gamelog::mark("frame.complete");
-        if (total%300==0) gamelog::event("heartbeat upper=%u renderfault=%u upperfault=%u",upper::updates(),frontend::cachefault(),upper::fault());
         telemetry.upperfault=upper::fault(); telemetry.upperframes=upper::updates(); telemetry.upperreads=upper::reads();
         telemetry.popup=menu.popup; telemetry.popupage=menu.popupage;
         const unsigned micros = timerTicks2usec(cpuEndTiming());
@@ -371,5 +371,10 @@ int main(int argc,char** argv) {
                 telemetry.spiderclimbers = telemetry.spiderclimbers + 1;
         }
         DS_PROFILE_DO(profiling::finish(total));
+        hardwareprofile::record({total,micros,startedblank,completedblank,
+            static_cast<int>(menu.mode),menu.levelid(),static_cast<int>(game.state),
+            game.definition.hookcount,game.bodycount,static_cast<int>(std::lround(game.cameray)),
+            frontend::texturebytes(),frontend::cacherepacks(),upper::updates(),
+            frontend::cachefault(),upper::fault(),display::busy(),game.introduction!=0,menu.door!=0});
     }
 }

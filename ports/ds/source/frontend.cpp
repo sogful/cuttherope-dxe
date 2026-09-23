@@ -209,7 +209,7 @@ void present(bool synchronize) {
         DC_FlushRange(transfers[i].source, transfers[i].bytes);
         bytes += transfers[i].bytes;
     }
-    gamelog::event("present.begin transfers=%u bytes=%u captured=%d armed=%d frozen=%d sync=%d",transfercount,bytes,captured,armed,frozen,synchronize);
+    gamelog::trace("present.begin transfers=%u bytes=%u captured=%d armed=%d frozen=%d sync=%d",transfercount,bytes,captured,armed,frozen,synchronize);
     const unsigned waiting=gamelog::now();
     {
         DS_SCOPE(wait);
@@ -265,7 +265,7 @@ void present(bool synchronize) {
         frozen = false;
         capture();
     }
-    gamelog::event("present.end hold=%d transfers=%u bytes=%u",hold,transfercount,bytes);
+    gamelog::trace("present.end hold=%d transfers=%u bytes=%u",hold,transfercount,bytes);
 #else
     glFlush(GL_TRANS_MANUALSORT);
 #endif
@@ -274,14 +274,14 @@ void present(bool synchronize) {
 }
 
 int background(int box, int sections, int top, int texture) {
-    gamelog::event("world.read.begin box=%d sections=%d top=%d",box,sections,top);
+    gamelog::trace("world.read.begin box=%d sections=%d top=%d",box,sections,top);
     static FILE* file = std::fopen("nitro:/world.bin", "rb");
     const unsigned offset = art::backgrounds[box][std::clamp(sections, 1, 3) - 1] + top * 512;
     auto* pixels = staging(131072);
     const bool valid = file && paged::read(backgroundstore::worldpages,backgroundstore::worldshift,offset,pixels,131072,
         [&](unsigned physical,void* target,unsigned bytes) { return !std::fseek(file,physical,SEEK_SET) && std::fread(target,1,bytes,file)==bytes; });
     if (!valid) { nocashMessage("CTRD DS: background read failed"); gamelog::fatal("Background read failed",offset); while (true) swiWaitForVBlank(); }
-    gamelog::event("world.read.end");
+    gamelog::trace("world.read.end");
     if (!texture) glGenTextures(1, &texture);
     glBindTexture(0, texture);
     if (!glTexImage2D(0, 0, GL_RGBA, TEXTURE_SIZE_256, TEXTURE_SIZE_256, 0, TEXGEN_OFF, nullptr)) {
@@ -339,7 +339,7 @@ static void upload(bool repacked = false) {
     });
     for (int i = 0; i < missing; ++i) {
         const int index = order[i];
-        gamelog::event("texture.load.begin page=%d bytes=%u occupied=%u reserved=%u offset=%u packed=%u buffer=%p",index,bytes(index),occupied,reserved,menuart::pages[index].offset,menuart::pages[index].packed,static_cast<void*>(compressed));
+        gamelog::trace("texture.load.begin page=%d bytes=%u occupied=%u reserved=%u offset=%u packed=%u buffer=%p",index,bytes(index),occupied,reserved,menuart::pages[index].offset,menuart::pages[index].packed,static_cast<void*>(compressed));
         gamelog::mark("texture.allocate",index);
         while (occupied + reserved + bytes(index) > 384 * 1024) {
             if (!evict()) break;
@@ -394,7 +394,7 @@ static void upload(bool repacked = false) {
         stage(textures[index], pixels, bytes(index), palette, colors);
         DS_PROFILE_DO(++profiling::data[profiling::uploads]; profiling::data[profiling::uploadbytes] += bytes(index));
         occupied += bytes(index);
-        gamelog::event("texture.load.end page=%d occupied=%u",index,occupied);
+        gamelog::trace("texture.load.end page=%d occupied=%u",index,occupied);
     }
     // Raw libnds uploads do not update gl2d's binding cache.
     gCurrentTexture = -1;

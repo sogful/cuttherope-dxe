@@ -62,7 +62,7 @@ void update(const ui::controller& menu) {
     }
     const int target = menu.frontend() ? 1 : 0;
     if (target != track) {
-        gamelog::event("music.load.begin track=%d",target);
+        gamelog::trace("music.load.begin track=%d",target);
         gamelog::mark("music.read",target);
         soundKill(0);
         const unsigned size = target ? menumusicbytes : gamemusicbytes;
@@ -74,7 +74,7 @@ void update(const ui::controller& menu) {
         soundPlaySampleChannel(0, musicbuffer, SoundFormat_8Bit, size, 11025, menu.music ? 45 : 0, 64, true, 0);
         track = target;
         musicpaused = false;
-        gamelog::event("music.load.end track=%d bytes=%u",target,size);
+        gamelog::trace("music.load.end track=%d bytes=%u",target,size);
     }
     const bool pause = !menu.music || menu.mode == ui::view::paused;
     if (pause != musicpaused) {

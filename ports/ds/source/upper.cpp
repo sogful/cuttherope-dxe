@@ -268,7 +268,7 @@ bool menu(int id,unsigned frame) {
 
 static entry* load(int id, unsigned size) {
     for (auto& item : cache) if (item.id==id) { item.touched=age; return &item; }
-    gamelog::event("upper.cachemiss id=%d bytes=%u",id,size);
+    gamelog::trace("upper.cachemiss id=%d bytes=%u",id,size);
     gamelog::mark("upper.read",id);
     if (size>capacity) { fail(3); return nullptr; }
     size = (size+31)&~31u;
