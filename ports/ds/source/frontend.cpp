@@ -1183,7 +1183,7 @@ void paintupper(bool ground,int stars) {
 void upperoverlay(const ui::controller& menu,const dx::simulation& game) {
     upper::shade(31);
     upper::transient(menu.door || menu.mode==ui::view::results);
-    if (menu.mode==ui::view::playing || menu.mode==ui::view::paused || (menu.mode==ui::view::results && menu.age<32)) {
+    if (menu.mode==ui::view::playing || menu.mode==ui::view::paused) {
         int frames[3];
         for (int i=0;i<3;++i) {
             frames[i]=menu.starage[i]<0?0:std::min(10,1+menu.starage[i]/3);

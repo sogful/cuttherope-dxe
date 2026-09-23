@@ -14,12 +14,14 @@ constexpr profiling::metric stages[] = {
     profiling::upload, profiling::read, profiling::decode, profiling::wait,
     profiling::transfer, profiling::render, profiling::upperdraw,
     profiling::upperplace, profiling::upperblit, profiling::upperworld,
-    profiling::upperhud
+    profiling::upperhud, profiling::menuupdate, profiling::sound,
+    profiling::persist, profiling::levelsetup
 };
 
 struct slowframe {
     unsigned frame = 0, micros = 0, crossed = 0;
     unsigned physics = 0, ropes = 0, render = 0, upper = 0, upload = 0, wait = 0;
+    unsigned menu = 0, sound = 0, persist = 0, levelsetup = 0;
     unsigned segments = 0, polygons = 0, commands = 0;
 };
 
@@ -50,6 +52,8 @@ slowframe snapshot(const hardwareframe& frame,unsigned crossed) {
         profiling::data[profiling::physics],profiling::data[profiling::ropes],
         profiling::data[profiling::render],profiling::data[profiling::upperdraw],
         profiling::data[profiling::upload],profiling::data[profiling::wait],
+        profiling::data[profiling::menuupdate],profiling::data[profiling::sound],
+        profiling::data[profiling::persist],profiling::data[profiling::levelsetup],
         profiling::data[profiling::segments],profiling::data[profiling::polygons],
         profiling::data[profiling::commands]};
 }
@@ -77,6 +81,11 @@ void flush() {
         usec(current.stagesums[12]/current.frames),usec(current.stagemax[12]),
         usec(current.stagesums[13]/current.frames),usec(current.stagemax[13]),
         usec(current.stagesums[14]/current.frames),usec(current.stagemax[14]));
+    gamelog::event("PERF main_us avg/max menu=%u/%u audio=%u/%u save=%u/%u level=%u/%u",
+        usec(current.stagesums[15]/current.frames),usec(current.stagemax[15]),
+        usec(current.stagesums[16]/current.frames),usec(current.stagemax[16]),
+        usec(current.stagesums[17]/current.frames),usec(current.stagemax[17]),
+        usec(current.stagesums[18]/current.frames),usec(current.stagemax[18]));
     gamelog::event("PERF load max weights=%u segments=%u bodies=%u hooks=%u polys=%u verts=%u commands=%u textures=%u events upload=%u/%u reads=%u evict=%u visible=%u holds=%u gpu=%x repacks=%u upperframes=%u flags transition=%u intro=%u door=%u faults=%u/%u camera=%d..%d",
         current.maxweights,current.maxsegments,current.maxbodies,current.maxhooks,current.maxpolygons,
         current.maxvertices,current.maxcommands,current.maxtextures,current.uploads,current.uploadbytes,
@@ -85,9 +94,10 @@ void flush() {
         current.introductions,current.doors,current.renderfaults,current.upperfaults,current.cameramin,current.cameramax);
     for (unsigned rank=0;rank<2 && current.slow[rank].micros;++rank) {
         const slowframe& slow=current.slow[rank];
-        gamelog::event("PERF slow rank=%u frame=%u total_us=%u crossed=%u stage_us physics=%u ropes=%u render=%u upper=%u upload=%u wait=%u load segments=%u polygons=%u commands=%u",
+        gamelog::event("PERF slow rank=%u frame=%u total_us=%u crossed=%u stage_us physics=%u ropes=%u render=%u upper=%u upload=%u wait=%u menu=%u audio=%u save=%u level=%u load segments=%u polygons=%u commands=%u",
             rank+1,slow.frame,slow.micros,slow.crossed,usec(slow.physics),usec(slow.ropes),
             usec(slow.render),usec(slow.upper),usec(slow.upload),usec(slow.wait),
+            usec(slow.menu),usec(slow.sound),usec(slow.persist),usec(slow.levelsetup),
             slow.segments,slow.polygons,slow.commands);
     }
     current={};

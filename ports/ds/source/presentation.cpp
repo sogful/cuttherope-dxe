@@ -116,6 +116,7 @@ void initialize() {
 }
 
 static void loadgame(const ui::controller& menu, const dx::simulation& game) {
+    DS_SCOPE(levelsetup);
     frontend::reset();
     unsigned occupied = 131072;
     int textures[art::texturecount];
@@ -225,6 +226,7 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
     const bool paused=menu.mode==ui::view::paused && !menu.door && menu.white()<=0;
     if (paused && heldpause) return;
     heldpause=paused;
+    if (menu.mode==ui::view::playing && !menu.door && menu.white()<=0 && (frame&1)) return;
     static int closed=-1;
     const bool covered=menu.mode==ui::view::results && menu.age>=32;
     if (covered && closed==menu.pack) return;
@@ -236,7 +238,7 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
     } else {
         const int sections=std::clamp(static_cast<int>(std::ceil(game.definition.height/1440)),1,3);
         upper::begin(upperart::worlds[menu.pack][sections-1],std::lround(game.cameray*scale));
-        if (!covered) {
+        if (!covered && menu.mode!=ui::view::results) {
             DS_SCOPE(upperworld);
             paintingupper=true;
             cameray=game.cameray-1440;
@@ -246,7 +248,7 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
             paintingupper=false;
             cameray=game.cameray;
         }
-        {
+        if (menu.mode!=ui::view::results || menu.age<=32) {
             DS_SCOPE(upperhud);
             frontend::upperoverlay(menu,game);
         }

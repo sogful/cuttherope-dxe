@@ -146,12 +146,15 @@ int main(int argc,char** argv) {
         gamelog::context(total,static_cast<int>(menu.mode),display::fadephase(),menu.pack,menu.level);
         if (down) gamelog::trace("input down=%x held=%x touch=%d x=%d y=%d busy=%d",down,keys,touching,touchx,touchy,display::busy());
         gamelog::mark("menu.update");
-        if (display::busy()) menu.suspend({touchx, touchy, 0, touching});
-        else menu.update(game, {touchx, touchy, commands, touching});
+        {
+            DS_SCOPE(menuupdate);
+            if (display::busy()) menu.suspend({touchx, touchy, 0, touching});
+            else menu.update(game, {touchx, touchy, commands, touching});
+        }
         if (menu.mode!=oldview) gamelog::event("scene.change from=%d to=%d",static_cast<int>(oldview),static_cast<int>(menu.mode));
         const bool resetbefore = menu.reset;
         if (resetbefore) resetgame();
-        audio::update(menu);
+        { DS_SCOPE(sound); audio::update(menu); }
         if (menu.mode == ui::view::playing && !display::busy()) {
             trace::trail.update(menu.gameTouch, pointer, menu.skins[3]);
             if (menu.gameTouch && !held) objecttouch = game.interact(pointer);
@@ -197,7 +200,7 @@ int main(int argc,char** argv) {
             game.stars.fill(true); game.count = 0;
         });
         frame = game.visuals;
-        audio::world(menu, game);
+        { DS_SCOPE(sound); audio::world(menu, game); }
         if (game.gravityevents != showngravity) {
             audio::effect(game.inverted ? gravityondata : gravityoffdata, game.inverted ? gravityonbytes : gravityoffbytes);
             showngravity = game.gravityevents;
@@ -278,7 +281,7 @@ int main(int argc,char** argv) {
         if (menu.clicked || menu.mode != oldview) {
             gamelog::mark("save");
             gamelog::trace("save.begin clicked=%d",menu.clicked);
-            menu.persist();
+            { DS_SCOPE(persist); menu.persist(); }
             gamelog::trace("save.end writable=%d failed=%d",menu.saves.writable,menu.saves.failed);
         }
         gamelog::context(total,static_cast<int>(menu.mode),display::fadephase(),menu.pack,menu.level);

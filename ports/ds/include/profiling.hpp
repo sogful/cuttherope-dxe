@@ -8,8 +8,8 @@ namespace profiling {
 enum metric { physics = 1, samples, ropes, scene, upload, read, decode, wait, transfer, render,
     weights, segments, bodies, uploads, uploadbytes, previousevictions, polygons, vertices,
     gpuerrors, uploadstart, uploadend, visibleupload, commands, holds, upperdraw, upperreads,
-    upperplace, upperblit, upperworld, upperhud, count };
-inline unsigned data[32]{};
+    upperplace, upperblit, upperworld, upperhud, menuupdate, sound, persist, levelsetup, count };
+inline unsigned data[40]{};
 inline void begin() {
     for (unsigned& item : data) item = 0;
 }

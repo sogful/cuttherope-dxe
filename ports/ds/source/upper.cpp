@@ -59,6 +59,7 @@ struct entry {
 };
 static std::array<entry,24> cache;
 alignas(32) static unsigned char input[1024];
+alignas(32) static unsigned char scratch[1024];
 
 unsigned fault() { return error; }
 unsigned updates() { return completed; }
@@ -85,12 +86,12 @@ static bool keyframe(unsigned position, unsigned char* destination) {
     unsigned offset=0,available=0;
     auto next=[&]() -> int {
         if (offset==available) {
-            available=assetio::read(motionfile,input,sizeof(input),"shadow.key"); offset=0;
+            available=assetio::read(motionfile,scratch,sizeof(scratch),"shadow.key"); offset=0;
             readbytes+=available;
             DS_PROFILE_DO(profiling::data[profiling::upperreads]+=available);
             if (!available) return -1;
         }
-        return input[offset++];
+        return scratch[offset++];
     };
     if (!assetio::decode(next,destination,256*192,motionfile,"shadow.key",position)) { fail(10); return false; }
     return true;
@@ -165,10 +166,14 @@ struct playback {
     bool done=false;
 };
 static playback movie;
+static bool motionbroken=false, motionfallback=false;
 
 static bool patchfailure(const char* reason,unsigned code=8) {
     if (error!=code) gamelog::event("shadow.patch.failed reason=%s frame=%d source=%u bytes=%u consumed=%u fetched=%u cursor=%u available=%u position=%u remaining=%u",
         reason,movie.frame,movie.source,movie.bytes,movie.consumed,movie.fetched,movie.offset,movie.available,movie.position,movie.remaining);
+    if (movie.base) std::memcpy(backdrop,movie.base,256*192);
+    movie.done=true;
+    motionbroken=motionfallback=true;
     fail(code);
     return false;
 }
@@ -186,6 +191,10 @@ static DS_HOT bool advancepatch(unsigned budget) {
     const unsigned limit=std::min(movie.bytes,movie.consumed+budget);
     auto next=[]() -> int {
         if (movie.offset==movie.available) {
+            if (!assetio::seek(motionfile,movie.source+4+movie.fetched,"shadow.patch")) {
+                patchfailure("seek",11);
+                return -1;
+            }
             movie.available=assetio::read(motionfile,input,std::min(static_cast<unsigned>(sizeof(input)),movie.bytes-movie.fetched),"shadow.patch");
             movie.offset=0; movie.fetched+=movie.available; readbytes+=movie.available;
             DS_PROFILE_DO(profiling::data[profiling::upperreads]+=movie.available);
@@ -222,9 +231,15 @@ static DS_HOT bool advancepatch(unsigned budget) {
 
 bool menu(int id,unsigned frame) {
     static int previous=-1;
-    const bool animated=upperart::motion[id]>=0;
+    const bool animated=upperart::motion[id]>=0 && !motionbroken;
     const int step=animated?(frame/upperart::motioninterval)%upperart::motionsteps:0;
     const bool changed=id!=backgroundid || version!=frontend::workgeneration();
+    if (motionfallback) {
+        motionfallback=false;
+        std::memcpy(frontend::workspace(),backdrop,256*192);
+        movie.frame=-1; previous=step;
+        return true;
+    }
     if (!changed && previous==step) {
         if (animated) {
             if (movie.frame<0 && !startpatch((step+1)%upperart::motionsteps)) return false;
@@ -304,12 +319,12 @@ static entry* load(int id, unsigned size) {
     unsigned remaining=page.packed-palettebytes, offset=0, available=0;
     auto next = [&]() -> int {
         if (offset==available) {
-            available=assetio::read(menufile,input,std::min(remaining,static_cast<unsigned>(sizeof(input))),"upper.menu");
+            available=assetio::read(menufile,scratch,std::min(remaining,static_cast<unsigned>(sizeof(scratch))),"upper.menu");
             offset=0; remaining-=available; readbytes+=available;
             DS_PROFILE_DO(profiling::data[profiling::upperreads] += available);
             if (!available) return -1;
         }
-        return input[offset++];
+        return scratch[offset++];
     };
     if (!assetio::decode(next,destination,size,menufile,"upper.menu",id)) { fail(5); return nullptr; }
     return target;

@@ -234,6 +234,17 @@ int main(int argc,char** argv) {
         }
     }
     upper::begin(upperart::worlds[0][0]);
+    assert(upper::menu(0,0));
+    for (unsigned frame=1;frame<5;++frame) {
+        assert(!upper::menu(0,frame));
+        std::memset(upper::scratch,frame,static_cast<unsigned>(sizeof(upper::scratch)));
+        assert(std::fseek(upper::motionfile,0,SEEK_SET)==0);
+    }
+    assert(upper::menu(0,5));
+    const unsigned isolated=hash();
+    upper::begin(upperart::worlds[0][0]);
+    assert(upper::menu(0,5) && hash()==isolated);
+    upper::begin(upperart::worlds[0][0]);
     for (unsigned frame=0;frame<9000;frame+=5) {
         assert(upper::menu(0,frame));
         if (frame%300==0) {
@@ -346,7 +357,7 @@ int main(int argc,char** argv) {
     menu.mode=ui::view::results; menu.age=0;
     upper::begin(upperart::worlds[0][0]);
     frontend::upperoverlay(menu,game);
-    assert(hash()==playing);
+    assert(hash()==blank);
     menu.age=32;
     upper::begin(upperart::worlds[0][0]);
     frontend::upperoverlay(menu,game);
