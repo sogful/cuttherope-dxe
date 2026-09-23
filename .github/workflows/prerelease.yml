@@ -15,6 +15,8 @@ jobs:
     release:
         permissions:
             contents: write
+            pages: write
+            id-token: write
         uses: ./.github/workflows/release.yml
         with:
             version: 1.0.0-prerelease+${{ github.run_id }}
