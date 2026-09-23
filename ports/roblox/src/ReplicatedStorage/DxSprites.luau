@@ -32,16 +32,16 @@ Sprites.Spikes = {
 }
 
 Sprites.Hud = {
-	restart = "rbxassetid://80979620806042", -- HudUi quad 0
-	starEmpty = "rbxassetid://113454980380542", -- HudUi quad 1
-	starFilled = "rbxassetid://127689281366302", -- HudUi quad 11
-	menuEn = "rbxassetid://101045185903225", -- HudUi quad 12
+	restart = "rbxassetid://80979620806042",
+	starEmpty = "rbxassetid://113454980380542",
+	starFilled = "rbxassetid://127689281366302",
+	menuEn = "rbxassetid://101045185903225",
 }
 
 Sprites.Menu = {
 	creditsLogo = "rbxassetid://74852854661204", -- AboutView uses CutTheRopeDXLogo, not MenuLogoNew quad 52.
-	background = "rbxassetid://132392388834752", -- MenuBgr quad 0
-	fabric = "rbxassetid://139103042633950", -- MenuBgr quad 1
+	background = "rbxassetid://132392388834752",
+	fabric = "rbxassetid://139103042633950",
 	shadow = "rbxassetid://126479126920532", -- MenuBgrShadow quad 0
 	logo = "rbxassetid://136616082571352", -- MenuLogoNew quad 52
 	candy = "rbxassetid://136909548709372", -- MenuLogoNew quad 0
@@ -181,26 +181,26 @@ Sprites.BigFont["m"] = { "rbxassetid://115592752197297", 69 }
 Sprites.BigFont["u"] = { "rbxassetid://98853743241112", 46 }
 
 Sprites.StarIdle = {
-	"rbxassetid://124686818642591", -- frame_0000
-	"rbxassetid://71832753293246",  -- frame_0001
-	"rbxassetid://116660405845065", -- frame_0002
-	"rbxassetid://84901942183706",  -- frame_0003
-	"rbxassetid://98184083158822",  -- frame_0004
-	"rbxassetid://108575951308024", -- frame_0005
-	"rbxassetid://75396960714877",  -- frame_0006
-	"rbxassetid://122449345461523", -- frame_0007
-	"rbxassetid://119587838813427", -- frame_0008
-	"rbxassetid://112819813373100", -- frame_0009
-	"rbxassetid://138991869320280", -- frame_0010
-	"rbxassetid://101470920908218", -- frame_0011
-	"rbxassetid://87415204593306",  -- frame_0012
-	"rbxassetid://99825766006742",  -- frame_0013
-	"rbxassetid://112890219010565", -- frame_0014
-	"rbxassetid://75198579511355",  -- frame_0015
-	"rbxassetid://77282763439579",  -- frame_0016
-	"rbxassetid://129890051752980", -- frame_0017
-	"rbxassetid://117931569380167", -- frame_0018
-	"rbxassetid://85961968412573",  -- frame_0019
+	"rbxassetid://124686818642591",
+	"rbxassetid://71832753293246",
+	"rbxassetid://116660405845065",
+	"rbxassetid://84901942183706",
+	"rbxassetid://98184083158822",
+	"rbxassetid://108575951308024",
+	"rbxassetid://75396960714877",
+	"rbxassetid://122449345461523",
+	"rbxassetid://119587838813427",
+	"rbxassetid://112819813373100",
+	"rbxassetid://138991869320280",
+	"rbxassetid://101470920908218",
+	"rbxassetid://87415204593306",
+	"rbxassetid://99825766006742",
+	"rbxassetid://112890219010565",
+	"rbxassetid://75198579511355",
+	"rbxassetid://77282763439579",
+	"rbxassetid://129890051752980",
+	"rbxassetid://117931569380167",
+	"rbxassetid://85961968412573",
 }
 
 Sprites.OmNomSupport = "rbxassetid://124630426952917" -- CharSupports quad 0; Box 1 sittingPlatform=0
