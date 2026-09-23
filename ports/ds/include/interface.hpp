@@ -25,7 +25,7 @@ struct button {
 class controller {
 public:
     view mode = view::home;
-    bool effects = true, music = true, reset = false, clicked = false, gameTouch = false;
+    bool effects = true, music = true, reset = false, clicked = false, gameTouch = false, traceTouch = false;
     int focus = 0, pressed = -1, age = 0, score = 0, bestscore = 0, beststars = 0;
     int starage[3] = {-1, -1, -1};
     int locale = 0, pack = 0, level = 0;

@@ -168,6 +168,11 @@ int main() {
     assert(std::abs(movement.at(1).y - 40) < .001f && std::abs(movement.at(3).y - 80) < .001f);
     game.reset(dx::levels[14]);
     assert(game.introduction);
+    game.tick();
+    const float normalspeed = game.cameraspeed;
+    game.camerafast = true;
+    game.tick();
+    assert(game.cameraspeed > normalspeed * 1.4f);
     for (int i = 0; i < 500 && game.introduction; ++i) game.tick();
     assert(!game.introduction && game.ticks <= 1);
     // Foil: source rail range is anchor-offset .. anchor-offset+length.

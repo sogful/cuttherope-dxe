@@ -49,7 +49,7 @@ void controller::persist() {
     saves.save();
 }
 void controller::suspend(input current) {
-    reset = clicked = gameTouch = false;
+    reset = clicked = gameTouch = traceTouch = false;
     held = current.touch;
     captured = true;
     armed = pressed = -1;
@@ -130,7 +130,7 @@ void controller::enter(view target) {
     age = focus = 0;
     pressed = armed = -1;
     captured = true;
-    gameTouch = false;
+    gameTouch = traceTouch = false;
     keyboard = dragging = false;
     if (target == view::credits) { creditoffset = 0; autoscroll = true; }
 }
@@ -232,7 +232,7 @@ void controller::activate(action command, int argument) {
 }
 
 void controller::update(const dx::simulation& game, input current) {
-    reset = clicked = gameTouch = false;
+    reset = clicked = gameTouch = traceTouch = false;
     if (modalrelease) { suspend(current); modalrelease = current.touch; return; }
     if (blocked()) { suspend(current); return; }
     if (popup) {
@@ -288,6 +288,7 @@ void controller::update(const dx::simulation& game, input current) {
         else if (mode != view::playing) activate(list[focus].id);
     }
     gameTouch = current.touch && !captured && mode == view::playing && !reset && game.state == dx::outcome::playing;
+    traceTouch = gameTouch || (current.touch && mode == view::playing && !reset && game.state != dx::outcome::playing);
 }
 
 void controller::frontinput(input current) {

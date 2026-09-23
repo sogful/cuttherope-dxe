@@ -217,6 +217,8 @@ static void lower(const dx::simulation& game,int frame,const ui::controller& men
 
 static void scene(const dx::simulation& game,int frame,const ui::controller& menu,bool,dx::point) {
     DS_SCOPE(scene);
+    static unsigned refreshframe=0;
+    const unsigned refresh=refreshframe++;
     paintingupper=false;
     gamelog::mark("lower.draw");
     lower(game,frame,menu);
@@ -226,7 +228,12 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
     const bool paused=menu.mode==ui::view::paused && !menu.door && menu.white()<=0;
     if (paused && heldpause) return;
     heldpause=paused;
-    if (menu.mode==ui::view::playing && !menu.door && menu.white()<=0 && (frame&1)) return;
+    if (menu.mode==ui::view::playing && !menu.door && menu.white()<=0) {
+        int segments=0;
+        for (int i=0;i<game.definition.hookcount;++i) segments+=game.ropes[i].count;
+        const unsigned interval=segments>=128?3:2;
+        if (refresh%interval) return;
+    }
     static int closed=-1;
     const bool covered=menu.mode==ui::view::results && menu.age>=32;
     if (covered && closed==menu.pack) return;
@@ -248,10 +255,8 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
             paintingupper=false;
             cameray=game.cameray;
         }
-        if (menu.mode!=ui::view::results || menu.age<=32) {
-            DS_SCOPE(upperhud);
-            frontend::upperoverlay(menu,game);
-        }
+        DS_SCOPE(upperhud);
+        frontend::upperoverlay(menu,game);
     }
     upper::finish();
 }

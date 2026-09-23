@@ -105,13 +105,14 @@ def main():
     levelmenus = [background(image,3+box,True) for box,image in enumerate(covers)]
     gamebacks = []
     for box,group in enumerate(worlds):
-        row = []
-        for image in group:
-            extended = Image.new("RGB",(256,image.height+240))
-            extended.paste(worlds[box][0].crop((0,0,256,240)),(0,0))
-            extended.paste(image,(0,240))
-            row.append(background(dim(extended,17),3+box))
-        gamebacks.append(row)
+        for sections,image in enumerate(group,1):
+            visible = max(0,(sections-1)*192+192-240)
+            assert np.array_equal(np.asarray(image)[:visible],np.asarray(group[-1])[:visible])
+        extended = Image.new("RGB",(256,group[-1].height+240))
+        extended.paste(group[0].crop((0,0,256,240)),(0,0))
+        extended.paste(group[-1],(0,240))
+        ident = background(dim(extended,17),3+box)
+        gamebacks.append([ident,ident,ident])
     backgroundstore.pack(output,"upperbg",backgrounds,14)
     pixels = np.asarray(photo,dtype=np.uint16)
     rgb = pixels[:,:,:3]*31//255

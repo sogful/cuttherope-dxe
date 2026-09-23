@@ -89,7 +89,9 @@ void simulation::camera() {
     const float difference = target - cameray, distance = std::abs(difference);
     if (introduction) {
         cameray += std::clamp(difference, -cameraspeed * delta, cameraspeed * delta);
-        cameraspeed = distance > cameradistance / 2 ? std::min(1000.0f, cameraspeed + 800 * delta) : std::max(300.0f, cameraspeed - 400 * delta);
+        if (camerafast) {
+            if (cameraspeed < 5500) cameraspeed *= 1.5f;
+        } else cameraspeed = distance > cameradistance / 2 ? std::min(1000.0f, cameraspeed + 800 * delta) : std::max(300.0f, cameraspeed - 400 * delta);
         if (std::abs(target - cameray) < 1) { cameray = target; introduction = false; }
     } else cameray += difference * 14 * delta;
 }

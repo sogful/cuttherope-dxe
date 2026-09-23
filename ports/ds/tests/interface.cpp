@@ -73,6 +73,10 @@ int main() {
     assert(!menu.reset);
     game.state = dx::outcome::won;
     game.resulttick = 500;
+    pen(100, 40, true);
+    assert(!menu.gameTouch && menu.traceTouch);
+    pen(100, 40, false);
+    assert(!menu.traceTouch);
     game.count = 3;
     game.stars = {true, true, true};
     for (int i = 0; i < 124; ++i) menu.advance(game);

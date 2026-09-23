@@ -256,6 +256,12 @@ int main(int argc,char** argv) {
         auto lower=frontend::commands;
         frontend::preparegame(menu,game,0,true);
         assert(frontend::count==count);
+        if (menu.pack==7 && game.cameray==0) {
+            bool aligned=false;
+            for (int i=0;i<frontend::count;++i) if (frontend::commands[i].id==menuart::gravity2 &&
+                std::abs(frontend::commands[i].y-97)<=1) aligned=true;
+            assert(aligned);
+        }
         for (int i=0;i<count;++i) {
             const auto& a=lower[i]; const auto& b=frontend::commands[i];
             assert(a.id==b.id && a.x==b.x && a.scale==b.scale && a.vertical==b.vertical && a.angle==b.angle && a.alpha==b.alpha);
@@ -352,11 +358,16 @@ int main(int argc,char** argv) {
     menu.mode=ui::view::results; menu.age=0;
     upper::begin(upperart::worlds[0][0]);
     frontend::upperoverlay(menu,game);
-    assert(hash()==blank);
+    assert(hash()!=blank);
     menu.age=32;
     upper::begin(upperart::worlds[0][0]);
     frontend::upperoverlay(menu,game);
     assert(hash()!=playing);
+    const unsigned closed=hash();
+    ++game.count;
+    upper::begin(upperart::worlds[0][0]);
+    frontend::upperoverlay(menu,game);
+    assert(hash()==closed);
     for (int box=0;box<17;++box) for (int step=0;step<=32;++step) {
         upper::begin(upperart::worlds[box][0]);
         std::memset(frontend::workspace(),42,256*192);

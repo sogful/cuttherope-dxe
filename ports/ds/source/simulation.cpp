@@ -79,6 +79,7 @@ void simulation::reset(const level& data) {
     introduction = data.height > 1440;
     cameray = introduction && data.candy.y < data.height / 2 ? data.height - 1440 : 0;
     cameraspeed = 20;
+    camerafast = false;
     cameradistance = std::abs(cameray - std::clamp(data.candy.y - 720, 0.0f, data.height - 1440));
     resetdevices();
     resetnocturnal();

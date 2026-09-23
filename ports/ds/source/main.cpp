@@ -156,7 +156,8 @@ int main(int argc,char** argv) {
         if (resetbefore) resetgame();
         { DS_SCOPE(sound); audio::update(menu); }
         if (menu.mode == ui::view::playing && !display::busy()) {
-            trace::trail.update(menu.gameTouch, pointer, menu.skins[3]);
+            trace::trail.update(menu.traceTouch, pointer, menu.skins[3]);
+            if (menu.gameTouch && !held && game.introduction) game.camerafast = true;
             if (menu.gameTouch && !held) objecttouch = game.interact(pointer);
             game.drag(pointer, menu.gameTouch && objecttouch);
             if (menu.gameTouch && !objecttouch && (held ? game.swipe(previous, pointer) : menu.clickcut && game.tap(pointer))) {

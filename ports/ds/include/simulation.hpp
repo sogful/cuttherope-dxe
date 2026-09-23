@@ -198,7 +198,7 @@ public:
     int visuals = 0, pops = 0, popage = 100;
     point popposition{}, breakposition{};
     float cameray = 0, cameraspeed = 20, cameradistance = 0;
-    bool introduction = false;
+    bool introduction = false, camerafast = false;
     int bodycount = 0, ticks = 0, count = 0, resulttick = 0, resultvisual = 0;
     bool mouth = false;
     int mouthtick = 0;

@@ -732,7 +732,8 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     if (menu.pack == 7) {
         const float turn = std::min(1.0f, game.gravityage * .016f / .3f);
         const float angle = game.inverted ? 180 * turn : 180 * (1 - turn);
-        for (int row = -1; row <= 3; ++row) world(menuart::gravity2, {1284,724.0f + row * 1440}, 31, angle);
+        for (int row = -1; row <= 3; ++row)
+            world(menuart::gravity2, {1284,724.0f + (row < 0 ? -upperdistance : row * 1440)}, 31, angle);
     }
     pollen(game,elapsed);
     for (int i = 0; i < game.definition.switchcount; ++i)
@@ -1210,11 +1211,9 @@ void paintupper(bool ground,int stars) {
 void upperoverlay(const ui::controller& menu,const dx::simulation& game) {
     upper::shade(31);
     upper::transient(menu.door || menu.mode==ui::view::results);
-    if (menu.mode==ui::view::playing || menu.mode==ui::view::paused) {
+    if (menu.mode==ui::view::playing || menu.mode==ui::view::paused || menu.mode==ui::view::results) {
         int frames[3];
-        for (int i=0;i<3;++i) {
-            frames[i]=menu.starage[i]<0?0:std::min(10,1+menu.starage[i]/3);
-        }
+        for (int i=0;i<3;++i) frames[i]=menu.starage[i]<0?0:std::min(10,1+menu.starage[i]/3);
         upper::stars(frames);
         char value[24]; std::snprintf(value,sizeof(value),"%d",ui::controller::points(game.count,game.ticks));
         int width=0;
