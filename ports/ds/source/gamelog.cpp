@@ -15,6 +15,7 @@ volatile unsigned logevents=0, logwrites=0, logfaults=0;
 }
 namespace gamelog {
 static char path[256];
+static FILE* output=nullptr;
 static const volatile unsigned* counter=nullptr;
 static unsigned frames=0, written=0, detail=0;
 static int view=-1, fade=-1, pack=-1, level=-1;
@@ -28,12 +29,9 @@ void context(unsigned frame,int screen,int phase,int box,int map) {
     frames=frame; view=screen; fade=phase; pack=box; level=map;
 }
 static bool append(const char* text,unsigned size) {
-    if (!path[0] || written+size>limit) return false;
-    FILE* file=std::fopen(path,"ab");
-    if (!file) return false;
-    bool valid=std::fwrite(text,1,size,file)==size;
-    valid=std::fflush(file)==0 && valid;
-    valid=std::fclose(file)==0 && valid;
+    if (!path[0] || !output || written+size>limit) return false;
+    bool valid=std::fwrite(text,1,size,output)==size;
+    valid=std::fflush(output)==0 && valid;
     if (valid) { written+=size; logwrites=logwrites+1; }
     return valid;
 }
@@ -62,6 +60,8 @@ void event(const char* format,...) {
     logevents=logevents+1;
     if (path[0] && written<limit && !append(line,size+1)) {
         logfaults=logfaults+1;
+        if (output) std::fclose(output);
+        output=nullptr;
         path[0]=0;
     }
 #ifdef __NDS__
@@ -71,6 +71,8 @@ void event(const char* format,...) {
     errno=savederror;
 }
 void initialize(const char* directory) {
+    if (output) std::fclose(output);
+    output=nullptr;
     path[0]=0; written=0;
     if (directory) {
         for (unsigned index=1;index<=9999;++index) {
@@ -79,9 +81,8 @@ void initialize(const char* directory) {
             struct stat info{};
             if (stat(path,&info)==0) continue;
             if (errno!=ENOENT) break;
-            FILE* file=std::fopen(path,"wb");
-            if (!file) break;
-            if (std::fclose(file)) break;
+            output=std::fopen(path,"wb");
+            if (!output) break;
             event("SESSION build=" __DATE__ " " __TIME__ " log=%s",path);
             return;
         }

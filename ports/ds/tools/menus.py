@@ -213,7 +213,7 @@ def pack():
                           alphabits=5 if group in ("menu_bgr_shadow", "doorshade", "steampuffs", "lightglow") or group.startswith(("catch", "vinylring", "vinylcontour")) else 3,
                           dither=False if group in ("doorshade", "steampuffs", "lightglow") or group.startswith(("text", "packtext", "credits", "catch", "vinylring", "vinylcontour")) else
                           "pixel" if group=="conveyor" else
-                          "low" if group.startswith(("menu_buttons", "menu_extra_buttons", "menu_options_packed", "skin_selection", "menu_level_ui", "hud_ui")) else True))
+                          "low" if group.startswith(("menu_buttons", "menu_extra_buttons", "menu_options_packed", "skin_selection", "menu_level_ui", "hud_ui", "hat", "resultart")) else True))
     members = defaultdict(list)
     for record in records:
         members[record["page"]].append(record)
@@ -334,6 +334,8 @@ def main():
                 small, factor = True, fit * .75
             else:
                 value = strings[key]
+                if code == "en" and key == "DRAG_TO_CUT": value = "Swipe to cut"
+                if code == "en" and key == "CLICK_TO_CUT": value = "Tap to cut"
                 if key in ("DRAG_TO_CUT", "CLICK_TO_CUT"):
                     small, factor = True, fit * .75
                 if key == "RESET_TEXT":

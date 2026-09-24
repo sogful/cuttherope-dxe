@@ -171,6 +171,7 @@ int main(int argc,char** argv) {
             held = menu.gameTouch;
             game.tick(menu.flash == 1);
         } else {
+            trace::trail.update(false, pointer, menu.skins[3]);
             held = false;
             game.dragswitch = game.dragspike = -1;
             game.drag(pointer, false);

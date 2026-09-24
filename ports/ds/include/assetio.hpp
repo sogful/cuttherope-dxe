@@ -14,7 +14,16 @@ inline unsigned read(FILE* file, void* destination, unsigned bytes, const char* 
 #ifdef DS_LOGGING
     const long position=file?std::ftell(file):-1;
 #endif
-    const unsigned amount=file?std::fread(destination,1,bytes,file):0;
+    unsigned amount=0;
+    for (int retry=0;file && amount<bytes;) {
+        const unsigned received=std::fread(static_cast<unsigned char*>(destination)+amount,1,bytes-amount,file);
+        amount+=received;
+        if (received) continue;
+        if (retry++>=2) break;
+        const long current=std::ftell(file);
+        std::clearerr(file);
+        if (current<0 || std::fseek(file,current,SEEK_SET)) break;
+    }
 #ifdef DS_LOGGING
     if (amount!=bytes) gamelog::event("asset.read.short name=%s offset=%ld wanted=%u got=%u eof=%d error=%d",
         name,position,bytes,amount,file?std::feof(file):0,file?std::ferror(file):0);

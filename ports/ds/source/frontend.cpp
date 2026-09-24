@@ -739,16 +739,6 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     for (int i = 0; i < game.definition.switchcount; ++i)
         world(menuart::gravity0 + game.inverted, game.definition.switches[i]);
     gamevisuals::mouseholes(game,world);
-    if (game.state == dx::outcome::won && !game.split) {
-        const int age = elapsed - game.resultvisual;
-        if (age >= 0 && age < 7) {
-            const float phase = age / 7.0f;
-            const float ease = phase * phase * (3 - 2 * phase);
-            const dx::point mouth = game.definition.target + dx::point{0,31};
-            const dx::point position = game.candy().pos + (mouth - game.candy().pos) * ease;
-            for (int id : menuart::gamecandies[menu.skins[0]]) world(id,position,31,0,1-.35f*ease);
-        }
-    }
     world(menuart::seat0 + menu.pack, game.definition.target);
     const bool sleeping = game.definition.night && !game.awake && game.state == dx::outcome::playing;
     const float sleepage = (elapsed-game.nightstart)*.016f;
@@ -953,6 +943,16 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
     if (!game.split && !game.hidden() && menu.skins[0] > 0 && game.state != dx::outcome::won && game.failreason != 2 && game.failreason != 3) {
         const int px = wx(game.candy().pos.x), py = wy(game.candy().pos.y);
         for (int id : menuart::gamecandies[menu.skins[0]]) add(id,px,py,{},GL_FLIP_NONE,1,0,gamevisuals::candyalpha(game.candy().pos));
+    }
+    if (game.state == dx::outcome::won && !game.split) {
+        const int age = elapsed - game.resultvisual;
+        if (age >= 0 && age < 7) {
+            const float phase = age / 7.0f;
+            const float ease = phase * phase * (3 - 2 * phase);
+            const dx::point mouth = game.definition.target + dx::point{0,31};
+            const dx::point position = game.candy().pos + (mouth - game.candy().pos) * ease;
+            for (int id : menuart::gamecandies[menu.skins[0]]) world(id,position,31,0,1-.35f*ease);
+        }
     }
     if (game.mergeage * .016f < .25f) world(menuart::merge0 + static_cast<int>(game.mergeage * .016f / .05f), game.candy().pos);
     if (game.inlantern && game.captureage < .1f) {
@@ -1209,7 +1209,7 @@ void paintupper(bool ground,int stars) {
     }
 }
 
-void upperoverlay(const ui::controller& menu,const dx::simulation& game) {
+void upperstatus(const ui::controller& menu,const dx::simulation& game) {
     upper::shade(31);
     upper::transient(menu.door || menu.mode==ui::view::results);
     if (menu.mode==ui::view::playing || menu.mode==ui::view::paused || menu.mode==ui::view::results) {
@@ -1226,6 +1226,9 @@ void upperoverlay(const ui::controller& menu,const dx::simulation& game) {
             left+=advance;
         }
     }
+}
+
+void uppercover(const ui::controller& menu) {
     count=groundend=starback=starfront=0;
     reusevisibility=false;
     overlaystart=-1;

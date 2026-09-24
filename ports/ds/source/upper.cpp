@@ -24,6 +24,7 @@
 
 namespace upper {
 alignas(32) static unsigned char backdrop[256*208];
+alignas(32) static unsigned char savedframe[256*192];
 static unsigned char* lookup;
 static unsigned lookupversion=~0u;
 alignas(32) static std::uint16_t palette[256];
@@ -69,6 +70,8 @@ void shade(int value) { brightness = std::clamp(value,0,31); }
 void transient(bool enabled) { moving=enabled; }
 void cutout(bool enabled) { photograph=enabled; }
 void mirror(bool enabled) { mirrored=enabled; }
+void cacheframe() { std::memcpy(savedframe,frontend::workspace(),sizeof(savedframe)); }
+void restoreframe() { std::memcpy(frontend::workspace(),savedframe,sizeof(savedframe)); }
 static void fail(unsigned value) { error = value; nocashMessage("CTRD DS: upper-screen asset error"); gamelog::event("upper.error code=%u",value); }
 static bool read(FILE* file, unsigned offset, void* destination, unsigned bytes) {
     readbytes += bytes;

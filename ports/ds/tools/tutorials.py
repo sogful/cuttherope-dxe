@@ -1,6 +1,13 @@
 import xml.etree.ElementTree as xml
 from levels import boxes
 
+touchtext = {
+    "TUTORIAL_LVL_1_1_01": "Swipe across or tap to cut the rope",
+    "TUTORIAL_LVL_1_5_01": "Tap to pop the bubble",
+    "TUTORIAL_LVL_2_1_01": "Tap the air cushion to blow the object",
+    "TUTORIAL_LVL_3_1_01": "Some rope hooks can be moved with the stylus",
+}
+
 
 def build(menu):
     info = {"items": [], "spans": []}
@@ -30,7 +37,9 @@ def build(menu):
                     if node.tag == "tutorialText":
                         name = f"hint{box}x{level}x{code}x{len(info['items'])}"
                         wrap = float(node.get("width")) * 3
-                        image, origin, height = menu["textimage"](strings[node.get("text")].replace("*", "\n"), code, True, wrap, factor=1)
+                        key = node.get("text")
+                        value = touchtext.get(key, strings[key]) if code == "en" else strings[key]
+                        image, origin, height = menu["textimage"](value.replace("*", "\n"), code, True, wrap, factor=1)
                         menu["add"](name, image, f"texthints{box}x{level}x{code}", origin)
                         x += wrap / 2
                         y += height / 2

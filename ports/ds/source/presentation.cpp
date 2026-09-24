@@ -90,6 +90,7 @@ static ARM_CODE ITCM_CODE void strand(const dx::simulation& game, int index, int
                 const int ny=nx?0:1;
                 glLine(previousx,previousy,x,y,color);
                 glLine(previousx+nx,previousy+ny,x+nx,y+ny,color);
+                glLine(previousx-nx,previousy-ny,x-nx,y-ny,color);
             }
         }
         previousx = x; previousy = y;
@@ -233,6 +234,7 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
     const bool paused=menu.mode==ui::view::paused && !menu.door && menu.white()<=0;
     if (paused && heldpause) return;
     heldpause=paused;
+    const bool boxmoving=menu.door || (menu.mode==ui::view::results && menu.age<32);
     if (menu.mode==ui::view::playing && !menu.door && menu.white()<=0) {
         int segments=0;
         for (int i=0;i<game.definition.hookcount;++i) segments+=game.ropes[i].count;
@@ -240,7 +242,10 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
         if (refresh%interval) return;
     }
     static int closed=-1;
+    static bool boxcached=false;
     const bool covered=menu.mode==ui::view::results && menu.age>=32;
+    const bool boxstart=menu.door?menu.doorframe<=1:menu.mode==ui::view::results && menu.age<=1;
+    if (!boxmoving || boxstart) boxcached=false;
     if (covered && closed==menu.pack) return;
     closed=covered?menu.pack:-1;
     if (menu.frontend()) {
@@ -250,7 +255,8 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
     } else {
         const int sections=std::clamp(static_cast<int>(std::ceil(game.definition.height/1440)),1,3);
         upper::begin(upperart::worlds[menu.pack][sections-1],std::lround(game.cameray*scale));
-        if (!covered && menu.mode!=ui::view::results) {
+        if (boxmoving && boxcached) upper::restoreframe();
+        else if (!covered && menu.mode!=ui::view::results) {
             DS_SCOPE(upperworld);
             paintingupper=true;
             cameray=game.cameray-frontend::upperdistance;
@@ -260,8 +266,13 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
             paintingupper=false;
             cameray=game.cameray;
         }
+        if (boxmoving && !boxcached) {
+            upper::cacheframe();
+            boxcached=true;
+        }
         DS_SCOPE(upperhud);
-        frontend::upperoverlay(menu,game);
+        frontend::upperstatus(menu,game);
+        frontend::uppercover(menu);
     }
     upper::finish();
 }
