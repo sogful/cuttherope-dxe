@@ -74,7 +74,11 @@ static ARM_CODE ITCM_CODE void strand(const dx::simulation& game, int index, int
         const int x = std::lround(pixel.x), y = std::lround(pixel.y);
         if (i) {
             if (paintingupper) upper::line(previousx,previousy,x,y,color,alpha);
-            else glLine(previousx,previousy,x,y,color);
+            else {
+                const int directionx=(x>previousx)-(x<previousx);
+                const int directiony=(y>previousy)-(y<previousy);
+                glLine(previousx,previousy,x+directionx-1,y+directiony-1,color);
+            }
         }
         previousx = x; previousy = y;
     }
@@ -237,7 +241,8 @@ static void scene(const dx::simulation& game,int frame,const ui::controller& men
         if (!frontend::uppermenu(id)) return;
     } else {
         const int sections=std::clamp(static_cast<int>(std::ceil(game.definition.height/1440)),1,3);
-        upper::begin(upperart::worlds[menu.pack][sections-1],std::lround(game.cameray*scale));
+        const int top=std::lround(game.cameray*scale)+(sections==1?frontend::upperpixels-192:0);
+        upper::begin(upperart::worlds[menu.pack][sections-1],top);
         if (boxmoving && boxcached) upper::restoreframe();
         else if (!covered && menu.mode!=ui::view::results) {
             DS_SCOPE(upperworld);
