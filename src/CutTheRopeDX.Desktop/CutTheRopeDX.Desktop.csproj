@@ -134,8 +134,7 @@
     a signature over arm64 binaries cannot match one over x64.
 
     A RID-less build leaves the per-RID slices in the output rather than a merged bundle, so
-    there is nothing further here for this target to sign. Shipping builds are unaffected
-    either way: distribution/bundle_macos.sh publishes a single RID and assembles its own app.
+    there is nothing further here for this target to sign.
   -->
   <Target Name="CodesignMacOSBundle" AfterTargets="Build" Condition="'$(_IsMultiRidBuild)' != 'true' AND '$(TargetFramework)' == 'net10.0-macos' AND '$(RuntimeIdentifier)' != '' AND $([MSBuild]::IsOsPlatform('OSX'))">
     <PropertyGroup>

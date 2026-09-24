@@ -14,11 +14,10 @@ on:
             - ".github/workflows/pr-quality.yml"
             - ".github/actions/**"
             # The headless suite sizes sprites from the checked-in image manifest, and the
-            # packaging and web-content scripts are covered by their own tests. A change to
-            # either that matched nothing above used to reach main without being built at all.
+            # web-content scripts are covered by their own tests. A change to either that
+            # matched nothing above used to reach main without being built at all.
             - "content/**"
             - "scripts/**"
-            - "distribution/**"
             # The page decides which of the two published runtimes it can run, and that
             # decision lives entirely in these files.
             - "src/CutTheRopeDX.Browser/wwwroot/**"
@@ -53,10 +52,7 @@ jobs:
             - name: Test
               run: dotnet test --solution CutTheRopeDX.slnx --no-build -c Release
 
-    # The release and web-content scripts carry their own tests - the ANGLE checksum
-    # verification, the refusal of an incomplete archive, and the directory the game looks in
-    # for those libraries among them. Nothing ran them, so they documented that behaviour
-    # rather than holding it.
+    # The web-content scripts carry their own tests.
     python-quality:
         runs-on: ubuntu-latest
 
@@ -75,7 +71,7 @@ jobs:
               run: pip install -r scripts/requirements-dev.txt
 
             - name: Test
-              run: python -m pytest scripts/tests distribution/tests -q
+              run: python -m pytest scripts/tests -q
 
     # The runtime choice, the event writer and the isolation bootstrap are JavaScript, and
     # they run before any managed code exists to be tested.

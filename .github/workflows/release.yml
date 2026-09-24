@@ -1,146 +1,17 @@
-name: Release
+name: Release Ports
 
 on:
-    push:
-        tags: ["v*"]
     workflow_dispatch:
-        inputs:
-            version:
-                description: "Version to build, e.g. 2.30.0"
-                required: true
-                type: string
     workflow_call:
-        inputs:
-            version:
-                description: "Version to build, e.g. 1.0.0-prerelease+57"
-                required: true
-                type: string
 
 permissions:
     contents: read
 
 jobs:
-    version:
-        runs-on: ubuntu-latest
-        outputs:
-            version: ${{ steps.resolve.outputs.version }}
-            prerelease: ${{ steps.resolve.outputs.prerelease }}
-        steps:
-            - id: resolve
-              env:
-                  INPUT_VERSION: ${{ inputs.version }}
-              run: |
-                  if [ -n "$INPUT_VERSION" ]; then
-                      version="$INPUT_VERSION"
-                  else
-                      version="${GITHUB_REF_NAME#v}"
-                  fi
-                  if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-prerelease\+[0-9]+)?$'; then
-                      echo "::error::'$version' is not X.Y.Z or X.Y.Z-prerelease+N"
-                      exit 1
-                  fi
-                  case "$version" in
-                      *-prerelease*) prerelease=true ;;
-                      *) prerelease=false ;;
-                  esac
-                  echo "version=$version" >> "$GITHUB_OUTPUT"
-                  echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
-
     assets:
         uses: ./.github/workflows/content.yml
 
-    windows:
-        needs: [version, assets]
-        runs-on: windows-latest
-        steps:
-            - uses: actions/checkout@v7
-            - uses: ./.github/actions/setup-dotnet
-
-            - name: Restore fetched assets
-              uses: actions/cache/restore@v6
-              with:
-                  path: ${{ needs.assets.outputs.cache-path }}
-                  key: ${{ needs.assets.outputs.cache-key }}
-                  enableCrossOsArchive: true
-
-            - run: python distribution/release_windows.py "${{ needs.version.outputs.version }}"
-
-            - uses: actions/upload-artifact@v7
-              with:
-                  name: bundle-windows
-                  path: src/CutTheRopeDX.Desktop/bin/release_github/*.7z
-                  compression-level: 0
-                  retention-days: 7
-
-    macos:
-        needs: [version, assets]
-        runs-on: macos-latest
-        steps:
-            - uses: actions/checkout@v7
-            - uses: ./.github/actions/setup-dotnet
-
-            - name: Install macOS workload
-              run: dotnet workload install macos
-
-            - name: Restore fetched assets
-              uses: actions/cache/restore@v6
-              with:
-                  path: ${{ needs.assets.outputs.cache-path }}
-                  key: ${{ needs.assets.outputs.cache-key }}
-                  enableCrossOsArchive: true
-
-            - run: brew install ffmpeg@9
-
-            - name: Build ffmpeg DMG
-              env:
-                  USE_AOT: "true"
-              run: ./distribution/bundle_macos.sh "${{ needs.version.outputs.version }}"
-
-            - name: Build AVFoundation DMG
-              run: python3 distribution/release_macos_tahoe.py "${{ needs.version.outputs.version }}"
-
-            - uses: actions/upload-artifact@v7
-              with:
-                  name: bundle-macos
-                  path: src/CutTheRopeDX.Desktop/bin/release_github/*.dmg
-                  compression-level: 0
-                  retention-days: 7
-
-    linux:
-        needs: [version, assets]
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v7
-            - uses: ./.github/actions/setup-dotnet
-
-            - name: Restore fetched assets
-              uses: actions/cache/restore@v6
-              with:
-                  path: ${{ needs.assets.outputs.cache-path }}
-                  key: ${{ needs.assets.outputs.cache-key }}
-                  enableCrossOsArchive: true
-
-            - run: ./distribution/build_appimage.sh "${{ needs.version.outputs.version }}"
-
-            - uses: actions/upload-artifact@v7
-              with:
-                  name: bundle-linux
-                  path: src/CutTheRopeDX.Desktop/bin/release_github/*.AppImage
-                  compression-level: 0
-                  retention-days: 7
-
-    browser:
-        needs: version
-        permissions:
-            contents: read
-            pages: write
-            id-token: write
-        uses: ./.github/workflows/deploy-pages.yml
-        with:
-            version: ${{ needs.version.outputs.version }}
-
     android:
-        needs: version
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v7
@@ -170,14 +41,12 @@ jobs:
                   dotnet build
                   src/CutTheRopeDX.Android/CutTheRopeDX.Android.csproj
                   -c Release
-                  -p:Version=${{ needs.version.outputs.version }}
-                  -p:ApplicationDisplayVersion=${{ needs.version.outputs.version }}
+                  -p:Version=1.0.0
+                  -p:ApplicationDisplayVersion=1.0.0
                   -p:ApplicationVersion=${{ github.run_number }}
                   -p:AndroidPackageFormat=apk
 
             - name: Package Android release
-              env:
-                  VERSION: ${{ needs.version.outputs.version }}
               run: |
                   mkdir -p artifacts
                   apk=$(find src/CutTheRopeDX.Android/bin/Release/net10.0-android36.0 -name '*-Signed.apk' -print -quit)
@@ -185,17 +54,17 @@ jobs:
                       apk=$(find src/CutTheRopeDX.Android/bin/Release/net10.0-android36.0 -name '*.apk' -print -quit)
                   fi
                   test -n "$apk"
-                  cp "$apk" "artifacts/CutTheRopeDX-$VERSION-Android.apk"
+                  cp "$apk" artifacts/CutTheRopeDX.apk
 
             - uses: actions/upload-artifact@v7
               with:
                   name: bundle-android
-                  path: artifacts/*.apk
+                  path: artifacts/CutTheRopeDX.apk
                   compression-level: 0
                   retention-days: 7
 
     ds:
-        needs: [version, assets]
+        needs: assets
         runs-on: windows-latest
         steps:
             - uses: actions/checkout@v7
@@ -270,31 +139,26 @@ jobs:
 
             - name: Package Nintendo DS release
               shell: pwsh
-              env:
-                  VERSION: ${{ needs.version.outputs.version }}
               run: |
                   New-Item -ItemType Directory -Path artifacts | Out-Null
-                  Copy-Item ports/ds/dist/cuttherope.nds "artifacts/CutTheRopeDX-$env:VERSION-Nintendo-DS.nds"
+                  Copy-Item ports/ds/dist/cuttherope.nds artifacts/CutTheRopeDX.nds
 
             - uses: actions/upload-artifact@v7
               with:
                   name: bundle-ds
-                  path: artifacts/*.nds
+                  path: artifacts/CutTheRopeDX.nds
                   compression-level: 0
                   retention-days: 7
 
     roblox:
-        needs: version
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v7
 
             - name: Package Rojo source
-              env:
-                  VERSION: ${{ needs.version.outputs.version }}
               run: |
                   mkdir -p artifacts
-                  zip -qr "artifacts/CutTheRopeDX-$VERSION-Roblox.zip" \
+                  zip -qr artifacts/CutTheRopeDXRoblox.zip \
                       ports/roblox/src \
                       ports/roblox/tests \
                       ports/roblox/default.project.json \
@@ -303,28 +167,40 @@ jobs:
             - uses: actions/upload-artifact@v7
               with:
                   name: bundle-roblox
-                  path: artifacts/*.zip
+                  path: artifacts/CutTheRopeDXRoblox.zip
                   compression-level: 0
                   retention-days: 7
 
     release:
-        needs: [version, windows, macos, linux, browser, android, ds, roblox]
+        needs: [android, ds, roblox]
         runs-on: ubuntu-latest
         permissions:
             contents: write
         steps:
+            - uses: actions/checkout@v7
+              with:
+                  fetch-depth: 0
+
             - uses: actions/download-artifact@v8
               with:
                   pattern: bundle-*
                   path: artifacts
                   merge-multiple: true
 
+            - name: Move rolling release tag
+              run: |
+                  git tag --force latest "$GITHUB_SHA"
+                  git push origin refs/tags/latest --force
+
             - uses: softprops/action-gh-release@v3
               with:
-                  tag_name: v${{ needs.version.outputs.version }}
-                  name: v${{ needs.version.outputs.version }}
-                  target_commitish: ${{ github.sha }}
-                  prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
-                  make_latest: ${{ needs.version.outputs.prerelease == 'true' && 'false' || 'true' }}
-                  files: artifacts/*
-                  generate_release_notes: true
+                  tag_name: latest
+                  name: Latest build
+                  prerelease: false
+                  make_latest: true
+                  files: |
+                      artifacts/CutTheRopeDX.apk
+                      artifacts/CutTheRopeDX.nds
+                      artifacts/CutTheRopeDXRoblox.zip
+                  fail_on_unmatched_files: true
+                  generate_release_notes: false

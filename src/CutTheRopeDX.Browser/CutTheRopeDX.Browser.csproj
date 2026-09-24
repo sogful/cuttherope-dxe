@@ -15,9 +15,7 @@
     <RunAOTCompilation Condition="'$(CI)' == 'true'">false</RunAOTCompilation>
     <WasmNativeStrip>true</WasmNativeStrip>
     <!--
-      Two runtimes are published from this one project and wwwroot, and this is what tells
-      them apart. Set it to publish the fallback; scripts/publish_browser.py builds both and
-      lays the fallback's framework tree down beside the threaded one.
+      This switch selects the fallback runtime for hosts without cross-origin isolation.
 
       Threaded is the better build where it can run: the managed owner thread is a worker, so
       it owns the WebGL context outright - SkiaSharp's WebAssembly archive binds the raw
@@ -62,13 +60,9 @@
     WASM SDK fingerprint and Brotli-compress it would add minutes to publish and gain
     nothing, so it ships as plain static files.
 
-    CtrdxSkipContent drops it entirely. scripts/publish_browser.py publishes this project
-    twice and keeps only one framework tree from the second run, so copying 30MB it is
-    about to delete is 30MB of nothing.
   -->
   <PropertyGroup>
     <CtrdxContentCopy>PreserveNewest</CtrdxContentCopy>
-    <CtrdxContentCopy Condition="'$(CtrdxSkipContent)' == 'true'">Never</CtrdxContentCopy>
   </PropertyGroup>
 
   <ItemGroup>
