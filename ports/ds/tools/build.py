@@ -9,9 +9,16 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 
 
+def needs_upper_rebuild(upper, dependencies, rebuild_assets, reuse_assets):
+    if rebuild_assets or not upper.exists():
+        return True
+    return not reuse_assets and any(path.stat().st_mtime > upper.stat().st_mtime for path in dependencies)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--assets", action="store_true", help="Rebuild converted assets")
+    parser.add_argument("--assets-only", action="store_true", help="Rebuild converted assets without compiling a ROM")
     parser.add_argument("--reuse-assets", action="store_true", help="Trust a restored generated-asset cache")
     variant = parser.add_mutually_exclusive_group()
     variant.add_argument("--bootcheck", action="store_true", help="Build a separate on-screen/SD-log loader and ROM filesystem probe")
@@ -21,26 +28,30 @@ def main():
     wonderful = root / ".tools/msys64/opt/wonderful"
     sdk = Path(os.environ.get("BLOCKSDS", str(wonderful / "thirdparty/blocksds/core")))
     compiler = wonderful / "toolchain/gcc-arm-none-eabi/bin/arm-none-eabi-g++.exe"
-    if not compiler.exists():
+    if not args.assets_only and not compiler.exists():
         raise SystemExit("Run powershell -File tools/setup.ps1 first.")
     os.chdir(root)
-    if args.assets or not (root / "generated/assets.hpp").exists() or not (root / "generated/menuassets.hpp").exists():
+    rebuild_assets = args.assets or args.assets_only
+    if rebuild_assets or not (root / "generated/assets.hpp").exists() or not (root / "generated/menuassets.hpp").exists():
         subprocess.run([sys.executable, "tools/assets.py"], check=True)
     import menulayout
     menulayout.update(root/"generated")
     upper = root / "generated/uppermanifest.json"
-    upper_stale = not args.reuse_assets and any(path.stat().st_mtime > upper.stat().st_mtime for path in
-            (root/"tools/upperart.py",root/"tools/upperhud.py",root/"tools/uppermotion.py",root/"assets/feedcandy.png",root/"generated/menumanifest.json"))
-    if args.assets or not upper.exists() or upper_stale:
+    upper_dependencies = (root/"tools/upperart.py",root/"tools/upperhud.py",root/"tools/uppermotion.py",
+                          root/"assets/feedcandy.png",root/"generated/menumanifest.json")
+    if needs_upper_rebuild(upper, upper_dependencies, rebuild_assets, args.reuse_assets):
         subprocess.run([sys.executable, "tools/upperart.py"], check=True)
+    import banner
+    icon = banner.update()
+    if args.assets_only:
+        print("Converted Nintendo DS assets", flush=True)
+        return
     build = root / "build" / "logging" if args.logging else root / "build" / "profile" if args.profile else root / "build"
     import backgroundstore
     backgroundstore.update(root/"generated")
     dist = root / "dist"
     build.mkdir(parents=True, exist_ok=True)
     dist.mkdir(exist_ok=True)
-    import banner
-    icon = banner.update()
     if args.bootcheck:
         import bootassets
         bootassets.build(root/"generated")
