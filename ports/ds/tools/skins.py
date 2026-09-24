@@ -79,6 +79,7 @@ def build(menu):
         if not indexpath.exists():
             environment = os.environ.copy()
             environment["DX_SKIN_EXPORT"] = str(baked)
+            environment["DX_CONTENT_ROOT"] = str(content)
             project = root.parents[1] / "src/CutTheRopeDX.Rendering.Skia.Tests/CutTheRopeDX.Rendering.Skia.Tests.csproj"
             subprocess.run(["dotnet", "test", str(project), "-c", "Release", "--filter",
                             "FullyQualifiedName~RobloxSkinExportTests.ExportOriginalXmlAnimations"], env=environment, check=True)

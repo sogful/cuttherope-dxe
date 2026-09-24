@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -85,7 +86,10 @@ namespace CutTheRopeDX.Rendering.Skia.Tests
                     float seconds = (float)duration.Invoke(backend, [id]);
                     float rate = slow.Contains(id) ? .6f : 1f;
                     int count = Math.Max(1, (int)MathF.Ceiling(seconds * 20));
-                    string folder = Path.Combine(output, slot.ToString(), id.ToString());
+                    string folder = Path.Combine(
+                        output,
+                        slot.ToString(CultureInfo.InvariantCulture),
+                        id.ToString(CultureInfo.InvariantCulture));
                     _ = Directory.CreateDirectory(folder);
                     for (int frame = 0; frame < count; frame++)
                     {

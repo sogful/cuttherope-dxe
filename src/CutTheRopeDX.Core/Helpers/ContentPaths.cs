@@ -164,6 +164,12 @@ namespace CutTheRopeDX.Helpers
         /// <returns>The absolute content root path for the active platform/runtime.</returns>
         public static string GetContentRootAbsolute()
         {
+            string overridePath = Environment.GetEnvironmentVariable("DX_CONTENT_ROOT");
+            if (!string.IsNullOrWhiteSpace(overridePath))
+            {
+                return Path.GetFullPath(overridePath);
+            }
+
             string basePath = AppContext.BaseDirectory;
             DirectoryInfo dir = new(basePath);
 
