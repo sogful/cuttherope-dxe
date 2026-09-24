@@ -259,7 +259,7 @@ int main(int argc,char** argv) {
         if (menu.pack==7 && game.cameray==0) {
             bool aligned=false;
             for (int i=0;i<frontend::count;++i) if (frontend::commands[i].id==menuart::gravity2 &&
-                std::abs(frontend::commands[i].y-97)<=1) aligned=true;
+                std::abs(frontend::commands[i].y-145)<=1) aligned=true;
             assert(aligned);
         }
         for (int i=0;i<count;++i) {
@@ -347,26 +347,26 @@ int main(int argc,char** argv) {
     menu={}; menu.mode=ui::view::playing;
     game.reset(dx::levels[0]);
     const unsigned blank=hash();
-    frontend::upperoverlay(menu,game);
+    frontend::upperstatus(menu,game); frontend::uppercover(menu);
     assert(hash()!=blank);
     const unsigned empty=hash();
     upper::begin(upperart::worlds[0][0]);
     menu.starage[0]=60; game.count=1;
-    frontend::upperoverlay(menu,game);
+    frontend::upperstatus(menu,game); frontend::uppercover(menu);
     assert(hash()!=empty);
     const unsigned playing=hash();
     menu.mode=ui::view::results; menu.age=0;
     upper::begin(upperart::worlds[0][0]);
-    frontend::upperoverlay(menu,game);
+    frontend::upperstatus(menu,game); frontend::uppercover(menu);
     assert(hash()!=blank);
     menu.age=32;
     upper::begin(upperart::worlds[0][0]);
-    frontend::upperoverlay(menu,game);
+    frontend::upperstatus(menu,game); frontend::uppercover(menu);
     assert(hash()!=playing);
     const unsigned closed=hash();
     ++game.count;
     upper::begin(upperart::worlds[0][0]);
-    frontend::upperoverlay(menu,game);
+    frontend::upperstatus(menu,game); frontend::uppercover(menu);
     assert(hash()==closed);
     for (int box=0;box<17;++box) for (int step=0;step<=32;++step) {
         upper::begin(upperart::worlds[box][0]);

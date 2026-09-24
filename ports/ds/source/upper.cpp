@@ -677,7 +677,7 @@ void line(int x,int y,int endx,int endy,unsigned color,int alpha) {
     if ((y<0 && endy<0) || (y>=192 && endy>=192) || (x<0 && endx<0) || (x>=256 && endx>=256) || alpha<=0) return;
     starcovered|=overstars(std::min(x,endx),std::min(y,endy),std::max(x,endx)+1,std::max(y,endy)+1);
     color=tint(color,0x7fff);
-    const int dx=std::abs(endx-x), sx=x<endx?1:-1, dy=-std::abs(endy-y), sy=y<endy?1:-1;
+    const int dx=std::abs(endx-x),sx=x<endx?1:-1,dy=-std::abs(endy-y),sy=y<endy?1:-1;
     int delta=dx+dy;
     for (int limit=0;limit<4096;++limit) {
         if (x>=0 && x<256 && y>=0 && y<192) {

@@ -127,7 +127,8 @@ static bool visible(const command& item,bool* above=nullptr) {
     }
     // One-pixel margin covers the fixed-point sprite transform's rounding.
     const bool horizontal=left + width + 1 > std::max(0,item.bounds.left) && left - 1 < std::min(256,item.bounds.right);
-    if (above) *above=horizontal && top+height+193>std::max(0,item.bounds.top) && top+191<std::min(192,item.bounds.bottom);
+    if (above) *above=horizontal && top+height+upperpixels+1>std::max(0,item.bounds.top) &&
+        top+upperpixels-1<std::min(192,item.bounds.bottom);
     return horizontal &&
         top + height + 1 > std::max(0,item.bounds.top) && top - 1 < std::min(192,item.bounds.bottom);
 }
@@ -733,7 +734,7 @@ void preparegame(const ui::controller& menu, const dx::simulation& game, int ela
         const float turn = std::min(1.0f, game.gravityage * .016f / .3f);
         const float angle = game.inverted ? 180 * turn : 180 * (1 - turn);
         for (int row = -1; row <= 3; ++row)
-            world(menuart::gravity2, {1284,724.0f + (row < 0 ? -upperdistance : row * 1440)}, 31, angle);
+            world(menuart::gravity2, {1284,724.0f + row * 1440}, 31, angle);
     }
     pollen(game,elapsed);
     for (int i = 0; i < game.definition.switchcount; ++i)

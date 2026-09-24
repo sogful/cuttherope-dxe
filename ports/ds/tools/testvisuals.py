@@ -88,8 +88,11 @@ backgrounddata=backgroundstore.read(generated,"upperbg")
 palettedata=(generated/"nitro/upperpal.bin").read_bytes()
 for box in range(17):
     original=Image.open(generated/f"background{box+1}x1.png").crop((0,0,256,192))
+    continuation=Image.new("RGB",(256,192))
+    continuation.paste(original,(0,-144))
+    continuation.paste(original,(0,48))
     lookup=np.frombuffer(palettedata,dtype=np.uint8,count=32768,offset=(box+3)*(512+32768)+512)
-    expected=upperart.indexed(upperart.dim(original,17),lookup)
+    expected=upperart.indexed(upperart.dim(continuation,17),lookup)
     for sections in range(3):
         offset=upper["backgrounds"][20+box*3+sections][0]
         assert backgrounddata[offset:offset+49152]==expected, "Above-map space must use the single-screen background"

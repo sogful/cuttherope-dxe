@@ -56,42 +56,25 @@ static ARM_CODE ITCM_CODE void strand(const dx::simulation& game, int index, int
     dx::point points[125];
     int size = 0;
     game.samples(index, first, count, points, size, true);
-    DS_PROFILE_DO(if (size > 0) profiling::data[profiling::segments] += (size - 1) * 2);
+    DS_PROFILE_DO(if (size > 0) profiling::data[profiling::segments] += size - 1);
     const dx::rope& rope = game.ropes[index];
     const int alpha = rope.cut ? std::max(1, std::min(31, static_cast<int>(rope.remaining / 1.95f * 31))) : 31;
     if (!paintingupper) glPolyFmt(POLY_ALPHA(alpha) | POLY_CULL_NONE | POLY_ID(49));
-    static constexpr float colors[9][2][3] = {
-        {{.475f,.305f,.185f},{.67555556f,.44f,.27555556f}}, {{.624f,.294f,.114f},{1,.627f,.463f}},
-        {{.404f,.612f,.635f},{.773f,.898f,.902f}}, {{.757f,.533f,0},{.98f,.843f,.2f}},
-        {{.980f,.243f,.243f},{.282f,.525f,.153f}}, {{.176f,.318f,.659f},{1,1,1}},
-        {{.631f,.957f,1},{.996f,.631f,.953f}}, {{1,.329f,.318f},{1,.992f,.941f}},
-        {{1,.831f,.404f},{.251f,.239f,.278f}}
+    static constexpr float colors[9][3] = {
+        {.475f,.305f,.185f}, {.624f,.294f,.114f}, {.404f,.612f,.635f},
+        {.757f,.533f,0}, {.980f,.243f,.243f}, {.176f,.318f,.659f},
+        {.631f,.957f,1}, {1,.329f,.318f}, {1,.831f,.404f}
     };
-    u16 palette[2];
-    for (int i = 0; i < 2; ++i) {
-        const float* rgb = colors[skin][i];
-        palette[i] = rope.pending >= 0 ? RGB15(31, 31, 31) : RGB15(std::lround(rgb[0] * 31), std::lround(rgb[1] * 31), std::lround(rgb[2] * 31));
-    }
+    const float* rgb=colors[skin];
+    const u16 color=rope.pending>=0?RGB15(31,31,31):
+        RGB15(std::lround(rgb[0]*31),std::lround(rgb[1]*31),std::lround(rgb[2]*31));
     int previousx = 0, previousy = 0;
     for (int i = 0; i < size; ++i) {
         const auto pixel = screen(points[i]);
         const int x = std::lround(pixel.x), y = std::lround(pixel.y);
         if (i) {
-            const u16 color = palette[(i / 3) % 2 == 0];
-            if (paintingupper) {
-                upper::line(previousx,previousy,x,y,color,alpha);
-                const int nx=std::abs(x-previousx)<std::abs(y-previousy)?1:0;
-                const int ny=nx?0:1;
-                const int fringe=std::max(1,alpha*9/31);
-                upper::line(previousx+nx,previousy+ny,x+nx,y+ny,color,fringe);
-                upper::line(previousx-nx,previousy-ny,x-nx,y-ny,color,fringe);
-            } else {
-                const int nx=std::abs(x-previousx)<std::abs(y-previousy)?1:0;
-                const int ny=nx?0:1;
-                glLine(previousx,previousy,x,y,color);
-                glLine(previousx+nx,previousy+ny,x+nx,y+ny,color);
-                glLine(previousx-nx,previousy-ny,x-nx,y-ny,color);
-            }
+            if (paintingupper) upper::line(previousx,previousy,x,y,color,alpha);
+            else glLine(previousx,previousy,x,y,color);
         }
         previousx = x; previousy = y;
     }

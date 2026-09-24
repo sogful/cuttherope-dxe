@@ -111,7 +111,9 @@ def main():
         row=[]
         for image in group:
             extended = Image.new("RGB",(256,image.height+240))
-            extended.paste(group[0].crop((0,0,256,240)),(0,0))
+            tile = group[0].crop((0,0,256,192))
+            for top in range(-144,240,192):
+                extended.paste(tile,(0,top))
             extended.paste(image,(0,240))
             row.append(background(dim(extended,17),3+box))
         gamebacks.append(row)
