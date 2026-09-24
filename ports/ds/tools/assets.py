@@ -10,6 +10,7 @@ import xml.etree.ElementTree as xml
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+import soundfile
 import colors
 
 root = Path(__file__).resolve().parents[1]
@@ -163,15 +164,25 @@ def main():
     audio = []
     for name in sfx + ["game_music", "menu_music"]:
         music = name.endswith("_music")
-        path = content / ("sounds" if music else "sounds/sfx") / (name + ".wav")
+        path = content / ("sounds" if music else "sounds/sfx") / (name + (".flac" if music else ".wav"))
         sources.add(path)
-        with wave.open(str(path), "rb") as sound:
-            data = sound.readframes(sound.getnframes())
-            width = sound.getsampwidth()
-            if sound.getnchannels() == 2:
-                data = audioop.tomono(data, width, .5, .5)
-            data, _ = audioop.ratecv(data, width, 1, sound.getframerate(), 11025 if music else 16000, None)
-            data = audioop.lin2lin(data, width, 1 if music else 2)
+        if music:
+            samples, rate = soundfile.read(path, dtype="int16", always_2d=True)
+            channels = samples.shape[1]
+            if channels not in (1, 2):
+                raise ValueError(f"Unsupported channel count in {path}: {channels}")
+            data = samples.astype("<i2", copy=False).tobytes()
+            width = 2
+        else:
+            with wave.open(str(path), "rb") as sound:
+                data = sound.readframes(sound.getnframes())
+                width = sound.getsampwidth()
+                channels = sound.getnchannels()
+                rate = sound.getframerate()
+        if channels == 2:
+            data = audioop.tomono(data, width, .5, .5)
+        data, _ = audioop.ratecv(data, width, 1, rate, 11025 if music else 16000, None)
+        data = audioop.lin2lin(data, width, 1 if music else 2)
         data += b"\0" * (-len(data) % 4)
         stem = name.replace("_", "")
         (output / (stem + ".bin")).write_bytes(data)
