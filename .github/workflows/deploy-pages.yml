@@ -10,20 +10,22 @@ on:
                 description: "Version used in the downloadable browser archive."
                 required: false
                 type: string
+            package_only:
+                description: "Build the browser release without deploying GitHub Pages."
+                required: false
+                default: true
+                type: boolean
 
-# Least-privilege token plus the OIDC id-token the Pages deploy needs.
 permissions:
     contents: read
     pages: write
     id-token: write
 
-# Never run two Pages deploys at once; let a newer run supersede an in-flight one.
 concurrency:
-    group: pages
+    group: pages-${{ inputs.package_only && 'package' || 'deploy' }}
     cancel-in-progress: true
 
 jobs:
-    # Shared with the release workflow, so the asset download is defined in one place.
     content:
         uses: ./.github/workflows/content.yml
 
@@ -35,7 +37,6 @@ jobs:
 
             - uses: ./.github/actions/setup-dotnet
 
-            # Required for the browser-wasm publish (native relink; WasmNativeStrip).
             - name: Install wasm-tools workload
               run: dotnet workload install wasm-tools
 
@@ -45,19 +46,11 @@ jobs:
                   path: ${{ needs.content.outputs.cache-path }}
                   key: ${{ needs.content.outputs.cache-key }}
                   enableCrossOsArchive: true
-                  # The content job just populated this; a miss means something is wrong and
-                  # publishing an assetless game would only hide it.
                   fail-on-cache-miss: true
 
             - name: Install web content tooling
               run: python3 -m pip install --upgrade pillow fonttools
 
-            # One ffmpeg does both jobs: Opus for the sound effects and VP9/Opus for the
-            # cutscenes. The runner image ships none, and apt spends longer refreshing its
-            # index than this takes, so it is the BtbN build the release already pins, read
-            # from download_ffmpeg_linux.sh so the two cannot drift. build_web_content.py
-            # checks the encoders before converting, so assert them here rather than
-            # discovering a gap partway through a deploy.
             - name: Install ffmpeg
               id: ffmpeg
               run: |
@@ -78,10 +71,6 @@ jobs:
                   echo "CTRDX_FFMPEG=$FFMPEG" >> "$GITHUB_ENV"
                   echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-            # The converter is incremental, stamping each output with its source's SHA-256 and
-            # the encoder settings, so any earlier payload is a safe starting point: whatever
-            # changed since is reconverted and the rest is skipped. The ffmpeg pin heads the
-            # prefix because a new encoder build is the one change those stamps cannot see.
             - name: Cache converted content
               uses: actions/cache@v6
               with:
@@ -90,23 +79,12 @@ jobs:
                   restore-keys: |
                       web-content-${{ steps.ffmpeg.outputs.tag }}-
 
-            # --require-video makes a missing or unusable ffmpeg fail the deploy rather than
-            # warn: a published build silently losing its cutscenes is the bug this had.
             - name: Convert content for the browser
               run: python3 scripts/build_web_content.py --require-video
 
-            # Two runtimes go out: the threaded one for pages that get cross-origin isolation
-            # and the single-threaded fallback for the ones that cannot, such as a Discord
-            # activity or an Android WebView. The script publishes both and merges them into
-            # one site; the page picks between them at boot.
-            #
-            # AOT is forced on because CI=true switches it off for PR builds, and the payload
-            # people actually play must not follow that: the physics loop is unusable on the
-            # interpreter.
             - name: Publish Browser
               run: python3 scripts/publish_browser.py --output dist
 
-            # Without this, GitHub Pages (Jekyll) drops the _framework/ runtime folder.
             - name: Disable Jekyll
               run: touch dist/wwwroot/.nojekyll
 
@@ -127,14 +105,14 @@ jobs:
                   retention-days: 7
 
             - name: Upload Pages artifact
-              if: github.event_name != 'workflow_call'
+              if: inputs.package_only != true
               uses: actions/upload-pages-artifact@v5
               with:
                   path: dist/wwwroot
 
     deploy:
         needs: build
-        if: github.event_name != 'workflow_call'
+        if: inputs.package_only != true
         runs-on: ubuntu-latest
         environment:
             name: github-pages
