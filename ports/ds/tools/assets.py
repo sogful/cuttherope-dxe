@@ -159,7 +159,7 @@ def main():
     sfx = ["rope_bleak_1", "star_1", "star_2", "star_3", "win", "tap",
            "bubble", "bubble_break", "pump_1", "rope_get", "spider_activate", "spider_fall", "spider_win", "candy_break",
            "bouncer", "teleport", "candy_link", "electric", "wheel", "gravity_on", "gravity_off", "spike_rotate_in", "spike_rotate_out",
-           "scratch_in", "scratch_out", "ghost_puff", "steam_start2", "steam_start", "steam_end", "lantern_teleport_in", "lantern_teleport_out"]
+           "scratch_in", "scratch_out", "ghost_puff", "steam_start_2", "steam_start", "steam_end", "lantern_teleport_in", "lantern_teleport_out"]
     audio = []
     for name in sfx + ["game_music", "menu_music"]:
         music = name.endswith("_music")
