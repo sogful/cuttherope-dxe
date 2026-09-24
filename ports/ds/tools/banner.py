@@ -16,7 +16,7 @@ def update():
     source = root.parents[1]/"extras/images/icon.svg"
     target = root/"assets/icon.png"
     manifest = root/"assets/icon.json"
-    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    digest = hashlib.sha256(source.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
     if target.exists() and manifest.exists():
         info = json.loads(manifest.read_text())
         if info["sourceSha256"] == digest and info["iconSha256"] == hashlib.sha256(target.read_bytes()).hexdigest():

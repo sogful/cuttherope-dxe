@@ -222,8 +222,33 @@ jobs:
               shell: pwsh
               run: ./ports/ds/tools/setup.ps1
 
+            - name: Restore converted DS assets
+              id: ds-assets
+              uses: actions/cache@v6
+              with:
+                  path: |
+                      ports/ds/generated/**/*.bin
+                      ports/ds/generated/**/*.hpp
+                      ports/ds/generated/**/*.json
+                      ports/ds/generated/**/*.lz
+                      ports/ds/generated/**/*.s
+                  key: ds-assets-v1-${{ hashFiles('content/file_manifest.json', 'content/**/*.json', 'content/**/*.xml', 'ports/ds/tools/**/*.py', 'ports/ds/assets/feedcandy.png', 'src/CutTheRopeDX.Core/**/*.cs', 'src/CutTheRopeDX.Rendering.Skia/**/*.cs', 'src/CutTheRopeDX.Rendering.Skia.Tests/**/*.cs', 'ports/roblox/src/**/*.luau') }}
+
+            - name: Restore baked costume animations
+              if: steps.ds-assets.outputs.cache-hit != 'true'
+              uses: actions/cache@v6
+              with:
+                  path: ports/roblox/generated/omnom-baked
+                  key: ds-skins-v1-${{ hashFiles('content/file_manifest.json', 'content/images/animations/**/*.json', 'content/images/animations/**/*.xml', 'src/CutTheRopeDX.Core/**/*.cs', 'src/CutTheRopeDX.Rendering.Skia/**/*.cs', 'src/CutTheRopeDX.Rendering.Skia.Tests/**/*.cs') }}
+
             - name: Build Nintendo DS ROM
-              run: python ports/ds/tools/build.py --assets
+              shell: pwsh
+              run: |
+                  if ('${{ steps.ds-assets.outputs.cache-hit }}' -eq 'true') {
+                      python ports/ds/tools/build.py --reuse-assets
+                  } else {
+                      python ports/ds/tools/build.py --assets
+                  }
 
             - name: Package Nintendo DS release
               shell: pwsh

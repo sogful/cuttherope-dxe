@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -11,6 +12,7 @@ root = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--assets", action="store_true", help="Rebuild converted assets")
+    parser.add_argument("--reuse-assets", action="store_true", help="Trust a restored generated-asset cache")
     variant = parser.add_mutually_exclusive_group()
     variant.add_argument("--bootcheck", action="store_true", help="Build a separate on-screen/SD-log loader and ROM filesystem probe")
     variant.add_argument("--profile", action="store_true", help="Build separate instrumented ROM without replacing the normal ROM")
@@ -27,8 +29,9 @@ def main():
     import menulayout
     menulayout.update(root/"generated")
     upper = root / "generated/uppermanifest.json"
-    if args.assets or not upper.exists() or any(path.stat().st_mtime > upper.stat().st_mtime for path in
-            (root/"tools/upperart.py",root/"tools/upperhud.py",root/"tools/uppermotion.py",root/"assets/feedcandy.png",root/"generated/menumanifest.json")):
+    upper_stale = not args.reuse_assets and any(path.stat().st_mtime > upper.stat().st_mtime for path in
+            (root/"tools/upperart.py",root/"tools/upperhud.py",root/"tools/uppermotion.py",root/"assets/feedcandy.png",root/"generated/menumanifest.json"))
+    if args.assets or not upper.exists() or upper_stale:
         subprocess.run([sys.executable, "tools/upperart.py"], check=True)
     build = root / "build" / "logging" if args.logging else root / "build" / "profile" if args.profile else root / "build"
     import backgroundstore
@@ -53,12 +56,15 @@ def main():
     if args.logging:
         flags.extend(("-DDS_LOGGING", "-DDS_PROFILE"))
     sources = [root / "tests/boot.cpp"] if args.bootcheck else sorted((root / "source").glob("*.cpp"))
-    for source in sources:
+    def compile_source(source):
         target = build / (source.stem + ".o")
         print("Compile", source.name, flush=True)
         hotflags = ["-marm", "-O3"] if source.stem in ("simulation", "mechanics", "advanced", "frontend", "devices", "upper") else []
         subprocess.run([str(compiler), *flags, *hotflags, "-c", str(source), "-o", str(target)], check=True, env=environment)
-        objects.append(str(target))
+        return str(target)
+    workers = min(4, os.cpu_count() or 1)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        objects.extend(pool.map(compile_source, sources))
     assets = build / "assets.o"
     subprocess.run([str(compiler), "-mcpu=arm946e-s+nofp", "-c", "generated/assets.s", "-o", str(assets)], check=True, env=environment)
     if not args.bootcheck:
