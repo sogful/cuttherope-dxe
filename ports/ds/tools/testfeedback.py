@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 import re
+import soundfile
 import wave
 import xml.etree.ElementTree as xml
 from PIL import Image
@@ -18,11 +19,11 @@ repo, generated = root.parents[1], root / "generated"
 content = repo / "content"
 voice = json.loads((generated / "voicemanifest.json").read_text())
 for name in ("game", "menu"):
-    with wave.open(str(content / f"sounds/{name}_music.wav"),"rb") as sound:
-        pcm = sound.readframes(sound.getnframes()); width = sound.getsampwidth()
-        if sound.getnchannels()==2: pcm=audioop.tomono(pcm,width,.5,.5)
-        pcm,_ = audioop.ratecv(pcm,width,1,sound.getframerate(),11025,None)
-        pcm = audioop.lin2lin(pcm,width,1)
+    samples, rate = soundfile.read(content / f"sounds/{name}_music.flac", dtype="int16", always_2d=True)
+    pcm = samples.astype("<i2", copy=False).tobytes()
+    if samples.shape[1] == 2: pcm=audioop.tomono(pcm,2,.5,.5)
+    pcm,_ = audioop.ratecv(pcm,2,1,rate,11025,None)
+    pcm = audioop.lin2lin(pcm,2,1)
     pcm += b"\0"*(-len(pcm)%4)
     assert (generated / f"nitro/{name}music.bin").read_bytes()==pcm
 resourcepath = repo / "src/CutTheRopeDX.Core/GameMain/Resources.cs"
@@ -71,7 +72,8 @@ for skin, config in enumerate(configs):
         assert entry["size"] <= voice["maximum"]
 backgrounds = json.loads((generated / "backgroundmanifest.json").read_text())
 effectnames = ("mouse_rustle", "mouse_idle", "mouse_tap", "star_light01", "star_light02",
-               "transporter_drop", "transporter_move", "con01", "con02", "con03", "con04")
+               "transporter_drop", "transporter_move", "transporter_click1", "transporter_click2",
+               "transporter_click3", "transporter_click4")
 effecttable = re.search(r"streameffects\[\] = \{(.*?)\};", (generated / "assets.hpp").read_text()).group(1)
 effects = [tuple(map(int, pair)) for pair in re.findall(r"\{(\d+),(\d+)\}", effecttable)]
 assert len(effects) == len(effectnames)
