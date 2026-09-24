@@ -184,6 +184,15 @@ namespace CutTheRopeDX.Helpers
                         }
                     }
                 }
+                if (languageCode == "en")
+                {
+                    result["CLICK_TO_CUT"] = "Tap to cut";
+                    result["DRAG_TO_CUT"] = "Swipe to cut";
+                    result["TUTORIAL_LVL_1_1_01"] = "Swipe across or tap to cut the rope";
+                    result["TUTORIAL_LVL_1_5_01"] = "Tap to pop the bubble";
+                    result["TUTORIAL_LVL_2_1_01"] = "Tap the air cushion to blow the object";
+                    result["TUTORIAL_LVL_3_1_01"] = "Some rope hooks can be moved with a finger";
+                }
             }
             catch (Exception ex)
             {
